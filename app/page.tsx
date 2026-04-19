@@ -1,65 +1,75 @@
-import Image from "next/image";
+import { dummyEvents } from '@/lib/dummy'
+import { EventCard } from '@/components/EventCard'
+import { EventStatus } from '@/types'
+import { Calendar } from 'lucide-react'
+
+const VISIBLE: EventStatus[] = ['APPROVED', 'FINISHED', 'COMPLETED']
 
 export default function Home() {
+  const events = dummyEvents
+    .filter((e) => VISIBLE.includes(e.status))
+    .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
+
+  const live = events.filter((e) => e.status === 'APPROVED')
+  const past = events.filter((e) => e.status !== 'APPROVED')
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="flex flex-col min-h-screen">
+      {/* Header */}
+      <header className="bg-white px-4 py-4 flex items-center justify-between border-b border-gray-100">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-[#1B4332] flex items-center justify-center">
+            <Calendar className="w-4 h-4 text-[#C9A227]" />
+          </div>
+          <span className="font-extrabold text-[#1B4332] text-lg tracking-tight">MPJ Event</span>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+        <a
+          href="/scan"
+          className="text-sm font-semibold text-[#1B4332] border-2 border-[#1B4332] px-4 py-1.5 rounded-full hover:bg-[#1B4332] hover:text-white transition-colors"
+        >
+          Masuk
+        </a>
+      </header>
+
+      <main className="flex-1 px-4 py-5 space-y-6">
+        {/* Live Events */}
+        {live.length > 0 && (
+          <section className="space-y-3">
+            <h2 className="text-xs font-bold text-[#1B4332] uppercase tracking-widest">
+              Event Aktif
+            </h2>
+            <div className="flex flex-col gap-4">
+              {live.map((event) => (
+                <EventCard key={event.id} event={event} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Past Events */}
+        {past.length > 0 && (
+          <section className="space-y-3">
+            <h2 className="text-xs font-bold text-[#1B4332] uppercase tracking-widest">
+              Acara Sebelumnya
+            </h2>
+            <div className="flex flex-col gap-4">
+              {past.map((event) => (
+                <EventCard key={event.id} event={event} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {events.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <div className="w-16 h-16 rounded-full bg-[#e8f0ec] flex items-center justify-center mb-4">
+              <Calendar className="w-7 h-7 text-[#1B4332]" />
+            </div>
+            <p className="font-bold text-[#1B4332] text-lg">Belum ada event</p>
+            <p className="text-sm text-gray-400 mt-1">Pantau terus untuk update terbaru</p>
+          </div>
+        )}
       </main>
     </div>
-  );
+  )
 }

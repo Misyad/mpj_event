@@ -1,0 +1,13 @@
+Options -MultiViews
+RewriteEngine On
+
+# Force HTTPS
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Handle Next.js static export — trailing slash sudah dihandle oleh trailingSlash: true
+# Serve index.html jika folder ada
+DirectoryIndex index.html
+
+# 404 fallback
+ErrorDocument 404 /404/index.html
