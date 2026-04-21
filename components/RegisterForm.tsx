@@ -17,6 +17,7 @@ interface FormData {
   guestName: string
   guestWhatsapp: string
   guestInstitution: string
+  customResponses: Record<string, string | string[]>
   proofFile: File | null
 }
 
@@ -39,7 +40,8 @@ export function RegisterForm({ event }: { event: Event }) {
   const [step, setStep] = useState<Step>(1)
   const [form, setForm] = useState<FormData>({
     path: null, niam: '', crewName: '', crewUnit: '',
-    guestName: '', guestWhatsapp: '', guestInstitution: '', proofFile: null,
+    guestName: '', guestWhatsapp: '', guestInstitution: '', 
+    customResponses: {}, proofFile: null,
   })
   const [uniqueCode] = useState(generateUniqueCode)
   const [submitted, setSubmitted] = useState(false)
@@ -53,9 +55,33 @@ export function RegisterForm({ event }: { event: Event }) {
     }
   }
 
+  function handleCustomResponse(id: string, value: string | string[]) {
+    setForm(f => ({ ...f, customResponses: { ...f.customResponses, [id]: value } }))
+  }
+
+  function handleCheckboxToggle(id: string, option: string) {
+    const current = (form.customResponses[id] as string[]) || []
+    if (current.includes(option)) {
+      handleCustomResponse(id, current.filter(o => o !== option))
+    } else {
+      handleCustomResponse(id, [...current, option])
+    }
+  }
+
   function handlePaymentSubmit() {
     setSubmitted(true)
     if (!event.is_paid) setTimeout(() => router.push('/ticket/TOKEN-DEMO-001'), 800)
+  }
+
+  const validateCustomFields = () => {
+    if (!event.custom_fields) return true
+    for (const field of event.custom_fields) {
+      if (field.is_required) {
+        const res = form.customResponses[field.id]
+        if (!res || (Array.isArray(res) && res.length === 0)) return false
+      }
+    }
+    return true
   }
 
   const steps = ['Pilih Jalur', 'Data Diri', 'Pembayaran']
@@ -192,8 +218,8 @@ export function RegisterForm({ event }: { event: Event }) {
             </div>
             <button
               className={btnGold}
-              onClick={form.crewName ? () => setStep(3) : handleNIAMValidate}
-              disabled={!form.niam.trim()}
+              onClick={() => { if (form.crewName && validateCustomFields()) setStep(3); else if (!form.crewName) handleNIAMValidate() }}
+              disabled={(!form.niam.trim()) || (form.crewName ? !validateCustomFields() : false)}
             >
               {form.crewName ? 'Lanjut ke Pembayaran →' : 'Validasi NIAM'}
             </button>
@@ -212,14 +238,86 @@ export function RegisterForm({ event }: { event: Event }) {
               <input type="text" placeholder="Asal Instansi / Universitas" value={form.guestInstitution}
                 onChange={(e) => setForm((f) => ({ ...f, guestInstitution: e.target.value }))} className={inputClass} />
             </div>
+            {/* Custom Fields Component for UMUM & NIAM is placed below */}
             <button
               className={btnGold}
-              onClick={() => { if (form.guestName && form.guestWhatsapp && form.guestInstitution) setStep(3) }}
-              disabled={!form.guestName || !form.guestWhatsapp || !form.guestInstitution}
+              onClick={() => { if (form.guestName && form.guestWhatsapp && form.guestInstitution && validateCustomFields()) setStep(3) }}
+              disabled={!form.guestName || !form.guestWhatsapp || !form.guestInstitution || !validateCustomFields()}
             >
               Lanjut ke Pembayaran →
             </button>
           </>
+        )}
+
+        {/* CUSTOM FIELDS (Renders in Step 2 if crewName is loaded or UMUM is filled) */}
+        {step === 2 && event.custom_fields && event.custom_fields.length > 0 && 
+          ((form.path === 'NIAM' && form.crewName) || form.path === 'UMUM') && (
+          <div className="space-y-4 pt-2 mb-4">
+            <p className="text-sm font-extrabold text-[#1B4332]">Pertanyaan Tambahan</p>
+            {event.custom_fields.map(field => (
+              <div key={field.id} className="bg-white rounded-2xl shadow-sm p-4 space-y-2 border border-gray-100">
+                <label className="text-xs font-semibold text-gray-700">
+                  {field.label} {field.is_required && <span className="text-red-500">*</span>}
+                </label>
+
+                {field.type === 'short_text' && (
+                  <input type="text" className={inputClass} placeholder="Ketik jawaban..."
+                    value={(form.customResponses[field.id] as string) || ''}
+                    onChange={e => handleCustomResponse(field.id, e.target.value)} />
+                )}
+
+                {field.type === 'long_text' && (
+                  <textarea className={`${inputClass} min-h-[100px] resize-none`} placeholder="Ketik jawaban..."
+                    value={(form.customResponses[field.id] as string) || ''}
+                    onChange={e => handleCustomResponse(field.id, e.target.value)} />
+                )}
+
+                {field.type === 'dropdown' && (
+                  <select className={inputClass}
+                    value={(form.customResponses[field.id] as string) || ''}
+                    onChange={e => handleCustomResponse(field.id, e.target.value)}>
+                    <option value="" disabled>Pilih Opsi</option>
+                    {field.options.map(o => (
+                      <option key={o} value={o}>{o}</option>
+                    ))}
+                  </select>
+                )}
+
+                {field.type === 'radio' && (
+                  <div className="space-y-2 mt-2">
+                    {field.options.map(o => (
+                      <label key={o} className="flex items-center gap-2 cursor-pointer text-sm text-gray-700">
+                        <input type="radio" 
+                          name={`radio-${field.id}`}
+                          value={o}
+                          checked={form.customResponses[field.id] === o}
+                          onChange={e => handleCustomResponse(field.id, e.target.value)}
+                          className="w-4 h-4 text-[#1B4332] border-gray-300 focus:ring-[#1B4332]" />
+                        {o}
+                      </label>
+                    ))}
+                  </div>
+                )}
+
+                {field.type === 'checkbox' && (
+                  <div className="space-y-2 mt-2">
+                    {field.options.map(o => {
+                      const checked = ((form.customResponses[field.id] as string[]) || []).includes(o)
+                      return (
+                        <label key={o} className="flex items-center gap-2 cursor-pointer text-sm text-gray-700">
+                          <input type="checkbox" 
+                            checked={checked}
+                            onChange={() => handleCheckboxToggle(field.id, o)}
+                            className="w-4 h-4 text-[#1B4332] rounded border-gray-300 focus:ring-[#1B4332]" />
+                          {o}
+                        </label>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         )}
 
         {/* STEP 3 */}

@@ -12,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button'
 import { PosterUploader } from '@/components/PosterUploader'
 import { SpeakerCombobox } from '@/components/SpeakerCombobox'
-import { EventCategory } from '@/types'
+import { EventCategory, CustomField, CustomFieldType } from '@/types'
+import { GripVertical } from 'lucide-react'
 
 type EventType = 'Sistem Kelas' | 'Non-Kelas'
 type PaymentMethod = 'manual' | 'gateway'
@@ -51,6 +52,7 @@ interface FormData {
   midtransSandbox: boolean
   speakerId: string | null
   speakers: Speaker[]
+  customFields: CustomField[]
 }
 
 const defaultForm: FormData = {
@@ -62,7 +64,7 @@ const defaultForm: FormData = {
   maxParticipants: '', registrationDeadline: '',
   paymentMethod: 'manual', bankName: '', bankNumber: '', bankAccountName: '',
   midtransServerKey: '', midtransClientKey: '', midtransSandbox: true,
-  speakerId: null, speakers: [],
+  speakerId: null, speakers: [], customFields: [],
 }
 
 function SectionHeader({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
@@ -99,6 +101,31 @@ export default function NewEventPage() {
 
   function updateSpeaker(id: string, field: keyof Speaker, value: string) {
     update('speakers', form.speakers.map(s => s.id === id ? { ...s, [field]: value } : s))
+  }
+
+  function addCustomField() {
+    const newField: CustomField = {
+      id: Date.now().toString(),
+      label: '',
+      type: 'short_text',
+      options: [],
+      is_required: false,
+      order: form.customFields.length
+    }
+    update('customFields', [...form.customFields, newField])
+  }
+
+  function removeCustomField(id: string) {
+    update('customFields', form.customFields.filter(f => f.id !== id))
+  }
+
+  function updateCustomField(id: string, field: keyof CustomField, value: any) {
+    update('customFields', form.customFields.map(f => f.id === id ? { ...f, [field]: value } : f))
+  }
+
+  function handleOptionsChange(id: string, value: string) {
+    const options = value.split(',').map(s => s.trim()).filter(Boolean)
+    updateCustomField(id, 'options', options)
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -236,8 +263,8 @@ export default function NewEventPage() {
       </div>
 
       {/* ── Seksi 3: Peserta ────────────────── */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
-        <SectionHeader icon={<User className="w-4 h-4 text-[#1B4332]" />} title="Pengaturan Peserta" desc="Siapa yang bisa mendaftar" />
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-5">
+        <SectionHeader icon={<User className="w-4 h-4 text-[#1B4332]" />} title="Pengaturan Peserta" desc="Siapa yang bisa mendaftar & pertanyaan tambahan" />
 
         <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
           <div>
@@ -245,6 +272,84 @@ export default function NewEventPage() {
             <p className="text-xs text-gray-400 mt-0.5">Izinkan peserta non-anggota (tanpa NIAM) mendaftar</p>
           </div>
           <Switch checked={form.isOpenForPublic} onCheckedChange={v => update('isOpenForPublic', v)} />
+        </div>
+
+        {/* Custom Form Builder */}
+        <div className="border-t border-gray-100 pt-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-[#1B4332]">Pertanyaan Tambahan Pendaftaran</p>
+              <p className="text-xs text-gray-400 mt-0.5">Kumpulkan info spesifik seperti ukuran baju, riwayat medis, dll</p>
+            </div>
+            <Button type="button" onClick={addCustomField} variant="outline" size="sm" className="rounded-xl border-[#1B4332]/20 text-[#1B4332] hover:bg-[#1B4332]/5">
+              <Plus className="w-4 h-4 mr-1" /> Tambah Field
+            </Button>
+          </div>
+
+          <div className="space-y-3">
+            {form.customFields.length === 0 ? (
+              <div className="text-center py-6 text-gray-400 text-sm bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                Belum ada pertanyaan tambahan.
+              </div>
+            ) : (
+              form.customFields.map((field, idx) => (
+                <div key={field.id} className="p-4 bg-white border border-gray-200 rounded-xl space-y-4 shadow-sm relative group">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-gray-500">Pertanyaan</Label>
+                          <Input value={field.label} onChange={e => updateCustomField(field.id, 'label', e.target.value)}
+                            placeholder="Contoh: Ukuran Kaos" className="rounded-lg text-sm h-9" />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-gray-500">Tipe Jawaban</Label>
+                          <Select value={field.type} onValueChange={v => v !== null && updateCustomField(field.id, 'type', v as CustomFieldType)}>
+                            <SelectTrigger className="rounded-lg text-sm h-9">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="short_text">Jawaban Pendek</SelectItem>
+                              <SelectItem value="long_text">Paragraf</SelectItem>
+                              <SelectItem value="radio">Pilihan Ganda (Satu)</SelectItem>
+                              <SelectItem value="dropdown">Dropdown</SelectItem>
+                              <SelectItem value="checkbox">Kotak Centang (Banyak)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      {['radio', 'dropdown', 'checkbox'].includes(field.type) && (
+                        <div className="space-y-1.5 bg-gray-50 p-3 rounded-lg border border-gray-100">
+                          <Label className="text-xs text-gray-500">Opsi Pilihan (Pisahkan dengan koma)</Label>
+                          <Input 
+                            value={field.options.join(', ')} 
+                            onChange={e => handleOptionsChange(field.id, e.target.value)}
+                            placeholder="S, M, L, XL, XXL" className="rounded-lg text-sm h-9 bg-white" />
+                          <p className="text-[10px] text-gray-400">Pastikan gunakan koma. Contoh: S, M, L</p>
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between pt-1">
+                        <div className="flex items-center gap-2">
+                          <Switch 
+                            checked={field.is_required} 
+                            onCheckedChange={v => updateCustomField(field.id, 'is_required', v)} 
+                            id={`req-${field.id}`}
+                          />
+                          <Label htmlFor={`req-${field.id}`} className="text-xs cursor-pointer select-none text-gray-600">Wajib Diisi</Label>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button type="button" onClick={() => removeCustomField(field.id)} className="p-2 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors shrink-0">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
 

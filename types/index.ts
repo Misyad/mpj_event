@@ -6,6 +6,23 @@ export type AttendanceStatus = 'Registered' | 'Attended' | 'Cancelled'
 export type RegistrationStatus = 'open' | 'closed' | 'full'
 export type SpeakerCategory = 'Tech' | 'Bisnis' | 'Desain' | 'Jurnalistik' | 'Keagamaan' | 'Lainnya'
 
+export type CustomFieldType = 'short_text' | 'long_text' | 'radio' | 'dropdown' | 'checkbox'
+
+export interface CustomField {
+  id: string
+  event_id?: string
+  label: string
+  type: CustomFieldType
+  options: string[] // Kosong jika bukan multiple choice
+  is_required: boolean
+  order: number
+}
+
+export interface CustomResponse {
+  field_id: string
+  value: string | string[]
+}
+
 export interface Event {
   id: string
   title: string
@@ -27,6 +44,7 @@ export interface Event {
   status_pendaftaran?: RegistrationStatus
   registration_deadline?: string
   speaker_id?: string
+  custom_fields?: CustomField[]
 }
 
 export interface BankAccount {

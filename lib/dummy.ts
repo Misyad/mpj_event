@@ -22,6 +22,32 @@ export const dummyEvents: Event[] = [
     status_pendaftaran: 'open',
     registration_deadline: '2026-05-05T23:59:59',
     speaker_id: 'spk1',
+    custom_fields: [
+      {
+        id: 'cf1',
+        label: 'Ukuran Kaos',
+        type: 'dropdown',
+        options: ['S', 'M', 'L', 'XL', 'XXL'],
+        is_required: true,
+        order: 0,
+      },
+      {
+        id: 'cf2',
+        label: 'Pernah ikut Workshop UI/UX sebelumnya?',
+        type: 'radio',
+        options: ['Ya', 'Belum'],
+        is_required: true,
+        order: 1,
+      },
+      {
+        id: 'cf3',
+        label: 'Apa ekspektasi kamu dari workshop ini?',
+        type: 'long_text',
+        options: [],
+        is_required: false,
+        order: 2,
+      },
+    ]
   },
   {
     id: '2',

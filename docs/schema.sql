@@ -117,6 +117,32 @@ CREATE TABLE event_participants (
   INDEX idx_ep_qr (qr_token)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ─── TABEL EVENT_CUSTOM_FIELDS ──────────────────────────────
+CREATE TABLE event_custom_fields (
+  id            CHAR(36)     NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+  event_id      CHAR(36)     NOT NULL,
+  label         VARCHAR(255) NOT NULL,
+  type          ENUM('short_text','long_text','radio','dropdown','checkbox') NOT NULL,
+  options       JSON         NOT NULL DEFAULT ('[]'),
+  is_required   TINYINT(1)   NOT NULL DEFAULT 0,
+  order_num     INT          NOT NULL DEFAULT 0,
+  created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_ecf_event FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+  INDEX idx_ecf_event (event_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ─── TABEL PARTICIPANT_RESPONSES ────────────────────────────
+CREATE TABLE participant_responses (
+  id              CHAR(36)  NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+  participant_id  CHAR(36)  NOT NULL,
+  field_id        CHAR(36)  NOT NULL,
+  response_value  JSON      NOT NULL, -- Menyimpan string tunggal atau array of string untuk checkbox
+  created_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_pr_participant FOREIGN KEY (participant_id) REFERENCES event_participants(id) ON DELETE CASCADE,
+  CONSTRAINT fk_pr_field FOREIGN KEY (field_id) REFERENCES event_custom_fields(id) ON DELETE CASCADE,
+  INDEX idx_pr_participant (participant_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ─── TRIGGER: Auto-update status_pendaftaran ────────────────
 DELIMITER $$
 
