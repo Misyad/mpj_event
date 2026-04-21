@@ -22,9 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="id" className={`${jakarta.variable} h-full antialiased`}>
       <body className="min-h-full bg-white" style={{ fontFamily: 'var(--font-jakarta), sans-serif' }}>
-        <div className="mx-auto max-w-107.5 min-h-screen bg-[#f0f4f0]">
-          {children}
-        </div>
+        {children}
       </body>
     </html>
   )

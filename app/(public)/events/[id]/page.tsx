@@ -2,8 +2,10 @@ import { notFound } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { getEventById, dummyEvents } from '@/lib/dummy'
+import { getEventById, dummyEvents, getSpeakerById } from '@/lib/dummy'
 import { BadgeStatus } from '@/components/BadgeStatus'
+import { QuotaBadge } from '@/components/QuotaBadge'
+import { CountdownTimer } from '@/components/CountdownTimer'
 import { Calendar, MapPin, ArrowLeft, Wallet } from 'lucide-react'
 
 export async function generateStaticParams() {
@@ -71,6 +73,20 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
 
         {/* Title */}
         <h1 className="text-xl font-extrabold text-[#1B4332] leading-snug">{event.title}</h1>
+
+        {/* Quota badge */}
+        {event.max_participants && (
+          <QuotaBadge
+            maxParticipants={event.max_participants}
+            currentParticipants={event.current_participants}
+            status={event.status_pendaftaran}
+          />
+        )}
+
+        {/* Countdown timer */}
+        {event.registration_deadline && isOpen && (
+          <CountdownTimer deadline={event.registration_deadline} />
+        )}
 
         {/* Info Card */}
         <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3">

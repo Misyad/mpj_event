@@ -1,105 +1,85 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
-import QRCode from 'qrcode'
+import { QRCodeSVG } from 'qrcode.react'
 import Link from 'next/link'
 import { Event, Participant } from '@/types'
-import { Calendar, MapPin, CheckCircle, XCircle } from 'lucide-react'
+import { Calendar, CheckCircle, MapPin, XCircle } from 'lucide-react'
 
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('id-ID', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   })
 }
 
 export function QRTicket({ participant, event }: { participant: Participant; event: Event }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const isValid = participant.attendance_status === 'Registered'
-  const isAttended = participant.attendance_status === 'Attended'
-  const name =
-    participant.registration_path === 'NIAM'
-      ? participant.crew?.full_name
-      : participant.guest?.full_name
+  const isValid   = participant.attendance_status === 'Registered'
+  const isUsed    = participant.attendance_status === 'Attended'
+  const isCancelled = participant.attendance_status === 'Cancelled'
 
-  useEffect(() => {
-    if (canvasRef.current) {
-      QRCode.toCanvas(canvasRef.current, participant.qr_token, {
-        width: 220,
-        margin: 2,
-        color: { dark: '#111827', light: '#ffffff' },
-      })
-    }
-  }, [participant.qr_token])
+  const name = participant.registration_path === 'NIAM'
+    ? participant.crew?.full_name
+    : participant.guest?.full_name
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
+    <div className="flex flex-col min-h-screen bg-[#f0f4f0]">
       {/* Header */}
-      <div className="bg-gray-900 text-white px-4 py-5 text-center">
-        <p className="text-xs text-gray-400 mb-1">E-Tiket Resmi</p>
-        <h1 className="text-base font-bold leading-snug">{event.title}</h1>
+      <div className="bg-[#1B4332] text-white px-5 py-5 text-center">
+        <p className="text-[10px] text-white/50 uppercase tracking-widest mb-1">E-Tiket Resmi MPJ</p>
+        <h1 className="text-base font-extrabold leading-snug">{event.title}</h1>
       </div>
 
-      {/* Ticket Card */}
-      <div className="mx-4 mt-4 bg-white rounded-2xl shadow-sm overflow-hidden">
-        {/* Status bar */}
-        <div
-          className={`w-full py-2 text-center text-xs font-bold uppercase tracking-wider ${
-            isValid
-              ? 'bg-green-500 text-white'
-              : isAttended
-              ? 'bg-gray-500 text-white'
-              : 'bg-red-500 text-white'
-          }`}
-        >
-          {isValid ? 'VALID — BELUM DIGUNAKAN' : isAttended ? 'SUDAH DIGUNAKAN' : 'TIDAK VALID'}
+      {/* Ticket card */}
+      <div className="mx-4 mt-4 bg-white rounded-3xl shadow-sm overflow-hidden">
+        {/* Status stripe */}
+        <div className={`w-full py-2.5 text-center text-xs font-bold uppercase tracking-widest ${
+          isValid ? 'bg-emerald-500 text-white'
+          : isUsed ? 'bg-gray-400 text-white'
+          : 'bg-red-500 text-white'
+        }`}>
+          {isValid ? '✅ VALID — BELUM DIGUNAKAN' : isUsed ? '✔ SUDAH DIGUNAKAN' : '❌ TIDAK VALID'}
         </div>
 
-        {/* Ticket body */}
-        <div className="px-5 py-6 flex flex-col items-center space-y-4">
+        <div className="px-5 py-6 flex flex-col items-center gap-5">
           {/* QR Code */}
           <div className="relative">
-            <canvas ref={canvasRef} className={`rounded-xl ${!isValid ? 'opacity-40' : ''}`} />
+            <div className={`p-3 rounded-2xl border-4 ${isValid ? 'border-emerald-200' : 'border-gray-200'} bg-white`}>
+              <QRCodeSVG
+                value={participant.qr_token}
+                size={196}
+                level="M"
+                bgColor="#ffffff"
+                fgColor={isValid ? '#111827' : '#9ca3af'}
+                includeMargin={false}
+              />
+            </div>
             {!isValid && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                {isAttended ? (
-                  <CheckCircle className="w-16 h-16 text-gray-500" />
-                ) : (
-                  <XCircle className="w-16 h-16 text-red-500" />
-                )}
+              <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-white/60">
+                {isUsed
+                  ? <CheckCircle className="w-16 h-16 text-gray-400" />
+                  : <XCircle className="w-16 h-16 text-red-400" />
+                }
               </div>
             )}
           </div>
 
-          <p className="text-xs text-gray-400 font-mono">{participant.qr_token}</p>
+          <p className="text-[10px] text-gray-300 font-mono text-center">{participant.qr_token}</p>
 
-          {/* Divider dashed */}
-          <div className="w-full border-t-2 border-dashed border-gray-200" />
+          {/* Dashed divider */}
+          <div className="w-full border-t-2 border-dashed border-gray-100" />
 
-          {/* Info peserta */}
-          <div className="w-full space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Nama</span>
-              <span className="font-semibold text-gray-900">{name ?? '-'}</span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Jalur</span>
-              <span className="font-semibold text-gray-900">{participant.registration_path}</span>
-            </div>
+          {/* Participant info */}
+          <div className="w-full space-y-3">
+            <Row label="Nama" value={name ?? '-'} />
+            <Row label="Jalur" value={participant.registration_path === 'NIAM' ? '🟢 Anggota NIAM' : '🔵 Jalur Umum'} />
             {participant.registration_path === 'NIAM' && participant.crew && (
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">NIAM</span>
-                <span className="font-semibold text-gray-900">{participant.crew.niam}</span>
-              </div>
+              <Row label="No. NIAM" value={participant.crew.niam} />
             )}
           </div>
 
-          {/* Divider dashed */}
-          <div className="w-full border-t-2 border-dashed border-gray-200" />
+          {/* Dashed divider */}
+          <div className="w-full border-t-2 border-dashed border-gray-100" />
 
-          {/* Info event */}
+          {/* Event info */}
           <div className="w-full space-y-2">
             <div className="flex items-start gap-2 text-sm">
               <Calendar className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
@@ -111,19 +91,39 @@ export function QRTicket({ participant, event }: { participant: Participant; eve
             </div>
           </div>
 
+          {/* NIAM note */}
           {participant.registration_path === 'NIAM' && (
-            <p className="text-xs text-center text-blue-600 bg-blue-50 rounded-lg px-3 py-2">
-              E-ID Card NIAM kamu juga berlaku sebagai tiket masuk
+            <p className="text-xs text-center text-blue-600 bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5 leading-relaxed">
+              💙 E-ID Card NIAM kamu juga berlaku sebagai tiket masuk di lokasi
             </p>
           )}
         </div>
       </div>
 
-      <div className="px-4 mt-4">
-        <Link href="/" className="block text-center text-sm text-gray-500 underline py-4">
-          Kembali ke Beranda
+      {/* Screenshot guide */}
+      <div className="mx-4 mt-3 bg-amber-50 border border-amber-100 rounded-2xl px-4 py-3">
+        <p className="text-xs font-bold text-amber-700 mb-1">📸 Cara Simpan Tiket</p>
+        <ol className="text-xs text-amber-600 space-y-0.5 list-decimal list-inside">
+          <li>Screenshot halaman ini</li>
+          <li>Simpan ke galeri / album "Tiket Event"</li>
+          <li>Tunjukkan QR Code saat check-in di lokasi</li>
+        </ol>
+      </div>
+
+      <div className="px-4 mt-4 pb-8">
+        <Link href="/" className="block text-center text-sm text-gray-400 hover:text-[#1B4332] underline py-4 transition-colors">
+          ← Kembali ke Beranda
         </Link>
       </div>
+    </div>
+  )
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between items-center text-sm">
+      <span className="text-gray-400">{label}</span>
+      <span className="font-semibold text-gray-800">{value}</span>
     </div>
   )
 }

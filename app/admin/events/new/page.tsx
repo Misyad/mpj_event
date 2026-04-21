@@ -1,0 +1,427 @@
+'use client'
+
+import { useState } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { ArrowLeft, Building2, Calendar, CreditCard, MapPin, Plus, Trash2, User } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Button } from '@/components/ui/button'
+import { PosterUploader } from '@/components/PosterUploader'
+import { SpeakerCombobox } from '@/components/SpeakerCombobox'
+import { EventCategory } from '@/types'
+
+type EventType = 'Sistem Kelas' | 'Non-Kelas'
+type PaymentMethod = 'manual' | 'gateway'
+
+interface Speaker {
+  id: string
+  name: string
+  topic: string
+  kelas: string
+}
+
+interface FormData {
+  name: string
+  description: string
+  category: EventCategory | ''
+  eventType: EventType | ''
+  date: string
+  time: string
+  location: string
+  locationLink: string
+  posterFile: File | null
+  posterPreview: string
+  gdriveLpj: string
+  isOpenForPublic: boolean
+  isPaid: boolean
+  priceNiam: string
+  pricePublic: string
+  maxParticipants: string
+  registrationDeadline: string
+  paymentMethod: PaymentMethod
+  bankName: string
+  bankNumber: string
+  bankAccountName: string
+  midtransServerKey: string
+  midtransClientKey: string
+  midtransSandbox: boolean
+  speakerId: string | null
+  speakers: Speaker[]
+}
+
+const defaultForm: FormData = {
+  name: '', description: '', category: '', eventType: '',
+  date: '', time: '', location: '', locationLink: '',
+  posterFile: null, posterPreview: '', gdriveLpj: '',
+  isOpenForPublic: true, isPaid: false,
+  priceNiam: '0', pricePublic: '0',
+  maxParticipants: '', registrationDeadline: '',
+  paymentMethod: 'manual', bankName: '', bankNumber: '', bankAccountName: '',
+  midtransServerKey: '', midtransClientKey: '', midtransSandbox: true,
+  speakerId: null, speakers: [],
+}
+
+function SectionHeader({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
+  return (
+    <div className="flex items-start gap-3 mb-5">
+      <div className="w-9 h-9 rounded-xl bg-[#1B4332]/10 flex items-center justify-center shrink-0 mt-0.5">
+        {icon}
+      </div>
+      <div>
+        <h2 className="font-bold text-[#1B4332] text-sm">{title}</h2>
+        <p className="text-xs text-gray-400 mt-0.5">{desc}</p>
+      </div>
+    </div>
+  )
+}
+
+export default function NewEventPage() {
+  const router = useRouter()
+  const [form, setForm] = useState<FormData>(defaultForm)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+
+  function update(key: keyof FormData, value: FormData[typeof key]) {
+    setForm(prev => ({ ...prev, [key]: value }))
+  }
+
+  function addSpeaker() {
+    update('speakers', [...form.speakers, { id: Date.now().toString(), name: '', topic: '', kelas: '' }])
+  }
+
+  function removeSpeaker(id: string) {
+    update('speakers', form.speakers.filter(s => s.id !== id))
+  }
+
+  function updateSpeaker(id: string, field: keyof Speaker, value: string) {
+    update('speakers', form.speakers.map(s => s.id === id ? { ...s, [field]: value } : s))
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setIsSubmitting(true)
+    // Simulate API call
+    setTimeout(() => {
+      setIsSubmitting(false)
+      setSubmitted(true)
+      setTimeout(() => router.push('/admin/events'), 1500)
+    }, 1000)
+  }
+
+  if (submitted) {
+    return (
+      <div className="p-8 flex flex-col items-center justify-center min-h-[60vh] text-center gap-4">
+        <div className="w-16 h-16 rounded-2xl bg-emerald-100 flex items-center justify-center">
+          <Calendar className="w-8 h-8 text-emerald-600" />
+        </div>
+        <div>
+          <p className="font-extrabold text-[#1B4332] text-xl">Event Berhasil Dibuat!</p>
+          <p className="text-gray-400 text-sm mt-1">Status: DRAFT · Mengarahkan ke daftar event...</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="p-4 md:p-8 space-y-6 max-w-3xl">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <Link href="/admin/events">
+          <button type="button" className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors">
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+        </Link>
+        <div>
+          <h1 className="text-xl font-extrabold text-[#1B4332]">Buat Event Baru</h1>
+          <p className="text-sm text-gray-400 mt-0.5">Event akan tersimpan sebagai DRAFT terlebih dahulu</p>
+        </div>
+      </div>
+
+      {/* ── Seksi 1: Info Dasar ──────────────── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+        <SectionHeader icon={<Calendar className="w-4 h-4 text-[#1B4332]" />} title="Info Dasar" desc="Informasi utama event" />
+
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-gray-600">Nama Event <span className="text-red-400">*</span></Label>
+          <Input required value={form.name} onChange={e => update('name', e.target.value)}
+            placeholder="Contoh: Workshop Jurnalistik 2026" className="rounded-xl text-sm" />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-gray-600">Kategori <span className="text-red-400">*</span></Label>
+            <Select value={form.category} onValueChange={v => v !== null && update('category', v as EventCategory)}>
+              <SelectTrigger className="rounded-xl text-sm h-10"><SelectValue placeholder="Pilih kategori" /></SelectTrigger>
+              <SelectContent>
+                {(['Pelatihan', 'Seremonial', 'Rapat'] as EventCategory[]).map(c => (
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-gray-600">Tipe Event <span className="text-red-400">*</span></Label>
+            <Select value={form.eventType} onValueChange={v => v !== null && update('eventType', v as EventType)}>
+              <SelectTrigger className="rounded-xl text-sm h-10"><SelectValue placeholder="Pilih tipe" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Non-Kelas">Non-Kelas (Umum / Seminar)</SelectItem>
+                <SelectItem value="Sistem Kelas">Sistem Kelas (Dengan Pembagian Kelas)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-gray-600">Tanggal <span className="text-red-400">*</span></Label>
+            <Input required type="date" value={form.date} onChange={e => update('date', e.target.value)} className="rounded-xl text-sm h-10" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-gray-600">Jam Mulai</Label>
+            <Input type="time" value={form.time} onChange={e => update('time', e.target.value)} className="rounded-xl text-sm h-10" />
+          </div>
+        </div>
+
+        {/* Poster upload */}
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-gray-600">Poster Event</Label>
+          <PosterUploader
+            onFileSelect={(file, previewUrl) => {
+              update('posterFile', file)
+              update('posterPreview', previewUrl)
+            }}
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-gray-600">Deskripsi Event</Label>
+          <Textarea value={form.description} onChange={e => update('description', e.target.value)}
+            placeholder="Tuliskan deskripsi singkat tentang event ini..." className="rounded-xl text-sm min-h-[100px] resize-none" />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-gray-600">Maks. Peserta</Label>
+            <Input type="number" min="1" value={form.maxParticipants}
+              onChange={e => update('maxParticipants', e.target.value)}
+              placeholder="Kosongkan jika tidak terbatas" className="rounded-xl text-sm" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold text-gray-600">Batas Pendaftaran</Label>
+            <Input type="datetime-local" value={form.registrationDeadline}
+              onChange={e => update('registrationDeadline', e.target.value)}
+              className="rounded-xl text-sm h-10" />
+          </div>
+        </div>
+      </div>
+
+      {/* ── Seksi 2: Lokasi ─────────────────── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+        <SectionHeader icon={<MapPin className="w-4 h-4 text-[#1B4332]" />} title="Lokasi" desc="Tempat pelaksanaan event" />
+
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-gray-600">Nama Lokasi <span className="text-red-400">*</span></Label>
+          <Input required value={form.location} onChange={e => update('location', e.target.value)}
+            placeholder="Contoh: Gedung MPJ, Jakarta Pusat" className="rounded-xl text-sm" />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-gray-600">Link Google Maps</Label>
+          <Input value={form.locationLink} onChange={e => update('locationLink', e.target.value)}
+            placeholder="https://maps.google.com/..." className="rounded-xl text-sm" />
+        </div>
+      </div>
+
+      {/* ── Seksi 3: Peserta ────────────────── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+        <SectionHeader icon={<User className="w-4 h-4 text-[#1B4332]" />} title="Pengaturan Peserta" desc="Siapa yang bisa mendaftar" />
+
+        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+          <div>
+            <p className="text-sm font-semibold text-[#1B4332]">Buka Jalur Umum</p>
+            <p className="text-xs text-gray-400 mt-0.5">Izinkan peserta non-anggota (tanpa NIAM) mendaftar</p>
+          </div>
+          <Switch checked={form.isOpenForPublic} onCheckedChange={v => update('isOpenForPublic', v)} />
+        </div>
+      </div>
+
+      {/* ── Seksi 4: Pembayaran ──────────────── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+        <SectionHeader icon={<CreditCard className="w-4 h-4 text-[#1B4332]" />} title="Pembayaran" desc="Konfigurasi biaya & metode bayar" />
+
+        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+          <div>
+            <p className="text-sm font-semibold text-[#1B4332]">Event Berbayar</p>
+            <p className="text-xs text-gray-400 mt-0.5">Aktifkan jika peserta perlu membayar tiket</p>
+          </div>
+          <Switch checked={form.isPaid} onCheckedChange={v => update('isPaid', v)} />
+        </div>
+
+        {form.isPaid && (
+          <div className="space-y-4">
+            {/* Harga */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-gray-600">Harga Anggota (NIAM)</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">Rp</span>
+                  <Input type="number" min="0" value={form.priceNiam} onChange={e => update('priceNiam', e.target.value)}
+                    placeholder="0" className="rounded-xl text-sm pl-9" />
+                </div>
+                <p className="text-[10px] text-gray-400">Bisa Rp 0 (gratis untuk anggota)</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-gray-600">Harga Umum</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">Rp</span>
+                  <Input type="number" min="0" value={form.pricePublic} onChange={e => update('pricePublic', e.target.value)}
+                    placeholder="0" className="rounded-xl text-sm pl-9" />
+                </div>
+              </div>
+            </div>
+
+            {/* Metode Pembayaran */}
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-gray-600">Metode Pembayaran</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { value: 'manual', label: 'Transfer Manual', desc: 'Kode unik 3 digit' },
+                  { value: 'gateway', label: 'Midtrans Snap', desc: 'QRIS, VA, dll' },
+                ].map(opt => (
+                  <button key={opt.value} type="button" onClick={() => update('paymentMethod', opt.value as PaymentMethod)}
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${form.paymentMethod === opt.value ? 'border-[#1B4332] bg-[#1B4332]/5' : 'border-gray-200 hover:border-gray-300'}`}>
+                    <p className={`text-xs font-bold ${form.paymentMethod === opt.value ? 'text-[#1B4332]' : 'text-gray-700'}`}>{opt.label}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{opt.desc}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Bank Account (for manual) */}
+            {form.paymentMethod === 'manual' && (
+              <div className="space-y-3 p-4 bg-gray-50 rounded-xl">
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Rekening Tujuan</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-gray-600">Nama Bank</Label>
+                    <Input value={form.bankName} onChange={e => update('bankName', e.target.value)}
+                      placeholder="BCA, BNI, BSI..." className="rounded-xl text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-gray-600">No. Rekening</Label>
+                    <Input value={form.bankNumber} onChange={e => update('bankNumber', e.target.value)}
+                      placeholder="1234567890" className="rounded-xl text-sm" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-gray-600">Atas Nama</Label>
+                    <Input value={form.bankAccountName} onChange={e => update('bankAccountName', e.target.value)}
+                      placeholder="MPJ Indonesia" className="rounded-xl text-sm" />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Midtrans Config (for gateway) */}
+            {form.paymentMethod === 'gateway' && (
+              <div className="space-y-3 p-4 bg-blue-50 rounded-xl border border-blue-100">
+                <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">Konfigurasi Midtrans</p>
+                <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-blue-100">
+                  <div>
+                    <p className="text-xs font-semibold text-gray-700">Mode Sandbox</p>
+                    <p className="text-[10px] text-gray-400">Aktifkan untuk testing, matikan untuk production</p>
+                  </div>
+                  <Switch checked={form.midtransSandbox} onCheckedChange={v => update('midtransSandbox', v)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-gray-600">Server Key</Label>
+                  <Input type="password" value={form.midtransServerKey} onChange={e => update('midtransServerKey', e.target.value)}
+                    placeholder="SB-Mid-server-..." className="rounded-xl text-sm font-mono" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-gray-600">Client Key</Label>
+                  <Input value={form.midtransClientKey} onChange={e => update('midtransClientKey', e.target.value)}
+                    placeholder="SB-Mid-client-..." className="rounded-xl text-sm font-mono" />
+                </div>
+                <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg p-2">
+                  ⚠️ Server Key akan dienkripsi sebelum disimpan ke database. Jangan bagikan ke siapapun.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Seksi 5: Narasumber ──────────────── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+        <SectionHeader icon={<Building2 className="w-4 h-4 text-[#1B4332]" />} title="Narasumber" desc="Pilih narasumber utama event" />
+
+        <div className="space-y-1.5">
+          <Label className="text-xs font-semibold text-gray-600">Narasumber Utama</Label>
+          <SpeakerCombobox
+            value={form.speakerId ?? undefined}
+            onChange={id => update('speakerId', id)}
+            placeholder="Cari nama atau keahlian narasumber..."
+          />
+          <p className="text-[10px] text-gray-400">Pilih dari daftar narasumber terdaftar</p>
+        </div>
+
+        <div className="space-y-3">
+          {form.speakers.length === 0 ? (
+            <div className="text-center py-6 text-gray-400 text-sm bg-gray-50 rounded-xl">
+              Belum ada narasumber. Klik tombol di bawah untuk menambahkan.
+            </div>
+          ) : (
+            form.speakers.map((speaker, idx) => (
+              <div key={speaker.id} className="p-4 bg-gray-50 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold text-gray-500">Narasumber #{idx + 1}</p>
+                  <button type="button" onClick={() => removeSpeaker(speaker.id)} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-gray-500">Nama</Label>
+                    <Input value={speaker.name} onChange={e => updateSpeaker(speaker.id, 'name', e.target.value)}
+                      placeholder="Dr. Ahmad Fauzi" className="rounded-xl text-sm h-9" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs text-gray-500">Topik / Materi</Label>
+                    <Input value={speaker.topic} onChange={e => updateSpeaker(speaker.id, 'topic', e.target.value)}
+                      placeholder="Jurnalistik Digital" className="rounded-xl text-sm h-9" />
+                  </div>
+                  {form.eventType === 'Sistem Kelas' && (
+                    <div className="space-y-1">
+                      <Label className="text-xs text-gray-500">Kelas</Label>
+                      <Input value={speaker.kelas} onChange={e => updateSpeaker(speaker.id, 'kelas', e.target.value)}
+                        placeholder="Kelas A" className="rounded-xl text-sm h-9" />
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+
+          <button type="button" onClick={addSpeaker}
+            className="w-full py-2.5 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-400 hover:border-[#1B4332] hover:text-[#1B4332] transition-colors flex items-center justify-center gap-2">
+            <Plus className="w-4 h-4" /> Tambah Narasumber
+          </button>
+        </div>
+      </div>
+
+      {/* ── Submit ───────────────────────────── */}
+      <div className="flex gap-3 pb-8">
+        <Link href="/admin/events" className="flex-1">
+          <Button type="button" variant="outline" className="w-full rounded-xl">Batal</Button>
+        </Link>
+        <Button type="submit" disabled={isSubmitting}
+          className="flex-1 bg-[#1B4332] hover:bg-[#14532d] text-white rounded-xl font-semibold">
+          {isSubmitting ? 'Menyimpan...' : '💾 Simpan sebagai Draft'}
+        </Button>
+      </div>
+    </form>
+  )
+}
