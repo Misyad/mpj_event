@@ -13,7 +13,6 @@ import { Button } from '@/components/ui/button'
 import { PosterUploader } from '@/components/PosterUploader'
 import { SpeakerCombobox } from '@/components/SpeakerCombobox'
 import { EventCategory, CustomField, CustomFieldType } from '@/types'
-import { GripVertical } from 'lucide-react'
 
 type EventType = 'Sistem Kelas' | 'Non-Kelas'
 type PaymentMethod = 'manual' | 'gateway'
@@ -119,7 +118,7 @@ export default function NewEventPage() {
     update('customFields', form.customFields.filter(f => f.id !== id))
   }
 
-  function updateCustomField(id: string, field: keyof CustomField, value: any) {
+  function updateCustomField(id: string, field: keyof CustomField, value: CustomField[keyof CustomField]) {
     update('customFields', form.customFields.map(f => f.id === id ? { ...f, [field]: value } : f))
   }
 
@@ -292,7 +291,7 @@ export default function NewEventPage() {
                 Belum ada pertanyaan tambahan.
               </div>
             ) : (
-              form.customFields.map((field, idx) => (
+              form.customFields.map((field) => (
                 <div key={field.id} className="p-4 bg-white border border-gray-200 rounded-xl space-y-4 shadow-sm relative group">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 space-y-3">

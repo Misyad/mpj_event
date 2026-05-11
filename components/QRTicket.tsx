@@ -105,7 +105,7 @@ export function QRTicket({ participant, event }: { participant: Participant; eve
         <p className="text-xs font-bold text-amber-700 mb-1">📸 Cara Simpan Tiket</p>
         <ol className="text-xs text-amber-600 space-y-0.5 list-decimal list-inside">
           <li>Screenshot halaman ini</li>
-          <li>Simpan ke galeri / album "Tiket Event"</li>
+          <li>Simpan ke galeri / album &quot;Tiket Event&quot;</li>
           <li>Tunjukkan QR Code saat check-in di lokasi</li>
         </ol>
       </div>
