@@ -1,0 +1,82 @@
+export const events = [
+  {
+    id: "1",
+    title: "Workshop UI/UX Design 2026",
+    category: "Pelatihan",
+    poster_url: "https://picsum.photos/seed/workshop-mpj/800/450",
+    description:
+      "Workshop intensif selama satu hari penuh membahas prinsip dasar UI/UX Design, tools Figma, dan studi kasus nyata dari produk digital Indonesia.",
+    location_gmaps: "https://maps.google.com/?q=Jakarta+Pusat",
+    location_name: "Gedung MPJ, Jakarta Pusat",
+    start_date: "2026-05-10T09:00:00",
+    is_open_for_public: true,
+    is_paid: true,
+    price_niam: 25000,
+    price_public: 100000,
+    status: "APPROVED",
+    max_participants: 50,
+    current_participants: 42,
+    status_pendaftaran: "open",
+  },
+  {
+    id: "2",
+    title: "Rapat Koordinasi Nasional",
+    category: "Rapat",
+    poster_url: "https://picsum.photos/seed/rakornas-mpj/800/450",
+    description:
+      "Rapat koordinasi seluruh pengurus MPJ tingkat nasional untuk membahas program kerja, evaluasi, dan rencana strategis tahun 2026.",
+    location_gmaps: "https://maps.google.com/?q=Bandung",
+    location_name: "Hotel Grand Preanger, Bandung",
+    start_date: "2026-06-01T08:00:00",
+    is_open_for_public: false,
+    is_paid: false,
+    price_niam: 0,
+    price_public: 0,
+    status: "APPROVED",
+  },
+  {
+    id: "3",
+    title: "Pelantikan Pengurus Regional Jawa Barat",
+    category: "Seremonial",
+    poster_url: "https://picsum.photos/seed/pelantikan-mpj/800/450",
+    description:
+      "Pelantikan resmi pengurus MPJ Regional Jawa Barat periode 2026-2028.",
+    location_gmaps: "https://maps.google.com/?q=Bandung+Kota",
+    location_name: "Aula Serbaguna, Bandung",
+    start_date: "2026-04-20T10:00:00",
+    is_open_for_public: true,
+    is_paid: false,
+    price_niam: 0,
+    price_public: 0,
+    status: "FINISHED",
+  },
+]
+
+export const participants = [
+  {
+    id: "p1",
+    event_id: "1",
+    registration_path: "NIAM",
+    payment_status: "Paid",
+    attendance_status: "Registered",
+    qr_token: "TOKEN-NIAM-001",
+    crew: {
+      niam: "MPJ-001",
+      full_name: "Budi Santoso",
+      unit: "Regional Jakarta",
+    },
+  },
+  {
+    id: "p2",
+    event_id: "1",
+    registration_path: "UMUM",
+    payment_status: "Paid",
+    attendance_status: "Registered",
+    qr_token: "TOKEN-UMUM-002",
+    guest: {
+      full_name: "Siti Rahayu",
+      institution_name: "Universitas Indonesia",
+      whatsapp: "081234567890",
+    },
+  },
+]

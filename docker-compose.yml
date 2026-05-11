@@ -15,3 +15,17 @@ services:
       DB_USER: ${DB_USER:-}
       DB_PASSWORD: ${DB_PASSWORD:-}
       DB_NAME: ${DB_NAME:-}
+
+  mpj-event-api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: mpj-event-api:latest
+    container_name: ${API_NAME:-mpj-event-api}
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-4000}:4000"
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
