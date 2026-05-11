@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { AUTH_ROLE_CONFIGS, getRequiredRoleForPath } from '@/lib/auth/roles'
+import { getAuthRouteConfig, getRequiredRoleForPath } from '@/lib/auth/role-config'
+import { verifyAccessToken } from '@/lib/auth/token'
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const requiredRole = getRequiredRoleForPath(pathname)
 
   if (!requiredRole) return NextResponse.next()
 
-  const config = AUTH_ROLE_CONFIGS.find((role) => role.role === requiredRole)
+  const config = getAuthRouteConfig(requiredRole)
   if (!config) return NextResponse.next()
 
-  const token = request.cookies.get(config.cookieName)?.value
-  if (!token) {
+  const token = await verifyAccessToken(request.cookies.get(config.cookieName)?.value)
+  if (!token || token.role !== requiredRole) {
     const loginUrl = request.nextUrl.clone()
     loginUrl.pathname = config.loginPath
     loginUrl.searchParams.set('next', pathname)

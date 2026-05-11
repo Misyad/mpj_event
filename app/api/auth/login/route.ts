@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type { AuthRole } from '@/lib/auth/roles'
 import { getAuthRoleConfig } from '@/lib/auth/roles'
-import { encodeAuthSession } from '@/lib/auth/session'
+import { loginAdmin } from '@/lib/server/rbac'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -23,31 +23,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Email dan password wajib diisi' }, { status: 400 })
     }
 
-    const token = encodeAuthSession({
+    const login = await loginAdmin(request, {
       role,
       email,
+      password,
       remember,
-      issuedAt: new Date().toISOString(),
     })
     const response = NextResponse.json({ ok: true, role, redirectTo: config.dashboardPath })
 
-    response.cookies.set(config.cookieName, token, {
+    response.cookies.set(config.cookieName, login.accessToken, {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
       path: '/',
-      maxAge: remember ? 60 * 60 * 24 * 30 : 60 * 60 * 8,
+      maxAge: login.maxAge,
+    })
+    response.cookies.set(`${config.cookieName}_refresh`, login.refreshToken, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: login.maxAge,
     })
     response.cookies.set('mpj_active_role', role, {
       httpOnly: false,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
       path: '/',
-      maxAge: remember ? 60 * 60 * 24 * 30 : 60 * 60 * 8,
+      maxAge: login.maxAge,
     })
 
     return response
-  } catch {
-    return NextResponse.json({ ok: false, error: 'Payload login tidak valid' }, { status: 400 })
+  } catch (error) {
+    return NextResponse.json(
+      { ok: false, error: error instanceof Error ? error.message : 'Payload login tidak valid' },
+      { status: 400 },
+    )
   }
 }
