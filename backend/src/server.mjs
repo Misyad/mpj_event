@@ -2,10 +2,13 @@ import http from "node:http"
 import { testConnection } from "./db.mjs"
 import { bootstrapDatabase } from "./schema.mjs"
 import {
+  createEvent,
+  deleteEvent,
   getEvent,
   getParticipantByToken,
   listEvents,
   listParticipants,
+  updateEvent,
 } from "./repository.mjs"
 
 const port = Number(process.env.PORT || 4000)
@@ -55,6 +58,10 @@ const server = http.createServer(async (req, res) => {
         "GET /health",
         "GET /events",
         "GET /events/:id",
+        "POST /events",
+        "PUT /events/:id",
+        "PATCH /events/:id",
+        "DELETE /events/:id",
         "GET /participants",
         "GET /participants?event_id=1",
         "POST /tickets/verify",
@@ -97,6 +104,22 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (req.method === "POST" && pathname === "/events") {
+    try {
+      const event = await createEvent(await readJson(req))
+
+      return sendJson(res, 201, {
+        ok: true,
+        data: event,
+      })
+    } catch (error) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Failed to create event",
+      })
+    }
+  }
+
   if (req.method === "GET" && pathname.startsWith("/events/")) {
     const id = decodeURIComponent(pathname.split("/")[2] || "")
     const event = await getEvent(id)
@@ -112,6 +135,54 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       data: event,
     })
+  }
+
+  if ((req.method === "PUT" || req.method === "PATCH") && pathname.startsWith("/events/")) {
+    try {
+      const id = decodeURIComponent(pathname.split("/")[2] || "")
+      const event = await updateEvent(id, await readJson(req))
+
+      if (!event) {
+        return sendJson(res, 404, {
+          ok: false,
+          error: "Event not found",
+        })
+      }
+
+      return sendJson(res, 200, {
+        ok: true,
+        data: event,
+      })
+    } catch (error) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Failed to update event",
+      })
+    }
+  }
+
+  if (req.method === "DELETE" && pathname.startsWith("/events/")) {
+    try {
+      const id = decodeURIComponent(pathname.split("/")[2] || "")
+      const deleted = await deleteEvent(id)
+
+      if (!deleted) {
+        return sendJson(res, 404, {
+          ok: false,
+          error: "Event not found",
+        })
+      }
+
+      return sendJson(res, 200, {
+        ok: true,
+        data: { id },
+      })
+    } catch (error) {
+      return sendJson(res, 500, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Failed to delete event",
+      })
+    }
   }
 
   if (req.method === "GET" && pathname === "/participants") {
