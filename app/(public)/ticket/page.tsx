@@ -6,7 +6,7 @@ import { QRTicket } from '@/components/QRTicket'
 import { normalizeEvent } from '@/lib/event-api'
 import type { Event, Participant } from '@/types'
 
-const API_URL = process.env.NEXT_PUBLIC_MPJ_EVENT_API_URL || 'https://api.projecthasan.com'
+const API_URL = ''
 
 function TicketContent() {
   const params = useSearchParams()
@@ -34,16 +34,9 @@ function TicketContent() {
           throw new Error(verifyPayload.error || 'Tiket tidak ditemukan')
         }
 
-        const eventResponse = await fetch(`${API_URL}/events/${verifyPayload.data.event_id}`)
-        const eventPayload = await eventResponse.json()
-
-        if (!eventResponse.ok || !eventPayload.ok) {
-          throw new Error(eventPayload.error || 'Event tidak ditemukan')
-        }
-
         setData({
           participant: verifyPayload.data,
-          event: normalizeEvent(eventPayload.data),
+          event: normalizeEvent(verifyPayload.event),
         })
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : 'Tiket tidak ditemukan')

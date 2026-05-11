@@ -1,0 +1,17 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { confirmParticipantFromPayment } from '@/lib/server/events'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+export async function POST(request: NextRequest) {
+  try {
+    const participant = await confirmParticipantFromPayment(await request.json())
+    return NextResponse.json({ ok: true, data: participant })
+  } catch (error) {
+    return NextResponse.json(
+      { ok: false, error: error instanceof Error ? error.message : 'Gagal memproses payment verified' },
+      { status: 400 },
+    )
+  }
+}

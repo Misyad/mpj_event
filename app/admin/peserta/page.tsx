@@ -20,12 +20,17 @@ function PaymentBadge({ status }: { status: PaymentStatus }) {
 }
 
 function AttendanceBadge({ status }: { status: AttendanceStatus }) {
-  const map: Record<AttendanceStatus, { label: string; icon: React.ReactNode; class: string }> = {
+  const map: Record<string, { label: string; icon: React.ReactNode; class: string }> = {
     Registered: { label: 'Terdaftar',  icon: <Clock className="w-3 h-3" />,       class: 'bg-gray-100 text-gray-600' },
+    Confirmed:  { label: 'Confirmed',  icon: <CheckCircle2 className="w-3 h-3" />, class: 'bg-blue-100 text-blue-700' },
     Attended:   { label: 'Hadir',      icon: <CheckCircle2 className="w-3 h-3" />, class: 'bg-emerald-100 text-emerald-700' },
     Cancelled:  { label: 'Dibatalkan', icon: <XCircle className="w-3 h-3" />,      class: 'bg-red-100 text-red-600' },
+    registered: { label: 'Terdaftar',  icon: <Clock className="w-3 h-3" />,       class: 'bg-gray-100 text-gray-600' },
+    confirmed:  { label: 'Confirmed',  icon: <CheckCircle2 className="w-3 h-3" />, class: 'bg-blue-100 text-blue-700' },
+    attended:   { label: 'Hadir',      icon: <CheckCircle2 className="w-3 h-3" />, class: 'bg-emerald-100 text-emerald-700' },
+    cancelled:  { label: 'Dibatalkan', icon: <XCircle className="w-3 h-3" />,      class: 'bg-red-100 text-red-600' },
   }
-  const { label, icon, class: cls } = map[status]
+  const { label, icon, class: cls } = map[status] ?? map.Registered
   return (
     <span className={`flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full w-fit ${cls}`}>
       {icon}{label}

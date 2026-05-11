@@ -3,6 +3,7 @@ import { testConnection } from "./db.mjs"
 import { bootstrapDatabase } from "./schema.mjs"
 import {
   checkInParticipant,
+  confirmParticipantFromPayment,
   createEvent,
   deleteEvent,
   getEvent,
@@ -299,6 +300,22 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 400, {
         ok: false,
         error: "Invalid JSON payload",
+      })
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/payments/verified") {
+    try {
+      const participant = await confirmParticipantFromPayment(await readJson(req))
+
+      return sendJson(res, 200, {
+        ok: true,
+        data: participant,
+      })
+    } catch (error) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Failed to process payment verification",
       })
     }
   }

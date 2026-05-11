@@ -57,6 +57,66 @@ export async function ensureSchema() {
   await ensureColumn("mpj_event_participants", "institution_name", "VARCHAR(255) NULL")
   await ensureColumn("mpj_event_participants", "whatsapp", "VARCHAR(50) NULL")
   await ensureColumn("mpj_event_participants", "checked_in_at", "DATETIME NULL")
+
+  await ensureColumn("mpj_event_events", "slug", "VARCHAR(160) NULL")
+  await ensureColumn("mpj_event_events", "end_date", "DATETIME NULL")
+  await ensureColumn("mpj_event_events", "location_type", "VARCHAR(20) NOT NULL DEFAULT 'offline'")
+  await ensureColumn("mpj_event_events", "meeting_url", "TEXT NULL")
+  await ensureColumn("mpj_event_events", "scope", "VARCHAR(20) NOT NULL DEFAULT 'pusat'")
+  await ensureColumn("mpj_event_events", "region_id", "VARCHAR(36) NULL")
+  await ensureColumn("mpj_event_events", "is_published", "TINYINT(1) NOT NULL DEFAULT 0")
+  await ensureColumn("mpj_event_events", "is_public", "TINYINT(1) NOT NULL DEFAULT 1")
+  await ensureColumn("mpj_event_events", "attended_count", "INT NOT NULL DEFAULT 0")
+  await ensureColumn("mpj_event_events", "registration_deadline", "DATETIME NULL")
+
+  await ensureColumn("mpj_event_participants", "user_id", "VARCHAR(36) NULL")
+  await ensureColumn("mpj_event_participants", "niam", "VARCHAR(50) NULL")
+  await ensureColumn("mpj_event_participants", "email", "VARCHAR(255) NULL")
+  await ensureColumn("mpj_event_participants", "class_id", "VARCHAR(36) NULL")
+  await ensureColumn("mpj_event_participants", "status", "VARCHAR(50) NOT NULL DEFAULT 'registered'")
+  await ensureColumn("mpj_event_participants", "ticket_code", "VARCHAR(120) NULL")
+  await ensureColumn("mpj_event_participants", "attended_at", "DATETIME NULL")
+  await ensureColumn("mpj_event_participants", "payment_id", "VARCHAR(120) NULL")
+  await ensureColumn("mpj_event_participants", "custom_answers", "JSON NULL")
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS mpj_event_classes (
+      id VARCHAR(36) NOT NULL,
+      event_id VARCHAR(36) NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      quota INT NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY mpj_event_classes_event_id_idx (event_id)
+    )
+  `)
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS mpj_event_custom_fields (
+      id VARCHAR(36) NOT NULL,
+      event_id VARCHAR(36) NOT NULL,
+      label VARCHAR(255) NOT NULL,
+      type VARCHAR(50) NOT NULL,
+      required TINYINT(1) NOT NULL DEFAULT 0,
+      options JSON NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY mpj_event_custom_fields_event_id_idx (event_id)
+    )
+  `)
+
+  await query(`
+    UPDATE mpj_event_events
+    SET slug = LOWER(REPLACE(REPLACE(REPLACE(TRIM(title), ' ', '-'), '/', '-'), '--', '-'))
+    WHERE slug IS NULL OR slug = ''
+  `)
+
+  await query(`
+    UPDATE mpj_event_events
+    SET is_published = CASE WHEN UPPER(status) IN ('APPROVED', 'LIVE', 'FINISHED', 'COMPLETED') THEN 1 ELSE is_published END
+  `)
 }
 
 async function ensureColumn(tableName, columnName, definition) {

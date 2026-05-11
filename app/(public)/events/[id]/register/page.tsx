@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic'
 export default async function RegisterPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const event = (await getEventFromDb(id).catch(() => null)) ?? getEventById(id)
-  if (!event || event.status !== 'APPROVED') notFound()
+  if (!event || (event.status !== 'APPROVED' && event.status !== 'approved')) notFound()
 
   return <RegisterForm event={event} />
 }

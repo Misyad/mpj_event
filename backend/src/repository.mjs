@@ -5,54 +5,103 @@ const EVENT_FIELDS = [
   "title",
   "category",
   "poster_url",
+  "slug",
   "description",
   "location_gmaps",
   "location_name",
+  "location_type",
+  "meeting_url",
   "start_date",
+  "end_date",
   "is_open_for_public",
   "is_paid",
   "price_niam",
   "price_public",
   "status",
+  "scope",
+  "region_id",
+  "is_published",
+  "is_public",
   "max_participants",
   "current_participants",
+  "attended_count",
   "status_pendaftaran",
+  "registration_deadline",
 ]
 
 const EVENT_CREATE_DEFAULTS = {
   category: "Pelatihan",
+  slug: null,
   poster_url: null,
   description: "",
   location_gmaps: "",
   location_name: "",
+  location_type: "offline",
+  meeting_url: null,
   is_open_for_public: true,
   is_paid: false,
   price_niam: 0,
   price_public: 0,
-  status: "PENDING",
+  status: "draft",
+  scope: "pusat",
+  region_id: null,
+  is_published: false,
+  is_public: true,
   max_participants: null,
   current_participants: 0,
+  attended_count: 0,
   status_pendaftaran: "open",
+  registration_deadline: null,
+}
+
+function slugify(value) {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80)
 }
 
 function mapEvent(row) {
   return {
     id: row.id,
     title: row.title,
+    slug: row.slug || slugify(row.title),
     category: row.category,
     poster_url: row.poster_url,
+    posterUrl: row.poster_url,
     description: row.description,
     location_gmaps: row.location_gmaps,
+    locationMapsUrl: row.location_gmaps,
     location_name: row.location_name,
+    location: row.location_name,
+    locationType: row.location_type || "offline",
+    meetingUrl: row.meeting_url,
     start_date: row.start_date instanceof Date ? row.start_date.toISOString() : row.start_date,
+    dateStart: row.start_date instanceof Date ? row.start_date.toISOString() : row.start_date,
+    dateEnd: row.end_date instanceof Date ? row.end_date.toISOString() : row.end_date,
     is_open_for_public: Boolean(row.is_open_for_public),
+    allowPublic: Boolean(row.is_open_for_public),
     is_paid: Boolean(row.is_paid),
+    isPaidEvent: Boolean(row.is_paid),
     price_niam: Number(row.price_niam),
+    priceNiam: Number(row.price_niam),
     price_public: Number(row.price_public),
+    priceUmum: Number(row.price_public),
     status: row.status,
+    scope: row.scope || "pusat",
+    regionId: row.region_id,
+    isPublished: Boolean(row.is_published),
+    isPublic: Boolean(row.is_public),
     max_participants: row.max_participants === null ? null : Number(row.max_participants),
+    quota: row.max_participants === null ? null : Number(row.max_participants),
     current_participants: Number(row.current_participants),
+    registeredCount: Number(row.current_participants),
+    attendedCount: Number(row.attended_count || 0),
     status_pendaftaran: row.status_pendaftaran,
+    registrationDeadline: row.registration_deadline instanceof Date ? row.registration_deadline.toISOString() : row.registration_deadline,
   }
 }
 
@@ -69,11 +118,19 @@ function mapParticipant(row) {
     registration_path: row.registration_path,
     payment_status: row.payment_status,
     attendance_status: row.attendance_status,
+    status: row.status || row.attendance_status,
     qr_token: row.qr_token,
+    ticketCode: row.ticket_code || row.qr_token,
+    paymentId: row.payment_id,
     full_name: row.full_name,
+    fullName: row.full_name,
+    email: row.email,
     institution_name: row.institution_name,
+    institution: row.institution_name,
     whatsapp: row.whatsapp,
     checked_in_at: row.checked_in_at instanceof Date ? row.checked_in_at.toISOString() : row.checked_in_at,
+    attendedAt: row.attended_at instanceof Date ? row.attended_at.toISOString() : row.attended_at,
+    customAnswers: parseJson(row.custom_answers) || {},
     crew: parseJson(row.crew_json),
     guest: parseJson(row.guest_json),
   }
@@ -126,9 +183,13 @@ function normalizeEventPayload(payload, mode) {
       field === "max_participants"
     ) {
       normalized[field] = toNullableInteger(value)
-    } else if (field === "start_date") {
+    } else if (field === "start_date" || field === "end_date" || field === "registration_deadline") {
+      if (!value) {
+        normalized[field] = null
+        continue
+      }
       if (Number.isNaN(Date.parse(value))) {
-        throw new Error("start_date must be a valid date")
+        throw new Error(`${field} must be a valid date`)
       }
 
       normalized[field] = new Date(value)
@@ -146,7 +207,7 @@ export async function listEvents() {
 }
 
 export async function getEvent(id) {
-  const rows = await query("SELECT * FROM mpj_event_events WHERE id = :id LIMIT 1", { id })
+  const rows = await query("SELECT * FROM mpj_event_events WHERE id = :id OR slug = :id LIMIT 1", { id })
   return rows[0] ? mapEvent(rows[0]) : null
 }
 
@@ -157,18 +218,18 @@ export async function createEvent(payload) {
   await query(
     `
       INSERT INTO mpj_event_events (
-        id, title, category, poster_url, description, location_gmaps,
-        location_name, start_date, is_open_for_public, is_paid,
-        price_niam, price_public, status, max_participants,
-        current_participants, status_pendaftaran
+        id, title, slug, category, poster_url, description, location_gmaps,
+        location_name, location_type, meeting_url, start_date, end_date, is_open_for_public, is_paid,
+        price_niam, price_public, status, scope, region_id, is_published, is_public, max_participants,
+        current_participants, attended_count, status_pendaftaran, registration_deadline
       ) VALUES (
-        :id, :title, :category, :poster_url, :description, :location_gmaps,
-        :location_name, :start_date, :is_open_for_public, :is_paid,
-        :price_niam, :price_public, :status, :max_participants,
-        :current_participants, :status_pendaftaran
+        :id, :title, :slug, :category, :poster_url, :description, :location_gmaps,
+        :location_name, :location_type, :meeting_url, :start_date, :end_date, :is_open_for_public, :is_paid,
+        :price_niam, :price_public, :status, :scope, :region_id, :is_published, :is_public, :max_participants,
+        :current_participants, :attended_count, :status_pendaftaran, :registration_deadline
       )
     `,
-    { id, ...event },
+    { id, ...event, slug: event.slug || slugify(event.title) },
   )
 
   return getEvent(id)
@@ -207,7 +268,7 @@ export async function listParticipants(eventId) {
 
 export async function getParticipantByToken(token) {
   const rows = await query(
-    "SELECT * FROM mpj_event_participants WHERE qr_token = :token LIMIT 1",
+    "SELECT * FROM mpj_event_participants WHERE qr_token = :token OR ticket_code = :token LIMIT 1",
     { token },
   )
   return rows[0] ? mapParticipant(rows[0]) : null
@@ -256,12 +317,12 @@ export async function registerParticipant(eventId, payload) {
     `
       INSERT INTO mpj_event_participants (
         id, event_id, registration_path, payment_status,
-        attendance_status, qr_token, crew_json, guest_json,
-        full_name, institution_name, whatsapp
+        attendance_status, status, qr_token, ticket_code, crew_json, guest_json,
+        full_name, institution_name, whatsapp, niam, email, class_id, custom_answers
       ) VALUES (
         :id, :event_id, :registration_path, :payment_status,
-        :attendance_status, :qr_token, :crew_json, :guest_json,
-        :full_name, :institution_name, :whatsapp
+        :attendance_status, :status, :qr_token, :qr_token, :crew_json, :guest_json,
+        :full_name, :institution_name, :whatsapp, :niam, :email, :class_id, :custom_answers
       )
     `,
     {
@@ -269,13 +330,18 @@ export async function registerParticipant(eventId, payload) {
       event_id: eventId,
       registration_path: registrationPath,
       payment_status: event.is_paid ? "Unpaid" : "Free",
-      attendance_status: "Registered",
+      attendance_status: event.is_paid ? "Registered" : "Confirmed",
+      status: event.is_paid ? "registered" : "confirmed",
       qr_token: qrToken,
       crew_json: crew ? JSON.stringify(crew) : null,
       guest_json: guest ? JSON.stringify(guest) : null,
       full_name: fullName,
       institution_name: payload.institution_name || null,
       whatsapp: payload.whatsapp || null,
+      niam: payload.niam || null,
+      email: payload.email || null,
+      class_id: payload.class_id || null,
+      custom_answers: JSON.stringify(payload.custom_answers || payload.customAnswers || {}),
     },
   )
 
@@ -292,18 +358,57 @@ export async function checkInParticipant(token) {
 
   if (!participant) return null
 
-  if (participant.attendance_status === "Attended") {
+  if (participant.status === "attended" || participant.attendance_status === "Attended") {
     return participant
+  }
+
+  if (participant.status !== "confirmed" && participant.attendance_status !== "Confirmed") {
+    throw new Error("QR is not active until participant is confirmed")
   }
 
   await query(
     `
       UPDATE mpj_event_participants
-      SET attendance_status = 'Attended', checked_in_at = NOW()
-      WHERE qr_token = :token
+      SET status = 'attended', attendance_status = 'Attended', attended_at = NOW(), checked_in_at = NOW()
+      WHERE qr_token = :token OR ticket_code = :token
     `,
     { token },
   )
 
   return getParticipantByToken(token)
+}
+
+export async function confirmParticipantFromPayment(payload) {
+  if (payload.sourceType !== "event_registration") {
+    throw new Error("Payment source type is not valid for event module")
+  }
+
+  const participantId = String(payload.sourceId || "").trim()
+  if (!participantId) {
+    throw new Error("sourceId is required")
+  }
+
+  const status = String(payload.status || "verified").toLowerCase()
+  if (!["verified", "paid", "success", "confirmed"].includes(status)) {
+    throw new Error("Payment is not verified")
+  }
+
+  await query(
+    `
+      UPDATE mpj_event_participants
+      SET status = 'confirmed',
+        attendance_status = 'Confirmed',
+        payment_status = 'Paid',
+        payment_id = COALESCE(:paymentId, payment_id)
+      WHERE id = :participantId
+    `,
+    {
+      participantId,
+      paymentId: payload.paymentId || null,
+    },
+  )
+
+  const rows = await query("SELECT * FROM mpj_event_participants WHERE id = :participantId LIMIT 1", { participantId })
+  if (!rows[0]) throw new Error("Participant not found")
+  return mapParticipant(rows[0])
 }

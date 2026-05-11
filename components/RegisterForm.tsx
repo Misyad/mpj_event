@@ -94,7 +94,7 @@ export function RegisterForm({ event }: { event: Event }) {
       }
 
       setSubmitted(true)
-      if (!event.is_paid) setTimeout(() => router.push(`/ticket?token=${encodeURIComponent(payload.data.qr_token)}`), 800)
+      if (!event.is_paid) setTimeout(() => router.push(`/ticket/${encodeURIComponent(payload.data.ticketCode || payload.data.qr_token)}`), 800)
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Pendaftaran gagal')
     }

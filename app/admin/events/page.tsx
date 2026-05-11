@@ -20,13 +20,18 @@ import { dummyParticipants, dummySpeakers } from '@/lib/dummy'
 import { normalizeEvent } from '@/lib/event-api'
 import type { Event, EventCategory, EventStatus } from '@/types'
 
-const STATUS_LABELS: Record<EventStatus, string> = {
+const STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft',
   PENDING: 'Menunggu',
   APPROVED: 'Published',
   LIVE: 'Ongoing',
   FINISHED: 'Selesai',
   COMPLETED: 'Completed',
+  draft: 'Draft',
+  pending: 'Menunggu',
+  approved: 'Published',
+  registration_closed: 'Pendaftaran Ditutup',
+  finished: 'Selesai',
 }
 
 const CATEGORY_OPTIONS: EventCategory[] = ['Pelatihan', 'Seremonial', 'Rapat']

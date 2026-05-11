@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 
 type ScanResult = { success: true; participant: Participant } | { success: false; message: string } | null
 
-const API_URL = process.env.NEXT_PUBLIC_MPJ_EVENT_API_URL || 'https://api.projecthasan.com'
+const API_URL = ''
 
 export function ScanPage() {
   const [loggedIn, setLoggedIn] = useState(false)

@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    const events = await getEventsFromDb()
+    const events = await getEventsFromDb({ publicOnly: true })
     return NextResponse.json({ ok: true, data: events })
   } catch (error) {
     return NextResponse.json(

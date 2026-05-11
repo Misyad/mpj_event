@@ -13,7 +13,7 @@ export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params
-  const event = (await getEventFromDb(id).catch(() => null)) ?? getEventById(id)
+  const event = await getEventForDetail(id)
   if (!event) return { title: 'Event tidak ditemukan' }
   return {
     title: `${event.title} — MPJ Apps`,
@@ -26,6 +26,10 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   }
 }
 
+export async function getEventForDetail(identifier: string) {
+  return (await getEventFromDb(identifier).catch(() => null)) ?? getEventById(identifier)
+}
+
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('id-ID', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
@@ -35,12 +39,11 @@ function formatTime(dateStr: string) {
   return new Date(dateStr).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB'
 }
 
-export default async function EventDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
-  const event = (await getEventFromDb(id).catch(() => null)) ?? getEventById(id)
+export async function EventDetailView({ identifier }: { identifier: string }) {
+  const event = await getEventForDetail(identifier)
   if (!event) notFound()
 
-  const isOpen = event.status === 'APPROVED'
+  const isOpen = event.status === 'APPROVED' || event.status === 'approved'
 
   return (
     <div className="flex flex-col min-h-screen pb-24">
@@ -146,7 +149,7 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
       {/* CTA Sticky */}
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-107.5 bg-white border-t border-gray-100 px-4 py-4">
         {isOpen ? (
-          <Link href={`/events/${event.id}/register`}
+          <Link href={`/register/${event.slug || event.id}`}
             className="block w-full bg-[#C9A227] text-white text-center py-3.5 rounded-full font-bold text-sm tracking-wide shadow-md">
             Daftar Sekarang →
           </Link>
@@ -158,4 +161,9 @@ export default async function EventDetailPage({ params }: { params: Promise<{ id
       </div>
     </div>
   )
+}
+
+export default async function EventDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  return <EventDetailView identifier={id} />
 }

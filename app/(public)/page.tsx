@@ -3,6 +3,7 @@ import { EventStatus } from '@/types'
 import { Calendar } from 'lucide-react'
 import { dummyEvents } from '@/lib/dummy'
 import { getEventsFromDb } from '@/lib/server/events'
+import Link from 'next/link'
 
 const VISIBLE: EventStatus[] = ['APPROVED', 'FINISHED', 'COMPLETED']
 
@@ -12,13 +13,13 @@ export default async function Home() {
   let sourceEvents = dummyEvents
 
   try {
-    sourceEvents = await getEventsFromDb()
+    sourceEvents = await getEventsFromDb({ publicOnly: true })
   } catch {
     sourceEvents = dummyEvents
   }
 
   const events = sourceEvents
-    .filter((e) => VISIBLE.includes(e.status))
+    .filter((e) => VISIBLE.includes(e.status) || e.status === 'approved' || e.status === 'finished')
     .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
 
   const live = events.filter((e) => e.status === 'APPROVED')
@@ -34,12 +35,12 @@ export default async function Home() {
           </div>
           <span className="font-extrabold text-[#1B4332] text-lg tracking-tight">MPJ Event</span>
         </div>
-        <a
+        <Link
           href="/scan"
           className="text-sm font-semibold text-[#1B4332] border-2 border-[#1B4332] px-4 py-1.5 rounded-full hover:bg-[#1B4332] hover:text-white transition-colors"
         >
           Masuk
-        </a>
+        </Link>
       </header>
 
       <main className="flex-1 px-4 py-5 space-y-6">

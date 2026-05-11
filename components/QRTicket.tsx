@@ -12,10 +12,9 @@ function formatDate(dateStr: string) {
 }
 
 export function QRTicket({ participant, event }: { participant: Participant; event: Event }) {
-  const isValid   = participant.attendance_status === 'Registered'
-  const isUsed    = participant.attendance_status === 'Attended'
-  const isCancelled = participant.attendance_status === 'Cancelled'
-
+  const status = participant.status || participant.attendance_status
+  const isValid = status === 'confirmed' || status === 'Confirmed'
+  const isUsed = status === 'attended' || status === 'Attended'
   const name = participant.registration_path === 'NIAM'
     ? participant.crew?.full_name
     : participant.guest?.full_name

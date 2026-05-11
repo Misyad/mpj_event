@@ -8,16 +8,20 @@ import Link from 'next/link'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { EventStatus } from '@/types'
 
-const STATUS_LABELS: Record<EventStatus, string> = {
+const STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft', PENDING: 'Menunggu Approval', APPROVED: 'Disetujui',
   LIVE: 'Live', FINISHED: 'Selesai', COMPLETED: 'Completed',
+  draft: 'Draft', pending: 'Menunggu Approval', approved: 'Disetujui',
+  registration_closed: 'Pendaftaran Ditutup', finished: 'Selesai',
 }
-const STATUS_COLORS: Record<EventStatus, string> = {
+const STATUS_COLORS: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-600', PENDING: 'bg-amber-100 text-amber-700',
   APPROVED: 'bg-blue-100 text-blue-700', LIVE: 'bg-green-100 text-green-700',
   FINISHED: 'bg-purple-100 text-purple-700', COMPLETED: 'bg-emerald-100 text-emerald-700',
+  draft: 'bg-gray-100 text-gray-600', pending: 'bg-amber-100 text-amber-700',
+  approved: 'bg-blue-100 text-blue-700', registration_closed: 'bg-red-100 text-red-600',
+  finished: 'bg-purple-100 text-purple-700',
 }
 const PAYMENT_COLORS: Record<string, string> = {
   Free: 'bg-gray-100 text-gray-500', Unpaid: 'bg-red-100 text-red-600',
@@ -292,7 +296,7 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
             <div className="border-t pt-4 space-y-2">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Ubah Status Event</p>
               <div className="flex flex-wrap gap-2">
-                {(['DRAFT', 'PENDING', 'APPROVED', 'FINISHED', 'COMPLETED'] as EventStatus[]).map(s => (
+                {['DRAFT', 'PENDING', 'APPROVED', 'FINISHED', 'COMPLETED'].map(s => (
                   <button key={s} className={`text-xs font-semibold px-3 py-1.5 rounded-xl border-2 transition-colors ${event.status === s ? 'border-[#1B4332] bg-[#1B4332] text-white' : 'border-gray-200 text-gray-600 hover:border-[#1B4332] hover:text-[#1B4332]'}`}>
                     {STATUS_LABELS[s]}
                   </button>
