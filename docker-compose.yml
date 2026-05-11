@@ -1,0 +1,17 @@
+services:
+  mpj-event-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mpj-event-app:latest
+    container_name: ${APP_NAME:-mpj-event-app}
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      DB_HOST: ${DB_HOST:-}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_USER: ${DB_USER:-}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      DB_NAME: ${DB_NAME:-}

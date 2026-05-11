@@ -2,8 +2,6 @@ pipeline {
     agent any
 
     environment {
-        // Ganti dengan registry & nama image Anda
-        DOCKER_IMAGE = "registry.gitlab.com/alifhamdanrifai/mpj-event"
         APP_NAME = "mpj-event-app"
     }
 
@@ -14,38 +12,25 @@ pipeline {
             }
         }
 
-        stage('Install Dependencies') {
-            steps {
-                sh 'npm install'
-            }
-        }
-
-        stage('Build Next.js') {
-            steps {
-                sh 'npm run build'
-            }
-        }
-
-        stage('Docker Build & Push') {
+        stage('Deploy with Docker Compose') {
             steps {
                 script {
-                    // Perlu login ke docker registry dahulu di Jenkins Global Credentials
-                    sh "docker build -t ${DOCKER_IMAGE}:latest ."
-                    // sh "docker push ${DOCKER_IMAGE}:latest"
-                }
-            }
-        }
+                    echo "Building and deploying with Docker Compose..."
+                    sh '''
+                        set -e
 
-        stage('Deploy to Server') {
-            steps {
-                script {
-                    /*
-                    // Contoh Deployment via SSH ke VPS
-                    sshagent(['vps-ssh-key-id']) {
-                        sh "ssh -o StrictHostKeyChecking=no user@server-ip 'cd /app && docker-compose pull && docker-compose up -d'"
-                    }
-                    */
-                    echo "Deploy stage ready. Configure SSH shared keys in Jenkins to enable automatic deployment."
+                        if docker compose version >/dev/null 2>&1; then
+                            COMPOSE="docker compose"
+                        elif command -v docker-compose >/dev/null 2>&1; then
+                            COMPOSE="docker-compose"
+                        else
+                            echo "Docker Compose is not installed on this Jenkins server."
+                            exit 1
+                        fi
+
+                        docker rm -f "$APP_NAME" >/dev/null 2>&1 || true
+                        $COMPOSE up -d --build --remove-orphans
+                    '''
                 }
             }
         }
@@ -53,10 +38,10 @@ pipeline {
 
     post {
         success {
-            echo "Pipeline success! Application is built and ready."
+            echo "Deployment success."
         }
         failure {
-            echo "Pipeline failed. Check Jenkins logs."
+            echo "Deployment failed. Check Jenkins logs."
         }
     }
 }
