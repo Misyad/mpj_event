@@ -3,7 +3,7 @@ import { EventStatus } from '@/types'
 import { Calendar } from 'lucide-react'
 import { dummyEvents } from '@/lib/dummy'
 import { getEventsFromDb } from '@/lib/server/events'
-import Link from 'next/link'
+import { LoginEntryDialog } from '@/components/auth/LoginEntryDialog'
 
 const VISIBLE: EventStatus[] = ['APPROVED', 'FINISHED', 'COMPLETED']
 
@@ -35,12 +35,7 @@ export default async function Home() {
           </div>
           <span className="font-extrabold text-[#1B4332] text-lg tracking-tight">MPJ Event</span>
         </div>
-        <Link
-          href="/scan"
-          className="text-sm font-semibold text-[#1B4332] border-2 border-[#1B4332] px-4 py-1.5 rounded-full hover:bg-[#1B4332] hover:text-white transition-colors"
-        >
-          Masuk
-        </Link>
+        <LoginEntryDialog />
       </header>
 
       <main className="flex-1 px-4 py-5 space-y-6">
