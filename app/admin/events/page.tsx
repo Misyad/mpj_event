@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   CalendarDays,
@@ -16,7 +16,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { dummyEvents, dummyParticipants, dummySpeakers } from '@/lib/dummy'
+import { dummyParticipants, dummySpeakers } from '@/lib/dummy'
+import { normalizeEvent } from '@/lib/event-api'
 import type { Event, EventCategory, EventStatus } from '@/types'
 
 const STATUS_LABELS: Record<EventStatus, string> = {
@@ -64,10 +65,45 @@ function getCrewNeeds(event: Event) {
 }
 
 export default function MasterEventPage() {
-  const [events, setEvents] = useState<Event[]>(dummyEvents)
+  const [events, setEvents] = useState<Event[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<EventStatus | 'ALL'>('ALL')
   const [categoryFilter, setCategoryFilter] = useState<EventCategory | 'ALL'>('ALL')
+
+  useEffect(() => {
+    let active = true
+
+    async function loadEvents() {
+      try {
+        setIsLoading(true)
+        setError('')
+        const response = await fetch('/api/admin/events', { cache: 'no-store' })
+        const payload = await response.json()
+
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || 'Gagal memuat data event')
+        }
+
+        if (active) {
+          setEvents(payload.data.map(normalizeEvent))
+        }
+      } catch (loadError) {
+        if (active) {
+          setError(loadError instanceof Error ? loadError.message : 'Gagal memuat data event')
+        }
+      } finally {
+        if (active) setIsLoading(false)
+      }
+    }
+
+    loadEvents()
+
+    return () => {
+      active = false
+    }
+  }, [])
 
   const filteredEvents = useMemo(() => {
     const keyword = search.trim().toLowerCase()
@@ -83,8 +119,27 @@ export default function MasterEventPage() {
     })
   }, [categoryFilter, events, search, statusFilter])
 
-  function updateEventStatus(eventId: string, status: EventStatus) {
+  async function updateEventStatus(eventId: string, status: EventStatus) {
+    const previous = events
     setEvents((current) => current.map((event) => (event.id === eventId ? { ...event, status } : event)))
+
+    try {
+      const response = await fetch(`/api/admin/events/${eventId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      const payload = await response.json()
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Gagal mengubah status event')
+      }
+
+      setEvents((current) => current.map((event) => (event.id === eventId ? normalizeEvent(payload.data) : event)))
+    } catch (updateError) {
+      setEvents(previous)
+      setError(updateError instanceof Error ? updateError.message : 'Gagal mengubah status event')
+    }
   }
 
   return (
@@ -110,6 +165,12 @@ export default function MasterEventPage() {
         </TabsList>
 
         <TabsContent value="events" className="mt-5 space-y-5">
+          {error ? (
+            <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-medium text-red-700">
+              {error}
+            </div>
+          ) : null}
+
           <div className="grid gap-3 lg:grid-cols-[1fr_180px_180px]">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -144,7 +205,11 @@ export default function MasterEventPage() {
             </Select>
           </div>
 
-          {filteredEvents.length === 0 ? (
+          {isLoading ? (
+            <div className="rounded-2xl border border-gray-100 bg-white p-10 text-center text-sm text-gray-500">
+              Memuat data event...
+            </div>
+          ) : filteredEvents.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-gray-200 bg-white p-10 text-center text-sm text-gray-500">
               Belum ada event yang cocok. Coba ubah keyword atau filter.
             </div>

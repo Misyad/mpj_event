@@ -41,6 +41,30 @@ function notFound(res) {
   })
 }
 
+function getAdminToken(req) {
+  const authorization = req.headers.authorization || ""
+
+  if (authorization.toLowerCase().startsWith("bearer ")) {
+    return authorization.slice(7)
+  }
+
+  return req.headers["x-admin-token"] || ""
+}
+
+function requireAdmin(req, res) {
+  const expectedToken = process.env.ADMIN_API_TOKEN || "mpj-event-admin-token"
+
+  if (getAdminToken(req) !== expectedToken) {
+    sendJson(res, 401, {
+      ok: false,
+      error: "Unauthorized admin API request",
+    })
+    return false
+  }
+
+  return true
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host}`)
   const pathname = url.pathname.replace(/\/+$/, "") || "/"
@@ -105,6 +129,8 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && pathname === "/events") {
+    if (!requireAdmin(req, res)) return
+
     try {
       const event = await createEvent(await readJson(req))
 
@@ -138,6 +164,8 @@ const server = http.createServer(async (req, res) => {
   }
 
   if ((req.method === "PUT" || req.method === "PATCH") && pathname.startsWith("/events/")) {
+    if (!requireAdmin(req, res)) return
+
     try {
       const id = decodeURIComponent(pathname.split("/")[2] || "")
       const event = await updateEvent(id, await readJson(req))
@@ -162,6 +190,8 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "DELETE" && pathname.startsWith("/events/")) {
+    if (!requireAdmin(req, res)) return
+
     try {
       const id = decodeURIComponent(pathname.split("/")[2] || "")
       const deleted = await deleteEvent(id)

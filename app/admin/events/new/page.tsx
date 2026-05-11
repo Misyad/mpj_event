@@ -85,6 +85,7 @@ export default function NewEventPage() {
   const [form, setForm] = useState<FormData>(defaultForm)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [submitError, setSubmitError] = useState('')
 
   function update(key: keyof FormData, value: FormData[typeof key]) {
     setForm(prev => ({ ...prev, [key]: value }))
@@ -127,15 +128,57 @@ export default function NewEventPage() {
     updateCustomField(id, 'options', options)
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    setSubmitError('')
+
+    if (!form.category) {
+      setSubmitError('Kategori event wajib dipilih.')
+      return
+    }
+
+    if (!form.date) {
+      setSubmitError('Tanggal event wajib diisi.')
+      return
+    }
+
     setIsSubmitting(true)
-    // Simulate API call
-    setTimeout(() => {
+
+    try {
+      const startDate = new Date(`${form.date}T${form.time || '00:00'}`)
+      const response = await fetch('/api/admin/events', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: form.name,
+          category: form.category,
+          poster_url: form.posterPreview || 'https://picsum.photos/seed/mpj-event-new/800/450',
+          description: form.description,
+          location_gmaps: form.locationLink,
+          location_name: form.location,
+          start_date: startDate.toISOString(),
+          is_open_for_public: form.isOpenForPublic,
+          is_paid: form.isPaid,
+          price_niam: Number(form.priceNiam || 0),
+          price_public: Number(form.pricePublic || 0),
+          max_participants: form.maxParticipants ? Number(form.maxParticipants) : null,
+          status: 'DRAFT',
+          status_pendaftaran: 'open',
+        }),
+      })
+      const payload = await response.json()
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Gagal membuat event')
+      }
+
       setIsSubmitting(false)
       setSubmitted(true)
       setTimeout(() => router.push('/admin/events'), 1500)
-    }, 1000)
+    } catch (error) {
+      setIsSubmitting(false)
+      setSubmitError(error instanceof Error ? error.message : 'Gagal membuat event')
+    }
   }
 
   if (submitted) {
@@ -166,6 +209,12 @@ export default function NewEventPage() {
           <p className="text-sm text-gray-400 mt-0.5">Event akan tersimpan sebagai DRAFT terlebih dahulu</p>
         </div>
       </div>
+
+      {submitError ? (
+        <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-medium text-red-700">
+          {submitError}
+        </div>
+      ) : null}
 
       {/* ── Seksi 1: Info Dasar ──────────────── */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">

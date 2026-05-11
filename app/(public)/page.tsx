@@ -1,12 +1,12 @@
-import { dummyEvents } from '@/lib/dummy'
 import { EventCard } from '@/components/EventCard'
 import { EventStatus } from '@/types'
 import { Calendar } from 'lucide-react'
+import { getEventsWithFallback } from '@/lib/event-api'
 
 const VISIBLE: EventStatus[] = ['APPROVED', 'FINISHED', 'COMPLETED']
 
-export default function Home() {
-  const events = dummyEvents
+export default async function Home() {
+  const events = (await getEventsWithFallback())
     .filter((e) => VISIBLE.includes(e.status))
     .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
 
