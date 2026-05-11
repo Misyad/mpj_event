@@ -1,5 +1,12 @@
 import http from "node:http"
-import { events, participants } from "./data.mjs"
+import { testConnection } from "./db.mjs"
+import { bootstrapDatabase } from "./schema.mjs"
+import {
+  getEvent,
+  getParticipantByToken,
+  listEvents,
+  listParticipants,
+} from "./repository.mjs"
 
 const port = Number(process.env.PORT || 4000)
 
@@ -56,24 +63,43 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && pathname === "/health") {
-    return sendJson(res, 200, {
-      ok: true,
-      service: "mpj-event-api",
-      uptime: process.uptime(),
-      timestamp: new Date().toISOString(),
-    })
+    try {
+      await testConnection()
+
+      return sendJson(res, 200, {
+        ok: true,
+        service: "mpj-event-api",
+        database: "connected",
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+      })
+    } catch (error) {
+      return sendJson(res, 503, {
+        ok: false,
+        service: "mpj-event-api",
+        database: "unavailable",
+        error: error instanceof Error ? error.message : "Database connection failed",
+      })
+    }
   }
 
   if (req.method === "GET" && pathname === "/events") {
-    return sendJson(res, 200, {
-      ok: true,
-      data: events,
-    })
+    try {
+      return sendJson(res, 200, {
+        ok: true,
+        data: await listEvents(),
+      })
+    } catch (error) {
+      return sendJson(res, 500, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Failed to load events",
+      })
+    }
   }
 
   if (req.method === "GET" && pathname.startsWith("/events/")) {
     const id = decodeURIComponent(pathname.split("/")[2] || "")
-    const event = events.find((item) => item.id === id)
+    const event = await getEvent(id)
 
     if (!event) {
       return sendJson(res, 404, {
@@ -89,22 +115,24 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && pathname === "/participants") {
-    const eventId = url.searchParams.get("event_id")
-    const data = eventId
-      ? participants.filter((item) => item.event_id === eventId)
-      : participants
-
-    return sendJson(res, 200, {
-      ok: true,
-      data,
-    })
+    try {
+      return sendJson(res, 200, {
+        ok: true,
+        data: await listParticipants(url.searchParams.get("event_id")),
+      })
+    } catch (error) {
+      return sendJson(res, 500, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Failed to load participants",
+      })
+    }
   }
 
   if (req.method === "POST" && pathname === "/tickets/verify") {
     try {
       const payload = await readJson(req)
       const token = String(payload.qr_token || payload.token || "")
-      const participant = participants.find((item) => item.qr_token === token)
+      const participant = await getParticipantByToken(token)
 
       if (!participant) {
         return sendJson(res, 404, {
@@ -128,6 +156,13 @@ const server = http.createServer(async (req, res) => {
   return notFound(res)
 })
 
-server.listen(port, "0.0.0.0", () => {
-  console.log(`MPJ Event API listening on http://0.0.0.0:${port}`)
-})
+bootstrapDatabase()
+  .then(() => {
+    server.listen(port, "0.0.0.0", () => {
+      console.log(`MPJ Event API listening on http://0.0.0.0:${port}`)
+    })
+  })
+  .catch((error) => {
+    console.error("[MPJ Event API] Failed to initialize database:", error)
+    process.exit(1)
+  })
