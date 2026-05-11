@@ -38,6 +38,10 @@ export async function ensureSchema() {
       qr_token VARCHAR(120) NOT NULL,
       crew_json JSON NULL,
       guest_json JSON NULL,
+      full_name VARCHAR(255) NULL,
+      institution_name VARCHAR(255) NULL,
+      whatsapp VARCHAR(50) NULL,
+      checked_in_at DATETIME NULL,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
@@ -48,6 +52,28 @@ export async function ensureSchema() {
         ON DELETE CASCADE ON UPDATE CASCADE
     )
   `)
+
+  await ensureColumn("mpj_event_participants", "full_name", "VARCHAR(255) NULL")
+  await ensureColumn("mpj_event_participants", "institution_name", "VARCHAR(255) NULL")
+  await ensureColumn("mpj_event_participants", "whatsapp", "VARCHAR(50) NULL")
+  await ensureColumn("mpj_event_participants", "checked_in_at", "DATETIME NULL")
+}
+
+async function ensureColumn(tableName, columnName, definition) {
+  const rows = await query(
+    `
+      SELECT COUNT(*) AS total
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = :tableName
+        AND COLUMN_NAME = :columnName
+    `,
+    { tableName, columnName },
+  )
+
+  if (Number(rows[0]?.total || 0) === 0) {
+    await query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`)
+  }
 }
 
 export async function seedInitialData() {

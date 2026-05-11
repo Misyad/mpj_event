@@ -70,6 +70,10 @@ function mapParticipant(row) {
     payment_status: row.payment_status,
     attendance_status: row.attendance_status,
     qr_token: row.qr_token,
+    full_name: row.full_name,
+    institution_name: row.institution_name,
+    whatsapp: row.whatsapp,
+    checked_in_at: row.checked_in_at instanceof Date ? row.checked_in_at.toISOString() : row.checked_in_at,
     crew: parseJson(row.crew_json),
     guest: parseJson(row.guest_json),
   }
@@ -207,4 +211,99 @@ export async function getParticipantByToken(token) {
     { token },
   )
   return rows[0] ? mapParticipant(rows[0]) : null
+}
+
+export async function registerParticipant(eventId, payload) {
+  const event = await getEvent(eventId)
+
+  if (!event) {
+    throw new Error("Event not found")
+  }
+
+  if (event.status_pendaftaran === "closed") {
+    throw new Error("Event registration is closed")
+  }
+
+  if (event.max_participants !== null && event.current_participants >= event.max_participants) {
+    throw new Error("Event quota is full")
+  }
+
+  const registrationPath = payload.registration_path === "NIAM" ? "NIAM" : "UMUM"
+  const fullName = String(payload.full_name || payload.name || "").trim()
+
+  if (!fullName) {
+    throw new Error("full_name is required")
+  }
+
+  const id = randomUUID()
+  const qrToken = `MPJ-${eventId}-${randomUUID()}`
+  const guest = registrationPath === "UMUM"
+    ? {
+        full_name: fullName,
+        institution_name: payload.institution_name || "",
+        whatsapp: payload.whatsapp || "",
+      }
+    : null
+  const crew = registrationPath === "NIAM"
+    ? {
+        niam: payload.niam || "",
+        full_name: fullName,
+        unit: payload.unit || "",
+      }
+    : null
+
+  await query(
+    `
+      INSERT INTO mpj_event_participants (
+        id, event_id, registration_path, payment_status,
+        attendance_status, qr_token, crew_json, guest_json,
+        full_name, institution_name, whatsapp
+      ) VALUES (
+        :id, :event_id, :registration_path, :payment_status,
+        :attendance_status, :qr_token, :crew_json, :guest_json,
+        :full_name, :institution_name, :whatsapp
+      )
+    `,
+    {
+      id,
+      event_id: eventId,
+      registration_path: registrationPath,
+      payment_status: event.is_paid ? "Unpaid" : "Free",
+      attendance_status: "Registered",
+      qr_token: qrToken,
+      crew_json: crew ? JSON.stringify(crew) : null,
+      guest_json: guest ? JSON.stringify(guest) : null,
+      full_name: fullName,
+      institution_name: payload.institution_name || null,
+      whatsapp: payload.whatsapp || null,
+    },
+  )
+
+  await query(
+    "UPDATE mpj_event_events SET current_participants = current_participants + 1 WHERE id = :eventId",
+    { eventId },
+  )
+
+  return getParticipantByToken(qrToken)
+}
+
+export async function checkInParticipant(token) {
+  const participant = await getParticipantByToken(token)
+
+  if (!participant) return null
+
+  if (participant.attendance_status === "Attended") {
+    return participant
+  }
+
+  await query(
+    `
+      UPDATE mpj_event_participants
+      SET attendance_status = 'Attended', checked_in_at = NOW()
+      WHERE qr_token = :token
+    `,
+    { token },
+  )
+
+  return getParticipantByToken(token)
 }

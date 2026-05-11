@@ -2,12 +2,14 @@ import http from "node:http"
 import { testConnection } from "./db.mjs"
 import { bootstrapDatabase } from "./schema.mjs"
 import {
+  checkInParticipant,
   createEvent,
   deleteEvent,
   getEvent,
   getParticipantByToken,
   listEvents,
   listParticipants,
+  registerParticipant,
   updateEvent,
 } from "./repository.mjs"
 
@@ -89,6 +91,8 @@ const server = http.createServer(async (req, res) => {
         "GET /participants",
         "GET /participants?event_id=1",
         "POST /tickets/verify",
+        "POST /tickets/check-in",
+        "POST /events/:id/register",
       ],
     })
   }
@@ -146,7 +150,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  if (req.method === "GET" && pathname.startsWith("/events/")) {
+  if (req.method === "GET" && pathname.startsWith("/events/") && !pathname.endsWith("/register")) {
     const id = decodeURIComponent(pathname.split("/")[2] || "")
     const event = await getEvent(id)
 
@@ -163,7 +167,7 @@ const server = http.createServer(async (req, res) => {
     })
   }
 
-  if ((req.method === "PUT" || req.method === "PATCH") && pathname.startsWith("/events/")) {
+  if ((req.method === "PUT" || req.method === "PATCH") && pathname.startsWith("/events/") && !pathname.endsWith("/register")) {
     if (!requireAdmin(req, res)) return
 
     try {
@@ -189,7 +193,27 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  if (req.method === "DELETE" && pathname.startsWith("/events/")) {
+  if (req.method === "POST" && pathname.startsWith("/events/") && pathname.endsWith("/register")) {
+    try {
+      const id = decodeURIComponent(pathname.split("/")[2] || "")
+      const participant = await registerParticipant(id, await readJson(req))
+
+      return sendJson(res, 201, {
+        ok: true,
+        data: participant,
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to register participant"
+      const status = message === "Event not found" ? 404 : 400
+
+      return sendJson(res, status, {
+        ok: false,
+        error: message,
+      })
+    }
+  }
+
+  if (req.method === "DELETE" && pathname.startsWith("/events/") && !pathname.endsWith("/register")) {
     if (!requireAdmin(req, res)) return
 
     try {
@@ -234,6 +258,31 @@ const server = http.createServer(async (req, res) => {
       const payload = await readJson(req)
       const token = String(payload.qr_token || payload.token || "")
       const participant = await getParticipantByToken(token)
+
+      if (!participant) {
+        return sendJson(res, 404, {
+          ok: false,
+          error: "Ticket token not found",
+        })
+      }
+
+      return sendJson(res, 200, {
+        ok: true,
+        data: participant,
+      })
+    } catch {
+      return sendJson(res, 400, {
+        ok: false,
+        error: "Invalid JSON payload",
+      })
+    }
+  }
+
+  if (req.method === "POST" && pathname === "/tickets/check-in") {
+    try {
+      const payload = await readJson(req)
+      const token = String(payload.qr_token || payload.token || "")
+      const participant = await checkInParticipant(token)
 
       if (!participant) {
         return sendJson(res, 404, {
