@@ -41,26 +41,26 @@ function mapParticipant(row) {
 }
 
 export async function listEvents() {
-  const rows = await query("SELECT * FROM events ORDER BY start_date ASC")
+  const rows = await query("SELECT * FROM mpj_event_events ORDER BY start_date ASC")
   return rows.map(mapEvent)
 }
 
 export async function getEvent(id) {
-  const rows = await query("SELECT * FROM events WHERE id = :id LIMIT 1", { id })
+  const rows = await query("SELECT * FROM mpj_event_events WHERE id = :id LIMIT 1", { id })
   return rows[0] ? mapEvent(rows[0]) : null
 }
 
 export async function listParticipants(eventId) {
   const sql = eventId
-    ? "SELECT * FROM participants WHERE event_id = :eventId ORDER BY created_at ASC"
-    : "SELECT * FROM participants ORDER BY created_at ASC"
+    ? "SELECT * FROM mpj_event_participants WHERE event_id = :eventId ORDER BY created_at ASC"
+    : "SELECT * FROM mpj_event_participants ORDER BY created_at ASC"
   const rows = await query(sql, { eventId })
   return rows.map(mapParticipant)
 }
 
 export async function getParticipantByToken(token) {
   const rows = await query(
-    "SELECT * FROM participants WHERE qr_token = :token LIMIT 1",
+    "SELECT * FROM mpj_event_participants WHERE qr_token = :token LIMIT 1",
     { token },
   )
   return rows[0] ? mapParticipant(rows[0]) : null
