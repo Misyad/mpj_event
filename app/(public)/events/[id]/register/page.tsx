@@ -1,10 +1,10 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 import { getEventById } from '@/lib/dummy'
-import { getEventFromDb } from '@/lib/server/events'
-import { RegisterForm } from '@/components/RegisterForm'
-import { AUTH_ROLES } from '@/lib/auth/roles'
 import { getCurrentAdminSession } from '@/lib/server/rbac'
+import { getEventFromDb } from '@/lib/server/events'
+import { AUTH_ROLES } from '@/lib/auth/roles'
+import { RegisterForm } from '@/components/RegisterForm'
 
 export const metadata: Metadata = {
   robots: { index: false },
@@ -18,6 +18,7 @@ export default async function RegisterPage({ params }: { params: Promise<{ id: s
     getEventFromDb(id).catch(() => null),
     getCurrentAdminSession(AUTH_ROLES.user),
   ])
+
   const resolvedEvent = event ?? getEventById(id)
   if (!resolvedEvent || (resolvedEvent.status !== 'APPROVED' && resolvedEvent.status !== 'approved')) notFound()
 
