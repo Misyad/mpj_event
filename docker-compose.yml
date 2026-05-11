@@ -10,11 +10,13 @@ services:
       - "${APP_PORT:-3001}:3000"
     environment:
       NODE_ENV: production
-      DB_HOST: ${DB_HOST:-}
+      DB_HOST: ${DB_HOST:-host.docker.internal}
       DB_PORT: ${DB_PORT:-3306}
-      DB_USER: ${DB_USER:-}
-      DB_PASSWORD: ${DB_PASSWORD:-}
-      DB_NAME: ${DB_NAME:-}
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-Admin123!}
+      DB_NAME: ${DB_NAME:-app_db}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   mpj-event-api:
     build:
@@ -29,8 +31,10 @@ services:
       NODE_ENV: production
       PORT: 4000
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
-      DB_HOST: ${DB_HOST:-}
+      DB_HOST: ${DB_HOST:-host.docker.internal}
       DB_PORT: ${DB_PORT:-3306}
-      DB_USER: ${DB_USER:-}
-      DB_PASSWORD: ${DB_PASSWORD:-}
-      DB_NAME: ${DB_NAME:-}
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-Admin123!}
+      DB_NAME: ${DB_NAME:-app_db}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
