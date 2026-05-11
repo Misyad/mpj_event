@@ -36,7 +36,10 @@ function TicketContent() {
     if (!token) return
 
     async function loadTicket() {
-      const dummyParticipant = getParticipantByToken(token)
+      const tokenValue = token
+      if (!tokenValue) return
+
+      const dummyParticipant = getParticipantByToken(tokenValue)
       const dummyEvent = dummyParticipant ? getEventById(dummyParticipant.event_id) : null
 
       try {
@@ -46,7 +49,7 @@ function TicketContent() {
         const verifyResponse = await fetch(`${API_URL}/tickets/verify`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ qr_token: token }),
+          body: JSON.stringify({ qr_token: tokenValue }),
         })
         const verifyPayload = await verifyResponse.json()
 
