@@ -73,7 +73,7 @@ export function RegisterForm({ event }: { event: Event }) {
     setSubmitError('')
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_MPJ_EVENT_API_URL || 'https://api.projecthasan.com'}/events/${event.id}/register`, {
+      const response = await fetch(`/api/events/${event.id}/register`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -83,6 +83,7 @@ export function RegisterForm({ event }: { event: Event }) {
           unit: form.crewUnit,
           institution_name: form.guestInstitution,
           whatsapp: form.guestWhatsapp,
+          payment_proof_name: form.proofFile?.name,
           custom_responses: form.customResponses,
         }),
       })

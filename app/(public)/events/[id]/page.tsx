@@ -2,19 +2,18 @@ import { notFound } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 import type { Metadata } from 'next'
-import { getEventById, dummyEvents, getSpeakerById } from '@/lib/dummy'
+import { getEventById } from '@/lib/dummy'
+import { getEventFromDb } from '@/lib/server/events'
 import { BadgeStatus } from '@/components/BadgeStatus'
 import { QuotaBadge } from '@/components/QuotaBadge'
 import { CountdownTimer } from '@/components/CountdownTimer'
 import { Calendar, MapPin, ArrowLeft, Wallet } from 'lucide-react'
 
-export async function generateStaticParams() {
-  return dummyEvents.map((e) => ({ id: e.id }))
-}
+export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params
-  const event = getEventById(id)
+  const event = (await getEventFromDb(id).catch(() => null)) ?? getEventById(id)
   if (!event) return { title: 'Event tidak ditemukan' }
   return {
     title: `${event.title} — MPJ Apps`,
@@ -38,7 +37,7 @@ function formatTime(dateStr: string) {
 
 export default async function EventDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const event = getEventById(id)
+  const event = (await getEventFromDb(id).catch(() => null)) ?? getEventById(id)
   if (!event) notFound()
 
   const isOpen = event.status === 'APPROVED'

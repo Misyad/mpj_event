@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { EVENT_API_BASE_URL } from '@/lib/event-api'
+import { getEventsFromDb } from '@/lib/server/events'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -23,7 +24,18 @@ async function forward(path: string, init: RequestInit = {}) {
 }
 
 export async function GET() {
-  return forward('/events')
+  try {
+    const events = await getEventsFromDb()
+    return NextResponse.json({ ok: true, data: events })
+  } catch (error) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Gagal memuat data event',
+      },
+      { status: 500 },
+    )
+  }
 }
 
 export async function POST(request: NextRequest) {

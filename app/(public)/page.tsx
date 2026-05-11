@@ -1,12 +1,23 @@
 import { EventCard } from '@/components/EventCard'
 import { EventStatus } from '@/types'
 import { Calendar } from 'lucide-react'
-import { getEventsWithFallback } from '@/lib/event-api'
+import { dummyEvents } from '@/lib/dummy'
+import { getEventsFromDb } from '@/lib/server/events'
 
 const VISIBLE: EventStatus[] = ['APPROVED', 'FINISHED', 'COMPLETED']
 
+export const dynamic = 'force-dynamic'
+
 export default async function Home() {
-  const events = (await getEventsWithFallback())
+  let sourceEvents = dummyEvents
+
+  try {
+    sourceEvents = await getEventsFromDb()
+  } catch {
+    sourceEvents = dummyEvents
+  }
+
+  const events = sourceEvents
     .filter((e) => VISIBLE.includes(e.status))
     .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
 
