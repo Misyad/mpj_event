@@ -1,13 +1,14 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
-import { getParticipantByToken } from '@/lib/dummy'
 import { Participant } from '@/types'
-import { CheckCircle, XCircle, ScanLine, LogIn } from 'lucide-react'
+import { CheckCircle, LogIn, ScanLine, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 type ScanResult = { success: true; participant: Participant } | { success: false; message: string } | null
+
+const API_URL = process.env.NEXT_PUBLIC_MPJ_EVENT_API_URL || 'https://api.projecthasan.com'
 
 export function ScanPage() {
   const [loggedIn, setLoggedIn] = useState(false)
@@ -19,8 +20,29 @@ export function ScanPage() {
   const scannedRef = useRef(false)
 
   function handleLogin() {
-    // Simulasi login — nanti diganti API Sanctum
     if (username && password) setLoggedIn(true)
+  }
+
+  async function checkIn(decodedText: string) {
+    try {
+      const response = await fetch(`${API_URL}/tickets/check-in`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ qr_token: decodedText }),
+      })
+      const payload = await response.json()
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'QR tidak dikenali atau tidak valid.')
+      }
+
+      setResult({ success: true, participant: payload.data })
+    } catch (error) {
+      setResult({
+        success: false,
+        message: error instanceof Error ? error.message : 'QR tidak dikenali atau tidak valid.',
+      })
+    }
   }
 
   async function startScanner() {
@@ -45,21 +67,10 @@ export function ScanPage() {
 
           scanner.stop().then(() => {
             setScanning(false)
-            const participant = getParticipantByToken(decodedText)
-            if (!participant) {
-              setResult({ success: false, message: 'QR tidak dikenali atau tidak valid.' })
-              return
-            }
-            if (participant.attendance_status === 'Attended') {
-              setResult({ success: false, message: 'QR sudah digunakan sebelumnya.' })
-              return
-            }
-            // Simulasi mark attended — nanti diganti API call
-            participant.attendance_status = 'Attended'
-            setResult({ success: true, participant })
+            checkIn(decodedText)
           })
         },
-        () => {}
+        () => {},
       )
       .catch(() => {
         setScanning(false)
@@ -117,14 +128,12 @@ export function ScanPage() {
       </div>
 
       <div className="flex-1 flex flex-col items-center justify-center px-4 space-y-6">
-        {/* Scanner area */}
         {scanning && (
           <div className="w-full rounded-2xl overflow-hidden border-2 border-blue-500">
             <div id="qr-reader" className="w-full" />
           </div>
         )}
 
-        {/* Result */}
         {result && !scanning && (
           <div
             className={`w-full rounded-2xl p-5 text-center ${
@@ -138,12 +147,12 @@ export function ScanPage() {
                 <p className="text-base font-semibold mt-1">
                   {result.participant.registration_path === 'NIAM'
                     ? result.participant.crew?.full_name
-                    : result.participant.guest?.full_name}
+                    : result.participant.guest?.full_name || result.participant.full_name}
                 </p>
                 <p className="text-xs text-green-400 mt-1">
                   Jalur {result.participant.registration_path}
                   {result.participant.registration_path === 'NIAM' && result.participant.crew
-                    ? ` · ${result.participant.crew.unit}`
+                    ? ` - ${result.participant.crew.unit}`
                     : ''}
                 </p>
               </>

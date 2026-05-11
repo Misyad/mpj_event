@@ -76,6 +76,10 @@ export interface Participant {
   payment_proof_url: string | null
   attendance_status: AttendanceStatus
   qr_token: string
+  full_name?: string
+  institution_name?: string
+  whatsapp?: string
+  checked_in_at?: string | null
   crew?: Crew
   guest?: Guest
 }

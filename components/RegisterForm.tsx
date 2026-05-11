@@ -45,6 +45,7 @@ export function RegisterForm({ event }: { event: Event }) {
   })
   const [uniqueCode] = useState(generateUniqueCode)
   const [submitted, setSubmitted] = useState(false)
+  const [submitError, setSubmitError] = useState('')
 
   const price = form.path === 'NIAM' ? event.price_niam : event.price_public
   const totalAmount = event.is_paid ? price + uniqueCode : 0
@@ -68,9 +69,34 @@ export function RegisterForm({ event }: { event: Event }) {
     }
   }
 
-  function handlePaymentSubmit() {
-    setSubmitted(true)
-    if (!event.is_paid) setTimeout(() => router.push('/ticket/TOKEN-DEMO-001'), 800)
+  async function handlePaymentSubmit() {
+    setSubmitError('')
+
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_MPJ_EVENT_API_URL || 'https://api.projecthasan.com'}/events/${event.id}/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          registration_path: form.path,
+          full_name: form.path === 'NIAM' ? form.crewName : form.guestName,
+          niam: form.niam,
+          unit: form.crewUnit,
+          institution_name: form.guestInstitution,
+          whatsapp: form.guestWhatsapp,
+          custom_responses: form.customResponses,
+        }),
+      })
+      const payload = await response.json()
+
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'Pendaftaran gagal')
+      }
+
+      setSubmitted(true)
+      if (!event.is_paid) setTimeout(() => router.push(`/ticket?token=${encodeURIComponent(payload.data.qr_token)}`), 800)
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Pendaftaran gagal')
+    }
   }
 
   const validateCustomFields = () => {
@@ -146,6 +172,11 @@ export function RegisterForm({ event }: { event: Event }) {
       </div>
 
       <div className="flex-1 px-4 py-6 space-y-4">
+        {submitError ? (
+          <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-700">
+            {submitError}
+          </div>
+        ) : null}
 
         {/* STEP 1 */}
         {step === 1 && (
