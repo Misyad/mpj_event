@@ -1,24 +1,44 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { dummyCrew } from '@/lib/dummy'
+import {
+  getInstitutionOptions,
+  searchInstitutions,
+  type InstitutionOption,
+} from '@/lib/institution-options'
 import { Event } from '@/types'
-import { ArrowLeft, User, Users, Upload, CheckCircle, BadgeCheck } from 'lucide-react'
+import {
+  ArrowLeft,
+  BadgeCheck,
+  CheckCircle,
+  Search,
+  ShieldCheck,
+  Upload,
+  UserCheck,
+} from 'lucide-react'
 
-type Path = 'NIAM' | 'UMUM' | null
 type Step = 1 | 2 | 3
+type ResolvedPath = 'NIAM' | 'UMUM'
 
 interface FormData {
-  path: Path
   niam: string
-  crewName: string
-  crewUnit: string
-  guestName: string
-  guestWhatsapp: string
-  guestInstitution: string
+  fullName: string
+  whatsapp: string
+  institution: string
+  institutionId: string | null
   customResponses: Record<string, string | string[]>
   proofFile: File | null
+}
+
+interface DemoUserProfile {
+  crewId?: string
+  niam?: string
+  fullName?: string
+  whatsapp?: string
+  institution?: string
 }
 
 function generateUniqueCode() {
@@ -29,89 +49,244 @@ function formatRupiah(amount: number) {
   return 'Rp ' + amount.toLocaleString('id-ID')
 }
 
+function normalizeNiam(value: string) {
+  return value.trim().toUpperCase()
+}
+
+function findCrewByNiam(niam: string) {
+  const normalized = normalizeNiam(niam)
+  if (!normalized) return undefined
+  return dummyCrew.find((crew) => crew.niam.toUpperCase() === normalized)
+}
+
+function getCurrentUser(demoAuth: string | null): DemoUserProfile | null {
+  if (demoAuth === 'full') {
+    return {
+      crewId: 'cr1',
+      niam: 'MPJ-001',
+      fullName: 'Budi Santoso',
+      whatsapp: '081234567890',
+      institution: 'Regional Jakarta',
+    }
+  }
+
+  if (demoAuth === 'partial') {
+    return {
+      crewId: 'cr3',
+      niam: 'MPJ-045',
+      fullName: 'Ahmad Fauzi',
+      whatsapp: '081298765432',
+      institution: '',
+    }
+  }
+
+  return null
+}
+
+function getSuccessRedirectToken(path: ResolvedPath) {
+  return path === 'NIAM' ? 'TOKEN-NIAM-001' : 'TOKEN-UMUM-002'
+}
+
 const inputClass =
   'w-full bg-white border border-gray-200 rounded-2xl px-4 py-3.5 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#1B4332] shadow-sm'
 
 const btnGold =
-  'w-full bg-[#C9A227] text-white rounded-full py-4 font-bold text-sm tracking-wide shadow-md active:scale-95 transition-transform'
+  'w-full bg-[#C9A227] text-white rounded-full py-4 font-bold text-sm tracking-wide shadow-md active:scale-95 transition-transform disabled:cursor-not-allowed disabled:opacity-60'
 
 export function RegisterForm({ event }: { event: Event }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const demoAuth = searchParams.get('demoAuth')
+  const currentUser = useMemo(() => getCurrentUser(demoAuth), [demoAuth])
+  const institutionOptions = useMemo(() => getInstitutionOptions(), [])
+  const institutionRef = useRef<HTMLDivElement>(null)
+
   const [step, setStep] = useState<Step>(1)
-  const [form, setForm] = useState<FormData>({
-    path: null, niam: '', crewName: '', crewUnit: '',
-    guestName: '', guestWhatsapp: '', guestInstitution: '', 
-    customResponses: {}, proofFile: null,
-  })
+  const [form, setForm] = useState<FormData>(() => ({
+    niam: currentUser?.niam ?? '',
+    fullName: currentUser?.fullName ?? '',
+    whatsapp: currentUser?.whatsapp ?? '',
+    institution: currentUser?.institution ?? '',
+    institutionId: null,
+    customResponses: {},
+    proofFile: null,
+  }))
   const [uniqueCode] = useState(generateUniqueCode)
   const [submitted, setSubmitted] = useState(false)
-  const [submitError, setSubmitError] = useState('')
+  const [redirectToken, setRedirectToken] = useState<string | null>(null)
+  const [editProfile, setEditProfile] = useState(false)
+  const [institutionOpen, setInstitutionOpen] = useState(false)
+  const [institutionQuery, setInstitutionQuery] = useState('')
 
-  const price = form.path === 'NIAM' ? event.price_niam : event.price_public
+  const matchedCrew = useMemo(() => findCrewByNiam(form.niam), [form.niam])
+  const filteredInstitutions = useMemo(
+    () => searchInstitutions(institutionQuery || form.institution),
+    [form.institution, institutionQuery],
+  )
+  const canUseCustomInstitution = event.is_open_for_public && institutionQuery.trim().length > 0
+  const resolvedPath: ResolvedPath = matchedCrew ? 'NIAM' : 'UMUM'
+  const price = resolvedPath === 'NIAM' ? event.price_niam : event.price_public
   const totalAmount = event.is_paid ? price + uniqueCode : 0
+  const isInternalOnly = !event.is_open_for_public
+  const requiresValidNiam = isInternalOnly && resolvedPath !== 'NIAM'
+  const hasRequiredProfileFields = Boolean(
+    form.fullName.trim() && form.whatsapp.trim() && form.institution.trim(),
+  )
+  const isLoggedInProfileComplete = Boolean(
+    currentUser &&
+      matchedCrew &&
+      form.fullName.trim() &&
+      form.whatsapp.trim() &&
+      form.institution.trim(),
+  )
+  const shouldShowConfirmation = Boolean(
+    currentUser && isLoggedInProfileComplete && step === 1 && !editProfile,
+  )
 
-  function handleNIAMValidate() {
-    if (form.niam.trim().length >= 3) {
-      setForm((f) => ({ ...f, crewName: 'Budi Santoso', crewUnit: 'Regional Jakarta' }))
+  useEffect(() => {
+    if (!matchedCrew) return
+
+    setForm((current) => {
+      const next = { ...current }
+      let changed = false
+
+      if (!current.fullName.trim()) {
+        next.fullName = matchedCrew.full_name
+        changed = true
+      }
+
+      if (!current.institution.trim()) {
+        next.institution = matchedCrew.pesantren || matchedCrew.unit
+        changed = true
+      }
+
+      if (!current.institutionId) {
+        const institutionName = matchedCrew.pesantren || matchedCrew.unit
+        const matchedInstitution = institutionOptions.find(
+          (option) => option.name.trim().toLowerCase() === institutionName.trim().toLowerCase(),
+        )
+        const nextId = matchedInstitution?.id ?? null
+
+        if (current.institutionId !== nextId) {
+          next.institutionId = nextId
+          changed = true
+        }
+      }
+
+      return changed ? next : current
+    })
+  }, [institutionOptions, matchedCrew])
+
+  useEffect(() => {
+    if (!form.institution.trim()) return
+
+    const matchedInstitution = institutionOptions.find(
+      (option) => option.name.trim().toLowerCase() === form.institution.trim().toLowerCase(),
+    )
+
+    setForm((current) => {
+      const nextId = matchedInstitution?.id ?? null
+      if (current.institutionId === nextId) return current
+      return {
+        ...current,
+        institutionId: nextId,
+      }
+    })
+  }, [form.institution, institutionOptions])
+
+  useEffect(() => {
+    function handleClickOutside(eventValue: MouseEvent) {
+      if (institutionRef.current && !institutionRef.current.contains(eventValue.target as Node)) {
+        setInstitutionOpen(false)
+      }
     }
-  }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  useEffect(() => {
+    if (!submitted || event.is_paid || !redirectToken) return
+
+    const timeoutId = window.setTimeout(() => {
+      router.push(`/ticket?token=${encodeURIComponent(redirectToken)}`)
+    }, 800)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [event.is_paid, redirectToken, router, submitted])
 
   function handleCustomResponse(id: string, value: string | string[]) {
-    setForm(f => ({ ...f, customResponses: { ...f.customResponses, [id]: value } }))
+    setForm((current) => ({
+      ...current,
+      customResponses: { ...current.customResponses, [id]: value },
+    }))
   }
 
   function handleCheckboxToggle(id: string, option: string) {
     const current = (form.customResponses[id] as string[]) || []
     if (current.includes(option)) {
-      handleCustomResponse(id, current.filter(o => o !== option))
-    } else {
-      handleCustomResponse(id, [...current, option])
+      handleCustomResponse(
+        id,
+        current.filter((item) => item !== option),
+      )
+      return
     }
+
+    handleCustomResponse(id, [...current, option])
   }
 
-  async function handlePaymentSubmit() {
-    setSubmitError('')
-
-    try {
-      const response = await fetch(`/api/events/${event.id}/register`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          registration_path: form.path,
-          full_name: form.path === 'NIAM' ? form.crewName : form.guestName,
-          niam: form.niam,
-          unit: form.crewUnit,
-          institution_name: form.guestInstitution,
-          whatsapp: form.guestWhatsapp,
-          payment_proof_name: form.proofFile?.name,
-          custom_responses: form.customResponses,
-        }),
-      })
-      const payload = await response.json()
-
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || 'Pendaftaran gagal')
-      }
-
-      setSubmitted(true)
-      if (!event.is_paid) setTimeout(() => router.push(`/ticket/${encodeURIComponent(payload.data.ticketCode || payload.data.qr_token)}`), 800)
-    } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : 'Pendaftaran gagal')
-    }
-  }
-
-  const validateCustomFields = () => {
+  function validateCustomFields() {
     if (!event.custom_fields) return true
+
     for (const field of event.custom_fields) {
-      if (field.is_required) {
-        const res = form.customResponses[field.id]
-        if (!res || (Array.isArray(res) && res.length === 0)) return false
+      if (!field.is_required) continue
+      const response = form.customResponses[field.id]
+      if (!response || (Array.isArray(response) && response.length === 0)) {
+        return false
       }
     }
+
     return true
   }
 
-  const steps = ['Pilih Jalur', 'Data Diri', 'Pembayaran']
+  function canContinueToPayment() {
+    return hasRequiredProfileFields && validateCustomFields() && !requiresValidNiam
+  }
+
+  function handleContinueToPayment() {
+    if (!canContinueToPayment()) return
+    setStep(2)
+  }
+
+  function handlePaymentSubmit() {
+    setSubmitted(true)
+    if (!event.is_paid) {
+      setRedirectToken(getSuccessRedirectToken(resolvedPath))
+    }
+  }
+
+  function selectInstitution(option: InstitutionOption) {
+    setForm((current) => ({
+      ...current,
+      institution: option.name,
+      institutionId: option.id,
+    }))
+    setInstitutionQuery('')
+    setInstitutionOpen(false)
+  }
+
+  function useCustomInstitution() {
+    const value = institutionQuery.trim()
+    if (!value) return
+    setForm((current) => ({
+      ...current,
+      institution: value,
+      institutionId: null,
+    }))
+    setInstitutionOpen(false)
+  }
+
+  const steps = ['Data Diri', 'Pembayaran', 'Selesai']
 
   if (submitted && !event.is_paid) {
     return (
@@ -133,7 +308,9 @@ export function RegisterForm({ event }: { event: Event }) {
         </div>
         <h2 className="text-xl font-extrabold text-[#1B4332]">Bukti Transfer Terkirim</h2>
         <p className="text-sm text-gray-500 mt-2 mb-8 leading-relaxed">
-          Menunggu verifikasi panitia.<br />Tiket dikirim setelah pembayaran dikonfirmasi.
+          Menunggu verifikasi panitia.
+          <br />
+          Tiket dikirim setelah pembayaran dikonfirmasi.
         </p>
         <Link href="/" className="text-sm font-bold text-[#1B4332] underline underline-offset-4">
           Kembali ke Beranda
@@ -144,11 +321,10 @@ export function RegisterForm({ event }: { event: Event }) {
 
   return (
     <div className="flex flex-col min-h-screen bg-[#f0f4f0]">
-      {/* Header */}
       <div className="bg-white px-4 pt-4 pb-3 shadow-sm">
         <div className="flex items-center gap-3 mb-4">
           <button
-            onClick={() => step === 1 ? router.back() : setStep((s) => (s - 1) as Step)}
+            onClick={() => (step === 1 ? router.back() : setStep((current) => (current - 1) as Step))}
             className="w-9 h-9 rounded-full bg-[#e8f0ec] flex items-center justify-center"
           >
             <ArrowLeft className="w-4 h-4 text-[#1B4332]" />
@@ -159,12 +335,15 @@ export function RegisterForm({ event }: { event: Event }) {
           </div>
         </div>
 
-        {/* Step bar */}
         <div className="flex gap-2">
-          {steps.map((label, i) => (
+          {steps.map((label, index) => (
             <div key={label} className="flex-1">
-              <div className={`h-1.5 rounded-full mb-1.5 transition-colors ${i + 1 <= step ? 'bg-[#1B4332]' : 'bg-gray-200'}`} />
-              <p className={`text-[10px] font-semibold ${i + 1 === step ? 'text-[#1B4332]' : 'text-gray-400'}`}>
+              <div
+                className={`h-1.5 rounded-full mb-1.5 transition-colors ${
+                  index + 1 <= step ? 'bg-[#1B4332]' : 'bg-gray-200'
+                }`}
+              />
+              <p className={`text-[10px] font-semibold ${index + 1 === step ? 'text-[#1B4332]' : 'text-gray-400'}`}>
                 {label}
               </p>
             </div>
@@ -173,204 +352,299 @@ export function RegisterForm({ event }: { event: Event }) {
       </div>
 
       <div className="flex-1 px-4 py-6 space-y-4">
-        {submitError ? (
-          <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-700">
-            {submitError}
-          </div>
-        ) : null}
-
-        {/* STEP 1 */}
         {step === 1 && (
           <>
-            <p className="text-lg font-extrabold text-[#1B4332]">Pilih Jalur Pendaftaran</p>
+            <p className="text-lg font-extrabold text-[#1B4332]">
+              {shouldShowConfirmation ? 'Konfirmasi Data' : 'Data Diri'}
+            </p>
 
-            <button
-              onClick={() => { setForm((f) => ({ ...f, path: 'NIAM' })); setStep(2) }}
-              className="w-full bg-white rounded-2xl shadow-sm p-4 flex items-center gap-4 text-left active:scale-95 transition-transform border-2 border-transparent hover:border-[#1B4332]"
-            >
-              <div className="w-12 h-12 rounded-xl bg-[#e8f0ec] flex items-center justify-center shrink-0">
-                <User className="w-6 h-6 text-[#1B4332]" />
+            {currentUser && !shouldShowConfirmation && (
+              <div className="rounded-2xl border border-[#1B4332]/10 bg-white p-4 text-sm text-gray-600 shadow-sm">
+                Sebagian data akun Anda sudah kami isi. Lengkapi data yang masih kosong untuk melanjutkan pendaftaran.
               </div>
-              <div className="flex-1">
-                <p className="font-bold text-[#1B4332]">Jalur NIAM</p>
-                <p className="text-xs text-gray-500 mt-0.5">Untuk anggota MPJ ber-NIAM</p>
-                {event.is_paid && (
-                  <p className="text-sm font-extrabold text-[#C9A227] mt-1">{formatRupiah(event.price_niam)}</p>
+            )}
+
+            {shouldShowConfirmation ? (
+              <div className="space-y-4">
+                <div className="rounded-2xl bg-white p-4 shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-[#e8f0ec] flex items-center justify-center shrink-0">
+                      <UserCheck className="w-6 h-6 text-[#1B4332]" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="font-bold text-[#1B4332]">Data akun ditemukan</p>
+                      <p className="text-sm text-gray-500">
+                        Pendaftaran akan diproses sebagai anggota MPJ berdasarkan data akun Anda.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    <SummaryRow label="NIAM / Nomor Anggota" value={normalizeNiam(form.niam)} />
+                    <SummaryRow label="Nama Lengkap" value={form.fullName} />
+                    <SummaryRow label="Nomor WhatsApp" value={form.whatsapp} />
+                    <SummaryRow label="Asal Pesantren / Instansi" value={form.institution} />
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                  <div className="flex items-start gap-2">
+                    <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0" />
+                    <p>Data sudah lengkap. Anda bisa langsung melanjutkan ke pembayaran atau konfirmasi pendaftaran.</p>
+                  </div>
+                </div>
+
+                <button className={btnGold} onClick={() => setStep(2)}>
+                  {event.is_paid ? 'Lanjut ke Pembayaran ->' : 'Lanjut ke Konfirmasi ->'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setEditProfile(true)}
+                  className="w-full rounded-full border border-[#1B4332]/15 bg-white py-4 text-sm font-bold text-[#1B4332]"
+                >
+                  Ubah Data
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-gray-700">NIAM / Nomor Anggota</label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: MPJ-001"
+                      value={form.niam}
+                      onChange={(eventValue) =>
+                        setForm((current) => ({ ...current, niam: eventValue.target.value }))
+                      }
+                      className={inputClass}
+                    />
+                    <p className="text-xs text-gray-400">
+                      Isi jika Anda anggota MPJ. Kosongkan jika belum memiliki NIAM.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-gray-700">Nama Lengkap</label>
+                    <input
+                      type="text"
+                      placeholder="Nama Lengkap"
+                      value={form.fullName}
+                      onChange={(eventValue) =>
+                        setForm((current) => ({ ...current, fullName: eventValue.target.value }))
+                      }
+                      className={inputClass}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-gray-700">Nomor WhatsApp</label>
+                    <input
+                      type="tel"
+                      placeholder="08xxxxxxxxxx"
+                      value={form.whatsapp}
+                      onChange={(eventValue) =>
+                        setForm((current) => ({ ...current, whatsapp: eventValue.target.value }))
+                      }
+                      className={inputClass}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-gray-700">Asal Pesantren / Instansi</label>
+                    <div ref={institutionRef} className="relative">
+                      <div className="relative">
+                        <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                        <input
+                          type="text"
+                          placeholder="Cari pesantren atau instansi..."
+                          value={institutionOpen ? institutionQuery : form.institution}
+                          onFocus={() => {
+                            setInstitutionOpen(true)
+                            setInstitutionQuery(form.institution)
+                          }}
+                          onChange={(eventValue) => {
+                            const value = eventValue.target.value
+                            setInstitutionOpen(true)
+                            setInstitutionQuery(value)
+                            setForm((current) => ({
+                              ...current,
+                              institution: value,
+                              institutionId: null,
+                            }))
+                          }}
+                          className={`${inputClass} pl-11`}
+                        />
+                      </div>
+
+                      {institutionOpen && (
+                        <div className="absolute left-0 right-0 top-full z-30 mt-1.5 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl">
+                          <div className="max-h-64 overflow-y-auto">
+                            {filteredInstitutions.length > 0 ? (
+                              filteredInstitutions.map((option) => (
+                                <button
+                                  key={option.id}
+                                  type="button"
+                                  onClick={() => selectInstitution(option)}
+                                  className={`w-full px-3 py-2.5 text-left transition-colors hover:bg-[#1B4332]/5 ${
+                                    option.id === form.institutionId ? 'bg-[#1B4332]/5' : ''
+                                  }`}
+                                >
+                                  <p className="truncate text-sm font-semibold text-[#1B4332]">{option.name}</p>
+                                  {option.subtitle ? (
+                                    <p className="mt-0.5 truncate text-[11px] text-gray-400">{option.subtitle}</p>
+                                  ) : null}
+                                </button>
+                              ))
+                            ) : (
+                              <div className="p-3">
+                                <p className="text-sm text-gray-400">Data belum tersedia. Pastikan penulisan sudah benar.</p>
+                                {canUseCustomInstitution ? (
+                                  <button
+                                    type="button"
+                                    onClick={useCustomInstitution}
+                                    className="mt-3 w-full rounded-xl border border-[#1B4332]/10 bg-[#1B4332]/5 px-3 py-2 text-sm font-semibold text-[#1B4332]"
+                                  >
+                                    Gunakan sebagai instansi baru
+                                  </button>
+                                ) : null}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400">Ketik nama pesantren atau instansi Anda.</p>
+                  </div>
+                </div>
+
+                {matchedCrew && (
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                    Data anggota terdeteksi. Harga anggota diterapkan.
+                  </div>
                 )}
-              </div>
-              <div className="w-8 h-8 rounded-full bg-[#f0f4f0] flex items-center justify-center">
-                <ArrowLeft className="w-4 h-4 text-[#1B4332] rotate-180" />
-              </div>
-            </button>
 
-            {event.is_open_for_public && (
-              <button
-                onClick={() => { setForm((f) => ({ ...f, path: 'UMUM' })); setStep(2) }}
-                className="w-full bg-white rounded-2xl shadow-sm p-4 flex items-center gap-4 text-left active:scale-95 transition-transform border-2 border-transparent hover:border-[#1B4332]"
-              >
-                <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
-                  <Users className="w-6 h-6 text-[#C9A227]" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-bold text-[#1B4332]">Jalur Umum</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Untuk masyarakat umum</p>
-                  {event.is_paid && (
-                    <p className="text-sm font-extrabold text-[#C9A227] mt-1">{formatRupiah(event.price_public)}</p>
-                  )}
-                </div>
-                <div className="w-8 h-8 rounded-full bg-[#f0f4f0] flex items-center justify-center">
-                  <ArrowLeft className="w-4 h-4 text-[#1B4332] rotate-180" />
-                </div>
-              </button>
+                {requiresValidNiam && (
+                  <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-600">
+                    Event ini khusus anggota MPJ. Masukkan NIAM yang valid untuk melanjutkan pendaftaran.
+                  </div>
+                )}
+
+                {event.custom_fields && event.custom_fields.length > 0 && (
+                  <div className="space-y-4 pt-2">
+                    <p className="text-sm font-extrabold text-[#1B4332]">Pertanyaan Tambahan</p>
+                    {event.custom_fields.map((field) => (
+                      <div
+                        key={field.id}
+                        className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm space-y-2"
+                      >
+                        <label className="text-xs font-semibold text-gray-700">
+                          {field.label} {field.is_required && <span className="text-red-500">*</span>}
+                        </label>
+
+                        {field.type === 'short_text' && (
+                          <input
+                            type="text"
+                            className={inputClass}
+                            placeholder="Ketik jawaban..."
+                            value={(form.customResponses[field.id] as string) || ''}
+                            onChange={(eventValue) => handleCustomResponse(field.id, eventValue.target.value)}
+                          />
+                        )}
+
+                        {field.type === 'long_text' && (
+                          <textarea
+                            className={`${inputClass} min-h-[100px] resize-none`}
+                            placeholder="Ketik jawaban..."
+                            value={(form.customResponses[field.id] as string) || ''}
+                            onChange={(eventValue) => handleCustomResponse(field.id, eventValue.target.value)}
+                          />
+                        )}
+
+                        {field.type === 'dropdown' && (
+                          <select
+                            className={inputClass}
+                            value={(form.customResponses[field.id] as string) || ''}
+                            onChange={(eventValue) => handleCustomResponse(field.id, eventValue.target.value)}
+                          >
+                            <option value="" disabled>
+                              Pilih Opsi
+                            </option>
+                            {field.options.map((option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+
+                        {field.type === 'radio' && (
+                          <div className="mt-2 space-y-2">
+                            {field.options.map((option) => (
+                              <label key={option} className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                                <input
+                                  type="radio"
+                                  name={`radio-${field.id}`}
+                                  value={option}
+                                  checked={form.customResponses[field.id] === option}
+                                  onChange={(eventValue) => handleCustomResponse(field.id, eventValue.target.value)}
+                                  className="h-4 w-4 border-gray-300 text-[#1B4332] focus:ring-[#1B4332]"
+                                />
+                                {option}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+
+                        {field.type === 'checkbox' && (
+                          <div className="mt-2 space-y-2">
+                            {field.options.map((option) => {
+                              const checked = ((form.customResponses[field.id] as string[]) || []).includes(option)
+                              return (
+                                <label key={option} className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => handleCheckboxToggle(field.id, option)}
+                                    className="h-4 w-4 rounded border-gray-300 text-[#1B4332] focus:ring-[#1B4332]"
+                                  />
+                                  {option}
+                                </label>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <button className={btnGold} onClick={handleContinueToPayment} disabled={!canContinueToPayment()}>
+                  {event.is_paid ? 'Lanjut ke Pembayaran ->' : 'Lanjut ke Konfirmasi ->'}
+                </button>
+              </>
             )}
           </>
         )}
 
-        {/* STEP 2 - NIAM */}
-        {step === 2 && form.path === 'NIAM' && (
-          <>
-            <p className="text-lg font-extrabold text-[#1B4332]">Masukkan NIAM Kamu</p>
-            <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3">
-              <input
-                type="text"
-                placeholder="Contoh: MPJ-001"
-                value={form.niam}
-                onChange={(e) => setForm((f) => ({ ...f, niam: e.target.value, crewName: '', crewUnit: '' }))}
-                className={inputClass}
-              />
-              {form.crewName && (
-                <div className="bg-[#e8f0ec] rounded-2xl p-4 flex items-center gap-3">
-                  <CheckCircle className="w-5 h-5 text-[#1B4332] shrink-0" />
-                  <div>
-                    <p className="text-sm font-bold text-[#1B4332]">{form.crewName}</p>
-                    <p className="text-xs text-gray-500">{form.crewUnit}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-            <button
-              className={btnGold}
-              onClick={() => { if (form.crewName && validateCustomFields()) setStep(3); else if (!form.crewName) handleNIAMValidate() }}
-              disabled={(!form.niam.trim()) || (form.crewName ? !validateCustomFields() : false)}
-            >
-              {form.crewName ? 'Lanjut ke Pembayaran →' : 'Validasi NIAM'}
-            </button>
-          </>
-        )}
-
-        {/* STEP 2 - UMUM */}
-        {step === 2 && form.path === 'UMUM' && (
-          <>
-            <p className="text-lg font-extrabold text-[#1B4332]">Data Diri</p>
-            <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3">
-              <input type="text" placeholder="Nama Lengkap" value={form.guestName}
-                onChange={(e) => setForm((f) => ({ ...f, guestName: e.target.value }))} className={inputClass} />
-              <input type="tel" placeholder="No. WhatsApp (08xx)" value={form.guestWhatsapp}
-                onChange={(e) => setForm((f) => ({ ...f, guestWhatsapp: e.target.value }))} className={inputClass} />
-              <input type="text" placeholder="Asal Instansi / Universitas" value={form.guestInstitution}
-                onChange={(e) => setForm((f) => ({ ...f, guestInstitution: e.target.value }))} className={inputClass} />
-            </div>
-            {/* Custom Fields Component for UMUM & NIAM is placed below */}
-            <button
-              className={btnGold}
-              onClick={() => { if (form.guestName && form.guestWhatsapp && form.guestInstitution && validateCustomFields()) setStep(3) }}
-              disabled={!form.guestName || !form.guestWhatsapp || !form.guestInstitution || !validateCustomFields()}
-            >
-              Lanjut ke Pembayaran →
-            </button>
-          </>
-        )}
-
-        {/* CUSTOM FIELDS (Renders in Step 2 if crewName is loaded or UMUM is filled) */}
-        {step === 2 && event.custom_fields && event.custom_fields.length > 0 && 
-          ((form.path === 'NIAM' && form.crewName) || form.path === 'UMUM') && (
-          <div className="space-y-4 pt-2 mb-4">
-            <p className="text-sm font-extrabold text-[#1B4332]">Pertanyaan Tambahan</p>
-            {event.custom_fields.map(field => (
-              <div key={field.id} className="bg-white rounded-2xl shadow-sm p-4 space-y-2 border border-gray-100">
-                <label className="text-xs font-semibold text-gray-700">
-                  {field.label} {field.is_required && <span className="text-red-500">*</span>}
-                </label>
-
-                {field.type === 'short_text' && (
-                  <input type="text" className={inputClass} placeholder="Ketik jawaban..."
-                    value={(form.customResponses[field.id] as string) || ''}
-                    onChange={e => handleCustomResponse(field.id, e.target.value)} />
-                )}
-
-                {field.type === 'long_text' && (
-                  <textarea className={`${inputClass} min-h-[100px] resize-none`} placeholder="Ketik jawaban..."
-                    value={(form.customResponses[field.id] as string) || ''}
-                    onChange={e => handleCustomResponse(field.id, e.target.value)} />
-                )}
-
-                {field.type === 'dropdown' && (
-                  <select className={inputClass}
-                    value={(form.customResponses[field.id] as string) || ''}
-                    onChange={e => handleCustomResponse(field.id, e.target.value)}>
-                    <option value="" disabled>Pilih Opsi</option>
-                    {field.options.map(o => (
-                      <option key={o} value={o}>{o}</option>
-                    ))}
-                  </select>
-                )}
-
-                {field.type === 'radio' && (
-                  <div className="space-y-2 mt-2">
-                    {field.options.map(o => (
-                      <label key={o} className="flex items-center gap-2 cursor-pointer text-sm text-gray-700">
-                        <input type="radio" 
-                          name={`radio-${field.id}`}
-                          value={o}
-                          checked={form.customResponses[field.id] === o}
-                          onChange={e => handleCustomResponse(field.id, e.target.value)}
-                          className="w-4 h-4 text-[#1B4332] border-gray-300 focus:ring-[#1B4332]" />
-                        {o}
-                      </label>
-                    ))}
-                  </div>
-                )}
-
-                {field.type === 'checkbox' && (
-                  <div className="space-y-2 mt-2">
-                    {field.options.map(o => {
-                      const checked = ((form.customResponses[field.id] as string[]) || []).includes(o)
-                      return (
-                        <label key={o} className="flex items-center gap-2 cursor-pointer text-sm text-gray-700">
-                          <input type="checkbox" 
-                            checked={checked}
-                            onChange={() => handleCheckboxToggle(field.id, o)}
-                            className="w-4 h-4 text-[#1B4332] rounded border-gray-300 focus:ring-[#1B4332]" />
-                          {o}
-                        </label>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* STEP 3 */}
-        {step === 3 && (
+        {step === 2 && (
           <>
             <p className="text-lg font-extrabold text-[#1B4332]">
               {event.is_paid ? 'Invoice Pembayaran' : 'Konfirmasi Pendaftaran'}
             </p>
 
-            {/* Ringkasan */}
             <div className="bg-white rounded-2xl shadow-sm p-4 space-y-3">
-              {[
-                { label: 'Event', value: event.title },
-                { label: 'Jalur', value: form.path },
-                { label: 'Nama', value: form.path === 'NIAM' ? form.crewName : form.guestName },
-              ].map(({ label, value }) => (
-                <div key={label} className="flex justify-between gap-4 text-sm">
-                  <span className="text-gray-400 shrink-0">{label}</span>
-                  <span className="font-semibold text-[#1B4332] text-right line-clamp-2">{value}</span>
-                </div>
-              ))}
+              <SummaryRow label="Event" value={event.title} />
+              <SummaryRow
+                label="Tipe Peserta"
+                value={resolvedPath === 'NIAM' ? 'Anggota MPJ' : 'Peserta Umum'}
+              />
+              <SummaryRow label="Nama" value={form.fullName} />
+              <SummaryRow label="WhatsApp" value={form.whatsapp} />
+              <SummaryRow label="Asal Pesantren / Instansi" value={form.institution} />
+              {resolvedPath === 'NIAM' && <SummaryRow label="NIAM" value={normalizeNiam(form.niam)} />}
+
               {event.is_paid && (
                 <>
                   <div className="border-t border-dashed border-gray-200 pt-3 space-y-2">
@@ -383,9 +657,9 @@ export function RegisterForm({ event }: { event: Event }) {
                       <span className="font-semibold text-gray-700">+{uniqueCode}</span>
                     </div>
                   </div>
-                  <div className="border-t border-gray-200 pt-3 flex justify-between items-center">
+                  <div className="flex items-center justify-between border-t border-gray-200 pt-3">
                     <span className="font-bold text-[#1B4332]">Total Transfer</span>
-                    <span className="font-extrabold text-[#C9A227] text-lg">{formatRupiah(totalAmount)}</span>
+                    <span className="text-lg font-extrabold text-[#C9A227]">{formatRupiah(totalAmount)}</span>
                   </div>
                 </>
               )}
@@ -393,51 +667,64 @@ export function RegisterForm({ event }: { event: Event }) {
 
             {event.is_paid && (
               <>
-                {/* Rekening */}
-                <div className="bg-[#1B4332] rounded-2xl p-5 space-y-1">
-                  <p className="text-xs font-bold text-[#C9A227] uppercase tracking-widest mb-2">Transfer ke</p>
-                  <p className="text-white font-bold text-base">{event.bank_account.bank_name}</p>
-                  <p className="text-white font-extrabold text-2xl tracking-wider">
+                <div className="rounded-2xl bg-[#1B4332] p-5 space-y-1">
+                  <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#C9A227]">Transfer ke</p>
+                  <p className="text-base font-bold text-white">{event.bank_account.bank_name}</p>
+                  <p className="text-2xl font-extrabold tracking-wider text-white">
                     {event.bank_account.account_number}
                   </p>
-                  <p className="text-gray-300 text-sm">a/n {event.bank_account.account_name}</p>
-                  <div className="mt-3 bg-white/10 rounded-xl px-3 py-2">
-                    <p className="text-[#C9A227] text-xs font-semibold">
-                      ⚠ Transfer tepat {formatRupiah(totalAmount)} termasuk kode unik
+                  <p className="text-sm text-gray-300">a/n {event.bank_account.account_name}</p>
+                  <div className="mt-3 rounded-xl bg-white/10 px-3 py-2">
+                    <p className="text-xs font-semibold text-[#C9A227]">
+                      Transfer tepat {formatRupiah(totalAmount)} termasuk kode unik
                     </p>
                   </div>
                 </div>
 
-                {/* Upload */}
                 <div>
-                  <p className="text-sm font-bold text-[#1B4332] mb-2">Upload Bukti Transfer</p>
-                  <label className="flex flex-col items-center justify-center w-full h-36 bg-white border-2 border-dashed border-[#1B4332]/30 rounded-2xl cursor-pointer active:bg-[#e8f0ec] transition-colors shadow-sm">
-                    <div className="w-10 h-10 rounded-full bg-[#e8f0ec] flex items-center justify-center mb-2">
-                      <Upload className="w-5 h-5 text-[#1B4332]" />
+                  <p className="mb-2 text-sm font-bold text-[#1B4332]">Upload Bukti Transfer</p>
+                  <label className="flex h-36 w-full cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-[#1B4332]/30 bg-white shadow-sm transition-colors active:bg-[#e8f0ec]">
+                    <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-[#e8f0ec]">
+                      <Upload className="h-5 w-5 text-[#1B4332]" />
                     </div>
                     <p className="text-sm font-semibold text-[#1B4332]">
                       {form.proofFile ? form.proofFile.name : 'Tap untuk upload foto'}
                     </p>
-                    <p className="text-xs text-gray-400 mt-0.5">JPG, PNG, max 2MB</p>
-                    <input type="file" accept="image/*" className="hidden"
-                      onChange={(e) => setForm((f) => ({ ...f, proofFile: e.target.files?.[0] ?? null }))} />
+                    <p className="mt-0.5 text-xs text-gray-400">JPG, PNG, max 2MB</p>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(eventValue) =>
+                        setForm((current) => ({ ...current, proofFile: eventValue.target.files?.[0] ?? null }))
+                      }
+                    />
                   </label>
                 </div>
 
                 <button className={btnGold} onClick={handlePaymentSubmit} disabled={!form.proofFile}>
-                  Kirim Bukti Transfer →
+                  Kirim Bukti Transfer
                 </button>
               </>
             )}
 
             {!event.is_paid && (
               <button className={btnGold} onClick={handlePaymentSubmit}>
-                Konfirmasi Pendaftaran →
+                Konfirmasi Pendaftaran
               </button>
             )}
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-4 text-sm">
+      <span className="shrink-0 text-gray-400">{label}</span>
+      <span className="line-clamp-2 text-right font-semibold text-[#1B4332]">{value}</span>
     </div>
   )
 }

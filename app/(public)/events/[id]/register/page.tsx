@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import { Suspense } from 'react'
 import type { Metadata } from 'next'
 import { getEventById } from '@/lib/dummy'
 import { getEventFromDb } from '@/lib/server/events'
@@ -15,5 +16,9 @@ export default async function RegisterPage({ params }: { params: Promise<{ id: s
   const event = (await getEventFromDb(id).catch(() => null)) ?? getEventById(id)
   if (!event || (event.status !== 'APPROVED' && event.status !== 'approved')) notFound()
 
-  return <RegisterForm event={event} />
+  return (
+    <Suspense fallback={null}>
+      <RegisterForm event={event} />
+    </Suspense>
+  )
 }
