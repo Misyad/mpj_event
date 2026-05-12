@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { listGatewayCredentials, upsertGatewayCredential } from '@/lib/server/payment-gateway-credentials'
+import {
+  getPusatGatewayCredentialSummary,
+  listRegionalCredentialStatuses,
+  upsertPusatGatewayCredential,
+} from '@/lib/server/payment-gateway-credentials'
 import { requireSuperAdmin } from '@/lib/server/rbac'
 
 export const runtime = 'nodejs'
@@ -15,8 +19,11 @@ function jsonError(error: unknown) {
 export async function GET(request: NextRequest) {
   try {
     await requireSuperAdmin(request)
-    const credentials = await listGatewayCredentials()
-    return NextResponse.json({ ok: true, data: credentials })
+    const [credential, regionalStatuses] = await Promise.all([
+      getPusatGatewayCredentialSummary(),
+      listRegionalCredentialStatuses(),
+    ])
+    return NextResponse.json({ ok: true, data: { credential, regionalStatuses } })
   } catch (error) {
     return jsonError(error)
   }
@@ -26,15 +33,16 @@ export async function POST(request: NextRequest) {
   try {
     await requireSuperAdmin(request)
     const payload = await request.json()
-    const result = await upsertGatewayCredential({
-      ownerType: payload.ownerType || payload.owner_type,
-      regionalId: payload.regionalId || payload.regional_id || null,
-      apiKey: String(payload.apiKey || payload.api_key || ''),
-      webhookSecret: String(payload.webhookSecret || payload.webhook_secret || ''),
-      isActive: payload.isActive ?? payload.is_active ?? true,
-    })
-    const credentials = await listGatewayCredentials()
-    return NextResponse.json({ ok: true, data: result, credentials })
+    const result = await upsertPusatGatewayCredential(
+      String(payload.apiKey || payload.api_key || ''),
+      String(payload.webhookSecret || payload.webhook_secret || ''),
+      payload.isActive ?? payload.is_active ?? true,
+    )
+    const [credential, regionalStatuses] = await Promise.all([
+      getPusatGatewayCredentialSummary(),
+      listRegionalCredentialStatuses(),
+    ])
+    return NextResponse.json({ ok: true, data: result, credential, regionalStatuses })
   } catch (error) {
     return jsonError(error)
   }

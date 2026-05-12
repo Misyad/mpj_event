@@ -18,6 +18,17 @@ export type GatewayCredentialSummary = {
   updatedAt: string | null
 }
 
+export type RegionalGatewayCredentialStatus = {
+  regionalId: string
+  regionalName: string
+  regionalCode: string
+  regionalStatus: string
+  hasCredential: boolean
+  apiKeyMasked: string
+  isActive: boolean
+  updatedAt: string | null
+}
+
 export type GatewayCredentialSecrets = {
   id: string
   ownerType: GatewayCredentialOwnerType
@@ -32,6 +43,8 @@ type CredentialRow = RowDataPacket & {
   owner_type: GatewayCredentialOwnerType
   regional_id: string | null
   regional_name: string | null
+  regional_code?: string | null
+  regional_status?: string | null
   provider: 'paymenku'
   api_key_encrypted: string
   webhook_secret_encrypted: string
@@ -153,6 +166,92 @@ export async function listGatewayCredentials() {
   })
 }
 
+export async function getPusatGatewayCredentialSummary() {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+    try {
+      await ensureGatewayCredentialSchema(connection)
+      const [rows] = await connection.query<CredentialRow[]>(
+        `
+          SELECT c.*, NULL AS regional_name
+          FROM payment_gateway_credentials c
+          WHERE c.owner_type = 'pusat'
+            AND c.provider = 'paymenku'
+            AND c.regional_id IS NULL
+          ORDER BY c.updated_at DESC
+          LIMIT 1
+        `,
+      )
+      return rows[0] ? mapSummary(rows[0]) : null
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function getGatewayCredentialSummaryForRegional(regionalId: string) {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+    try {
+      await ensureGatewayCredentialSchema(connection)
+      const [rows] = await connection.query<CredentialRow[]>(
+        `
+          SELECT c.*, r.name AS regional_name
+          FROM payment_gateway_credentials c
+          LEFT JOIN regionals r ON r.id = c.regional_id
+          WHERE c.owner_type = 'regional'
+            AND c.provider = 'paymenku'
+            AND c.regional_id = :regionalId
+          ORDER BY c.updated_at DESC
+          LIMIT 1
+        `,
+        { regionalId },
+      )
+      return rows[0] ? mapSummary(rows[0]) : null
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function listRegionalCredentialStatuses() {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+    try {
+      await ensureGatewayCredentialSchema(connection)
+      const [rows] = await connection.query<CredentialRow[]>(
+        `
+          SELECT
+            c.*,
+            r.id AS regional_id,
+            r.name AS regional_name,
+            r.code AS regional_code,
+            r.status AS regional_status
+          FROM regionals r
+          LEFT JOIN payment_gateway_credentials c
+            ON c.owner_type = 'regional'
+           AND c.provider = 'paymenku'
+           AND c.regional_id = r.id
+          ORDER BY r.name ASC
+        `,
+      )
+
+      return rows.map((row): RegionalGatewayCredentialStatus => ({
+        regionalId: String(row.regional_id),
+        regionalName: String(row.regional_name || row.regional_id),
+        regionalCode: String(row.regional_code || ''),
+        regionalStatus: String(row.regional_status || 'active'),
+        hasCredential: Boolean(row.id),
+        apiKeyMasked: maskSecret(row.api_key_last4),
+        isActive: Boolean(row.id && row.is_active),
+        updatedAt: toIsoString(row.updated_at),
+      }))
+    } finally {
+      connection.release()
+    }
+  })
+}
+
 export async function upsertGatewayCredential(payload: {
   ownerType: GatewayCredentialOwnerType
   regionalId?: string | null
@@ -220,6 +319,31 @@ export async function upsertGatewayCredential(payload: {
     } finally {
       connection.release()
     }
+  })
+}
+
+export async function upsertPusatGatewayCredential(apiKey: string, webhookSecret: string, isActive?: boolean) {
+  return upsertGatewayCredential({
+    ownerType: 'pusat',
+    regionalId: null,
+    apiKey,
+    webhookSecret,
+    isActive,
+  })
+}
+
+export async function upsertRegionalGatewayCredential(
+  regionalId: string,
+  apiKey: string,
+  webhookSecret: string,
+  isActive?: boolean,
+) {
+  return upsertGatewayCredential({
+    ownerType: 'regional',
+    regionalId,
+    apiKey,
+    webhookSecret,
+    isActive,
   })
 }
 

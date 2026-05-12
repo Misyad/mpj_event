@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-import { BarChart3, Building2, CalendarDays, LayoutDashboard, UserCheck } from 'lucide-react'
+import { BarChart3, Building2, CalendarDays, CreditCard, LayoutDashboard, UserCheck } from 'lucide-react'
 import { LogoutButton } from '@/components/auth/LogoutButton'
 import { AUTH_ROLES } from '@/lib/auth/roles'
 import { hasPermission, type AdminPermission } from '@/lib/auth/permissions'
@@ -10,6 +10,7 @@ const menuItems: Array<{ href: string; label: string; icon: typeof LayoutDashboa
   { href: '/regional/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/regional/events', label: 'Event Regional', icon: CalendarDays, permission: 'events.read' },
   { href: '/regional/participants', label: 'Peserta', icon: UserCheck, permission: 'participants.read' },
+  { href: '/regional/payment-gateway', label: 'Payment Gateway', icon: CreditCard, permission: 'events.create' },
   { href: '/regional/dashboard', label: 'Analytics', icon: BarChart3, permission: 'analytics.read' },
 ]
 

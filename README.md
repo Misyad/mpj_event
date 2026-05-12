@@ -78,7 +78,7 @@ Catatan: script `npm run build` memakai webpack karena pada environment ini buil
 
 Sudah tersedia public event listing/detail, registrasi peserta, validasi tiket, QR check-in, sertifikat setelah event selesai, admin event API, manajemen peserta/pembayaran event, master peserta global dan regional berbasis backend, dashboard dan event regional berbasis backend, dashboard role, dan proxy auth/redirect untuk route terproteksi.
 
-Payment gateway Paymenku tersedia untuk event berbayar dengan metode `gateway`. Credential Paymenku pusat dan regional dikelola dari menu Admin Pusat `Payment Gateway`, lalu disimpan terenkripsi menggunakan `PAYMENT_CREDENTIAL_ENCRYPTION_KEY`. Callback webhook diarahkan ke:
+Payment gateway Paymenku tersedia untuk event berbayar dengan metode `gateway`. Credential Paymenku pusat dikelola dari menu Admin Pusat `Payment Gateway`, sementara credential regional dikelola admin regional dari menu `Payment Gateway` miliknya sendiri. Admin Pusat hanya melihat status kelengkapan credential regional tanpa secret. Semua credential disimpan terenkripsi menggunakan `PAYMENT_CREDENTIAL_ENCRYPTION_KEY`. Callback webhook diarahkan ke:
 
 ```text
 POST /api/paymenku/webhook
