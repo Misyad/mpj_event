@@ -153,6 +153,22 @@ CREATE TABLE IF NOT EXISTS payments (
   INDEX idx_payments_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS payment_gateway_credentials (
+  id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
+  owner_type ENUM('pusat','regional') NOT NULL,
+  regional_id CHAR(36) NULL,
+  provider VARCHAR(50) NOT NULL DEFAULT 'paymenku',
+  api_key_encrypted TEXT NOT NULL,
+  webhook_secret_encrypted TEXT NOT NULL,
+  api_key_last4 VARCHAR(12) NULL,
+  webhook_secret_last4 VARCHAR(12) NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_payment_gateway_owner_provider (owner_type, regional_id, provider),
+  INDEX idx_payment_gateway_regional (regional_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS event_custom_fields (
   id CHAR(36) NOT NULL DEFAULT (UUID()) PRIMARY KEY,
   event_id CHAR(36) NOT NULL,

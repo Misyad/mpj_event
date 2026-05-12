@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
-import { Calendar, ChevronRight, Database, KeyRound, LayoutDashboard, Menu, QrCode, UserCheck, Users2, UsersRound, X } from 'lucide-react'
+import { Calendar, ChevronRight, CreditCard, Database, KeyRound, LayoutDashboard, Menu, QrCode, UserCheck, Users2, UsersRound, X } from 'lucide-react'
 import { LogoutButton } from '@/components/auth/LogoutButton'
 import { cn } from '@/lib/utils'
 
@@ -15,6 +15,7 @@ const navItems = [
   { href: '/admin-pusat/master-data', label: 'Master Data', icon: Database, exact: false },
   { href: '/admin-pusat/roles', label: 'Role Admin', icon: UsersRound, exact: false },
   { href: '/admin-pusat/permissions', label: 'Permissions', icon: KeyRound, exact: false },
+  { href: '/admin-pusat/payment-gateways', label: 'Payment Gateway', icon: CreditCard, exact: false },
   { href: '/scan', label: 'Scan Absensi', icon: QrCode, exact: false },
 ]
 

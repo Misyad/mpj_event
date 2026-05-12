@@ -1,4 +1,5 @@
 import crypto from 'crypto'
+import type { GatewayCredentialSecrets } from '@/lib/server/payment-gateway-credentials'
 
 export type PaymenkuChannel = {
   code: string
@@ -40,25 +41,25 @@ function getBaseUrl() {
   return (process.env.PAYMENKU_API_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '')
 }
 
-function getApiKey() {
-  const key = process.env.PAYMENKU_API_KEY?.trim()
-  if (!key) throw new Error('PAYMENKU_API_KEY belum dikonfigurasi')
+function getApiKey(credential?: GatewayCredentialSecrets) {
+  const key = credential?.apiKey?.trim()
+  if (!key) throw new Error('Credential API key Paymenku belum dikonfigurasi')
   return key
 }
 
-function getWebhookSecret() {
-  const secret = process.env.PAYMENKU_WEBHOOK_SECRET?.trim()
-  if (!secret) throw new Error('PAYMENKU_WEBHOOK_SECRET belum dikonfigurasi')
+function getWebhookSecret(credential?: Pick<GatewayCredentialSecrets, 'webhookSecret'>) {
+  const secret = credential?.webhookSecret?.trim()
+  if (!secret) throw new Error('Credential webhook secret Paymenku belum dikonfigurasi')
   return secret
 }
 
-async function paymenkuFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function paymenkuFetch<T>(path: string, init: RequestInit = {}, credential?: GatewayCredentialSecrets): Promise<T> {
   const response = await fetch(`${getBaseUrl()}${path}`, {
     ...init,
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${getApiKey()}`,
+      Authorization: `Bearer ${getApiKey(credential)}`,
       ...(init.headers ?? {}),
     },
     cache: 'no-store',
@@ -91,8 +92,8 @@ export function normalizePaymenkuStatus(status: string | undefined) {
   return 'pending'
 }
 
-export async function getPaymenkuChannels(): Promise<PaymenkuChannel[]> {
-  const payload = await paymenkuFetch<{ status: string; data: Record<string, unknown[]> | unknown[] }>('/payment-channels')
+export async function getPaymenkuChannels(credential?: GatewayCredentialSecrets): Promise<PaymenkuChannel[]> {
+  const payload = await paymenkuFetch<{ status: string; data: Record<string, unknown[]> | unknown[] }>('/payment-channels', {}, credential)
   const groups = Array.isArray(payload.data) ? { channels: payload.data } : payload.data && typeof payload.data === 'object' ? payload.data : {}
 
   return Object.values(groups).flatMap((items) => (
@@ -120,7 +121,7 @@ export async function createPaymenkuTransaction(input: {
   customerPhone?: string
   channelCode: string
   returnUrl: string
-}): Promise<PaymenkuTransaction> {
+}, credential?: GatewayCredentialSecrets): Promise<PaymenkuTransaction> {
   const payload = await paymenkuFetch<{
     status: string
     data: {
@@ -142,7 +143,7 @@ export async function createPaymenkuTransaction(input: {
       channel_code: input.channelCode,
       return_url: input.returnUrl,
     }),
-  })
+  }, credential)
 
   const data = payload.data
   const paymentInfo = normalizePaymentInfo(data.payment_info)
@@ -158,16 +159,16 @@ export async function createPaymenkuTransaction(input: {
   }
 }
 
-export async function checkPaymenkuStatus(orderId: string): Promise<PaymenkuWebhookPayload> {
-  const payload = await paymenkuFetch<{ status: string; data: PaymenkuWebhookPayload }>(`/check-status/${encodeURIComponent(orderId)}`)
+export async function checkPaymenkuStatus(orderId: string, credential?: GatewayCredentialSecrets): Promise<PaymenkuWebhookPayload> {
+  const payload = await paymenkuFetch<{ status: string; data: PaymenkuWebhookPayload }>(`/check-status/${encodeURIComponent(orderId)}`, {}, credential)
   return payload.data
 }
 
-export function verifyPaymenkuSignature(rawBody: string, signature: string | null, timestamp: string | null) {
+export function verifyPaymenkuSignature(rawBody: string, signature: string | null, timestamp: string | null, credential?: Pick<GatewayCredentialSecrets, 'webhookSecret'>) {
   if (!signature || !timestamp) return false
 
   const expected = crypto
-    .createHmac('sha256', getWebhookSecret())
+    .createHmac('sha256', getWebhookSecret(credential))
     .update(`${timestamp}.${rawBody}`)
     .digest('hex')
 

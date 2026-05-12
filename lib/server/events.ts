@@ -3,6 +3,7 @@ import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/prom
 import type { CustomField, Event, EventCategory, EventClass, EventPaymentMethod, EventScope, GatewayProvider, LocationType, Participant, PaymentRecord, RegistrationStatus } from '@/types'
 import { withDb } from '@/lib/server/db'
 import { createPaymenkuTransaction, normalizePaymenkuStatus, type PaymenkuWebhookPayload } from '@/lib/server/paymenku'
+import { getGatewayCredentialForEvent } from '@/lib/server/payment-gateway-credentials'
 
 const DEFAULT_BANK_ACCOUNT = {
   bank_name: 'BCA',
@@ -1421,6 +1422,7 @@ async function createPaymentCoreRequest(
   }
 
   if (paymentMethod === 'gateway') {
+    const credential = await getGatewayCredentialForEvent(event as Event)
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || '').replace(/\/+$/, '')
     const payment = await createPaymenkuTransaction({
       referenceId: paymentId,
@@ -1430,7 +1432,7 @@ async function createPaymentCoreRequest(
       customerPhone: options.customerPhone,
       channelCode,
       returnUrl: appUrl ? `${appUrl}/ticket?paymentId=${encodeURIComponent(paymentId)}` : `${process.env.NEXT_PUBLIC_MPJ_EVENT_URL || ''}/ticket?paymentId=${encodeURIComponent(paymentId)}`,
-    })
+    }, credential)
 
     paymentRequest.externalRef = payment.trxId
     paymentRequest.checkoutUrl = payment.payUrl

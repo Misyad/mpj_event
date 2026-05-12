@@ -39,6 +39,7 @@
 - Auth redirect hardening validates `next` by role and redirects authenticated users away from login pages.
 - Paymenku gateway is available as an external Payment Core provider while manual transfer remains supported.
 - Admin can choose a Paymenku channel per paid event, registration creates a Paymenku transaction, and the public form returns a checkout URL.
+- Paymenku credentials are stored encrypted per owner: one pusat credential and one required credential for each regional that creates gateway events.
 - Paymenku webhook is available at `POST /api/paymenku/webhook` and verifies `X-Paymenku-Signature` plus `X-Paymenku-Timestamp` before confirming participants.
 
 ## Remaining Integration Work

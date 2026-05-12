@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-import { BarChart3, Crown, KeyRound, LayoutDashboard, Settings, UsersRound } from 'lucide-react'
+import { BarChart3, CreditCard, Crown, KeyRound, LayoutDashboard, Settings, UsersRound } from 'lucide-react'
 import { LogoutButton } from '@/components/auth/LogoutButton'
 import { AUTH_ROLES } from '@/lib/auth/roles'
 import { hasPermission, type AdminPermission } from '@/lib/auth/permissions'
@@ -10,6 +10,7 @@ const menuItems: Array<{ href: string; label: string; icon: typeof LayoutDashboa
   { href: '/admin-pusat/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin-pusat/roles', label: 'Role Admin', icon: UsersRound },
   { href: '/admin-pusat/permissions', label: 'Permissions', icon: KeyRound },
+  { href: '/admin-pusat/payment-gateways', label: 'Payment Gateway', icon: CreditCard },
   { href: '/admin-pusat/dashboard', label: 'Analytics', icon: BarChart3, permission: 'analytics.read' },
   { href: '/admin-pusat/dashboard', label: 'Settings', icon: Settings, permission: 'settings.read' },
 ]

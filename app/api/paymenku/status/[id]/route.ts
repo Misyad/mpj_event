@@ -1,14 +1,19 @@
+import { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { applyPaymenkuPaymentUpdate } from '@/lib/server/events'
 import { checkPaymenkuStatus } from '@/lib/server/paymenku'
+import { getGatewayCredentialForPayment } from '@/lib/server/payment-gateway-credentials'
+import { requireAdminPermission } from '@/lib/server/rbac'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export async function POST(_request: Request, context: RouteContext<'/api/paymenku/status/[id]'>) {
+export async function POST(request: NextRequest, context: RouteContext<'/api/paymenku/status/[id]'>) {
   try {
+    await requireAdminPermission(request, 'participants.verify')
     const { id } = await context.params
-    const status = await checkPaymenkuStatus(id)
+    const credential = await getGatewayCredentialForPayment({ paymentId: id, externalRef: id })
+    const status = await checkPaymenkuStatus(id, credential)
     const participant = await applyPaymenkuPaymentUpdate(status)
     return NextResponse.json({ ok: true, data: participant, status })
   } catch (error) {

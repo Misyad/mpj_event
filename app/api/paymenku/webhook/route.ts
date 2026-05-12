@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { applyPaymenkuPaymentUpdate } from '@/lib/server/events'
 import { verifyPaymenkuSignature, type PaymenkuWebhookPayload } from '@/lib/server/paymenku'
+import { getGatewayCredentialForPayment } from '@/lib/server/payment-gateway-credentials'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -11,11 +12,16 @@ export async function POST(request: NextRequest) {
   const timestamp = request.headers.get('x-paymenku-timestamp')
 
   try {
-    if (!verifyPaymenkuSignature(rawBody, signature, timestamp)) {
+    const payload = JSON.parse(rawBody) as PaymenkuWebhookPayload
+    const credential = await getGatewayCredentialForPayment({
+      paymentId: payload.reference_id,
+      externalRef: payload.trx_id,
+    })
+
+    if (!verifyPaymenkuSignature(rawBody, signature, timestamp, credential)) {
       return NextResponse.json({ ok: false, error: 'Invalid signature' }, { status: 401 })
     }
 
-    const payload = JSON.parse(rawBody) as PaymenkuWebhookPayload
     const participant = await applyPaymenkuPaymentUpdate(payload)
     return NextResponse.json({ ok: true, data: participant })
   } catch (error) {
