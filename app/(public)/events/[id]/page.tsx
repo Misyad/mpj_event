@@ -63,7 +63,7 @@ export async function EventDetailView({ identifier }: { identifier: string }) {
       <div className="px-4 py-5 space-y-4">
         {/* Badges */}
         <div className="flex gap-2 flex-wrap">
-          <BadgeStatus status={event.status} />
+          <BadgeStatus status={event.status} variant="public" />
           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#e8f0ec] text-[#1B4332]">
             {event.category}
           </span>
@@ -126,15 +126,9 @@ export async function EventDetailView({ identifier }: { identifier: string }) {
             </div>
             <div className="space-y-2 pl-10">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Jalur NIAM</span>
-                <span className="font-bold text-[#1B4332]">Rp {event.price_niam.toLocaleString('id-ID')}</span>
+                <span className="text-gray-500">HTM Event</span>
+                <span className="font-bold text-[#1B4332]">Rp {event.price_public.toLocaleString('id-ID')}</span>
               </div>
-              {event.is_open_for_public && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Jalur Umum</span>
-                  <span className="font-bold text-[#1B4332]">Rp {event.price_public.toLocaleString('id-ID')}</span>
-                </div>
-              )}
             </div>
           </div>
         )}
@@ -149,7 +143,7 @@ export async function EventDetailView({ identifier }: { identifier: string }) {
       {/* CTA Sticky */}
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-107.5 bg-white border-t border-gray-100 px-4 py-4">
         {isOpen ? (
-          <Link href={`/register/${event.slug || event.id}`}
+          <Link href={`/events/${event.id}/register`}
             className="block w-full bg-[#C9A227] text-white text-center py-3.5 rounded-full font-bold text-sm tracking-wide shadow-md">
             Daftar Sekarang →
           </Link>

@@ -29,7 +29,7 @@ export function EventCard({ event }: { event: Event }) {
 
         {/* Info */}
         <div className="px-4 py-4 space-y-2">
-          <BadgeStatus status={event.status} />
+          <BadgeStatus status={event.status} variant="public" />
 
           <h2 className="font-bold text-[#1B4332] text-base leading-snug line-clamp-2">
             {event.title}

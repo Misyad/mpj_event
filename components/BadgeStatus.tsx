@@ -14,11 +14,25 @@ const config: Record<string, { label: string; className: string }> = {
   finished: { label: 'Selesai', className: 'bg-purple-100 text-purple-700' },
 }
 
-export function BadgeStatus({ status }: { status: EventStatus }) {
+const publicLabels: Partial<Record<EventStatus, string>> = {
+  APPROVED: 'Published',
+  FINISHED: 'Selesai',
+  COMPLETED: 'Selesai',
+}
+
+export function BadgeStatus({
+  status,
+  variant = 'default',
+}: {
+  status: EventStatus
+  variant?: 'default' | 'public'
+}) {
   const { label, className } = config[status] ?? config.DRAFT
+  const displayLabel = variant === 'public' ? (publicLabels[status] ?? label) : label
+
   return (
     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${className}`}>
-      {label}
+      {displayLabel}
     </span>
   )
 }
