@@ -12,6 +12,7 @@ Sistem manajemen event untuk publikasi acara, pendaftaran peserta, ticketing, pe
 - **Admin Pusat**: Kelola event, peserta, pembayaran, narasumber, master data, role admin, dan permission.
 - **Role Dashboard**: Admin Pusat, Admin Regional, dan User/Peserta memiliki route login dan dashboard masing-masing.
 - **Database-backed API**: Route handler Next.js membaca dan menulis data event ke MySQL/MariaDB.
+- **AI Chatbot Operasional**: Floating assistant publik/admin untuk FAQ, event, tiket, pembayaran, dan panduan operasional read-only.
 
 ## Tech Stack
 
@@ -19,6 +20,7 @@ Sistem manajemen event untuk publikasi acara, pendaftaran peserta, ticketing, pe
 - **Language**: TypeScript.
 - **Styling**: Tailwind CSS 4, shadcn/ui, Base UI, Lucide Icons.
 - **Backend/Data**: Next.js Route Handlers, MySQL/MariaDB, `mysql2`.
+- **AI**: OpenAI Responses API melalui server-side Route Handler.
 - **QR & Utilities**: `qrcode`, `qrcode.react`, `html5-qrcode`, Axios, Sonner.
 - **Deployment**: Next.js standalone output.
 
@@ -52,6 +54,8 @@ DB_NAME=app_db
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 PAYMENKU_API_BASE_URL=https://paymenku.com/api/v1
 PAYMENT_CREDENTIAL_ENCRYPTION_KEY=
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-5.4-mini
 ```
 
 Bootstrap database lokal dengan menjalankan SQL berikut secara berurutan:
@@ -85,6 +89,14 @@ POST /api/paymenku/webhook
 ```
 
 Webhook wajib memakai header `X-Paymenku-Signature` dan `X-Paymenku-Timestamp`; status peserta baru dikonfirmasi setelah signature valid dan status transaksi Paymenku terverifikasi.
+
+AI chatbot tersedia sebagai floating widget di halaman publik dan admin. Endpoint server-side:
+
+```text
+POST /api/ai/chat
+```
+
+Chatbot v1 bersifat read-only: boleh membaca FAQ, event publik, status tiket berdasarkan kode yang diberikan user, serta ringkasan operasional admin sesuai session/permission. Chatbot tidak boleh membuat, mengubah, menghapus, mengonfirmasi, atau memverifikasi data.
 
 ## Dokumentasi
 

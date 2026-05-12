@@ -41,6 +41,7 @@
 - Admin can choose a Paymenku channel per paid event, registration creates a Paymenku transaction, and the public form returns a checkout URL.
 - Paymenku credentials are stored encrypted per owner: Admin Pusat manages only the pusat credential, Admin Regional manages its own regional credential, and the pusat dashboard only shows regional setup status without secrets.
 - Paymenku webhook is available at `POST /api/paymenku/webhook` and verifies `X-Paymenku-Signature` plus `X-Paymenku-Timestamp` before confirming participants.
+- AI chatbot is available as a floating read-only operational assistant for public and admin surfaces. It can answer MPJ Event FAQ, summarize visible event data, and help check ticket/payment/attendance context without mutating records.
 
 ## Remaining Integration Work
 
@@ -64,3 +65,4 @@
 - `GET /api/paymenku/channels`
 - `POST /api/paymenku/webhook`
 - `POST /api/paymenku/status/:id`
+- `POST /api/ai/chat`
