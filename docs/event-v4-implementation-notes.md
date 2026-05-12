@@ -37,10 +37,13 @@
 - Regional dashboard reads backend event and participant summaries scoped to the regional admin session.
 - Regional event page has backend-scoped event data with client-side search, status/category filters, stats, and public/register actions.
 - Auth redirect hardening validates `next` by role and redirects authenticated users away from login pages.
+- Paymenku gateway is available as an external Payment Core provider while manual transfer remains supported.
+- Admin can choose a Paymenku channel per paid event, registration creates a Paymenku transaction, and the public form returns a checkout URL.
+- Paymenku webhook is available at `POST /api/paymenku/webhook` and verifies `X-Paymenku-Signature` plus `X-Paymenku-Timestamp` before confirming participants.
 
 ## Remaining Integration Work
 
-- Wire an external Payment Core provider endpoint if the project later moves payment orchestration outside this app.
+- Add production operational monitoring for failed/late Paymenku webhooks if needed.
 
 ## Key Endpoints
 
@@ -57,3 +60,6 @@
 - `POST /api/admin/events/:idOrSlug/participants/:participantId/confirm`
 - `GET /api/admin/participants`
 - `GET /api/regional/participants`
+- `GET /api/paymenku/channels`
+- `POST /api/paymenku/webhook`
+- `POST /api/paymenku/status/:id`

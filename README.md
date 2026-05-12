@@ -49,6 +49,10 @@ DB_PORT=3306
 DB_USER=root
 DB_PASSWORD=
 DB_NAME=app_db
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+PAYMENKU_API_BASE_URL=https://paymenku.com/api/v1
+PAYMENKU_API_KEY=
+PAYMENKU_WEBHOOK_SECRET=
 ```
 
 Bootstrap database lokal dengan menjalankan SQL berikut secara berurutan:
@@ -75,9 +79,13 @@ Catatan: script `npm run build` memakai webpack karena pada environment ini buil
 
 Sudah tersedia public event listing/detail, registrasi peserta, validasi tiket, QR check-in, sertifikat setelah event selesai, admin event API, manajemen peserta/pembayaran event, master peserta global dan regional berbasis backend, dashboard dan event regional berbasis backend, dashboard role, dan proxy auth/redirect untuk route terproteksi.
 
-Pekerjaan lanjutan yang masih terbuka:
+Payment gateway Paymenku tersedia untuk event berbayar dengan metode `gateway`. Callback webhook diarahkan ke:
 
-- Integrasi provider Payment Core eksternal jika pembayaran dipisah dari aplikasi ini.
+```text
+POST /api/paymenku/webhook
+```
+
+Webhook wajib memakai header `X-Paymenku-Signature` dan `X-Paymenku-Timestamp`; status peserta baru dikonfirmasi setelah signature valid dan status transaksi Paymenku terverifikasi.
 
 ## Dokumentasi
 

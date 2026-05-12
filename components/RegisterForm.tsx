@@ -50,6 +50,12 @@ type FormData = {
   proofFile: File | null
 }
 
+type SubmittedPayment = {
+  provider: string | null
+  payUrl: string | null
+  paymentId: string | null
+}
+
 function generateUniqueCode() {
   return Math.floor(Math.random() * 900) + 100
 }
@@ -97,6 +103,7 @@ export function RegisterForm({
   const [isCheckingMember, setIsCheckingMember] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [submittedPayment, setSubmittedPayment] = useState<SubmittedPayment | null>(null)
   const [submitError, setSubmitError] = useState('')
   const [institutionOpen, setInstitutionOpen] = useState(false)
   const [institutionQuery, setInstitutionQuery] = useState('')
@@ -110,7 +117,8 @@ export function RegisterForm({
   const finalName = member?.fullName ?? form.fullName
   const finalInstitution = member?.unit ?? form.institution
   const finalPrice = event.is_paid ? (isNiamRegistration ? event.price_niam : event.price_public) : 0
-  const totalAmount = event.is_paid ? finalPrice + uniqueCode : 0
+  const usesGateway = event.is_paid && event.payment_method === 'gateway'
+  const totalAmount = event.is_paid ? finalPrice + (usesGateway ? 0 : uniqueCode) : 0
   const selectedClass = event.classes?.find((eventClass) => eventClass.id === form.selectedClassId)
   const hasClasses = Boolean(event.classes?.length)
 
@@ -234,6 +242,11 @@ export function RegisterForm({
 
       if (!response.ok || !payload.ok) throw new Error(payload.error || 'Pendaftaran gagal')
 
+      setSubmittedPayment({
+        provider: payload.paymentProvider ?? null,
+        payUrl: payload.payUrl ?? null,
+        paymentId: payload.paymentId ?? null,
+      })
       setSubmitted(true)
       if (!payload.requiresPayment) {
         const token = payload.ticketCode || payload.data?.ticketCode || payload.data?.qr_token
@@ -259,6 +272,29 @@ export function RegisterForm({
   }
 
   if (submitted && event.is_paid) {
+    if (usesGateway) {
+      return (
+        <div className="flex min-h-screen flex-col items-center justify-center bg-[#f0f4f0] px-6 text-center">
+          <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-amber-50">
+            <BadgeCheck className="h-10 w-10 text-[#C9A227]" />
+          </div>
+          <h2 className="text-xl font-extrabold text-[#1B4332]">Pendaftaran Berhasil</h2>
+          <p className="mb-8 mt-2 text-sm leading-relaxed text-gray-500">
+            Lanjutkan pembayaran melalui Paymenku. QR aktif setelah pembayaran dikonfirmasi.
+          </p>
+          {submittedPayment?.payUrl ? (
+            <a href={submittedPayment.payUrl} className={btnGold}>
+              Bayar Sekarang
+            </a>
+          ) : (
+            <p className="rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm font-semibold text-amber-700">
+              Link pembayaran belum tersedia. ID pembayaran: {submittedPayment?.paymentId || '-'}.
+            </p>
+          )}
+        </div>
+      )
+    }
+
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-[#f0f4f0] px-6 text-center">
         <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-amber-50">
@@ -496,10 +532,12 @@ export function RegisterForm({
                       <span className="text-gray-400">Harga tiket</span>
                       <span className="font-semibold text-gray-700">{formatRupiah(finalPrice)}</span>
                     </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-400">Kode unik</span>
-                      <span className="font-semibold text-gray-700">+{uniqueCode}</span>
-                    </div>
+                    {!usesGateway ? (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-400">Kode unik</span>
+                        <span className="font-semibold text-gray-700">+{uniqueCode}</span>
+                      </div>
+                    ) : null}
                   </div>
                   <div className="flex items-center justify-between border-t border-gray-200 pt-3">
                     <span className="font-bold text-[#1B4332]">Total Transfer</span>
@@ -509,7 +547,7 @@ export function RegisterForm({
               ) : null}
             </div>
 
-            {event.is_paid ? (
+            {event.is_paid && !usesGateway ? (
               <>
                 <div className="space-y-1 rounded-2xl bg-[#1B4332] p-5">
                   <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#C9A227]">Transfer ke</p>
@@ -542,6 +580,11 @@ export function RegisterForm({
                   Kirim Bukti Transfer
                 </button>
               </>
+            ) : event.is_paid && usesGateway ? (
+              <button type="button" className={btnGold} onClick={submitRegistration} disabled={isSubmitting}>
+                {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                Buat Link Pembayaran
+              </button>
             ) : (
               <button type="button" className={btnGold} onClick={submitRegistration} disabled={isSubmitting}>
                 {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}

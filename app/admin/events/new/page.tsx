@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Building2, Calendar, CreditCard, MapPin, Plus, Trash2, User } from 'lucide-react'
@@ -22,6 +22,14 @@ interface Speaker {
   name: string
   topic: string
   kelas: string
+}
+
+type PaymenkuChannel = {
+  code: string
+  name: string
+  type: string
+  typeLabel?: string
+  feeDisplay?: string
 }
 
 interface FormData {
@@ -46,9 +54,8 @@ interface FormData {
   bankName: string
   bankNumber: string
   bankAccountName: string
-  midtransServerKey: string
-  midtransClientKey: string
-  midtransSandbox: boolean
+  paymenkuChannelCode: string
+  paymenkuChannelName: string
   speakerId: string | null
   speakers: Speaker[]
   customFields: CustomField[]
@@ -63,7 +70,7 @@ const defaultForm: FormData = {
   priceNiam: '0', pricePublic: '0',
   maxParticipants: '', registrationDeadline: '',
   paymentMethod: 'manual', bankName: '', bankNumber: '', bankAccountName: '',
-  midtransServerKey: '', midtransClientKey: '', midtransSandbox: true,
+  paymenkuChannelCode: '', paymenkuChannelName: '',
   speakerId: null, speakers: [], customFields: [], classes: [],
 }
 
@@ -87,10 +94,36 @@ export default function NewEventPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [submitError, setSubmitError] = useState('')
+  const [paymenkuChannels, setPaymenkuChannels] = useState<PaymenkuChannel[]>([])
+  const [isLoadingChannels, setIsLoadingChannels] = useState(false)
 
   function update(key: keyof FormData, value: FormData[typeof key]) {
     setForm(prev => ({ ...prev, [key]: value }))
   }
+
+  useEffect(() => {
+    if (!form.isPaid || form.paymentMethod !== 'gateway' || paymenkuChannels.length > 0 || isLoadingChannels) return
+
+    let active = true
+    async function loadChannels() {
+      setIsLoadingChannels(true)
+      try {
+        const response = await fetch('/api/paymenku/channels', { cache: 'no-store' })
+        const payload = await response.json()
+        if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal memuat channel Paymenku')
+        if (active) setPaymenkuChannels(payload.data ?? [])
+      } catch (error) {
+        if (active) setSubmitError(error instanceof Error ? error.message : 'Gagal memuat channel Paymenku')
+      } finally {
+        if (active) setIsLoadingChannels(false)
+      }
+    }
+
+    loadChannels()
+    return () => {
+      active = false
+    }
+  }, [form.isPaid, form.paymentMethod, isLoadingChannels, paymenkuChannels.length])
 
   function addSpeaker() {
     update('speakers', [...form.speakers, { id: Date.now().toString(), name: '', topic: '', kelas: '' }])
@@ -183,6 +216,9 @@ export default function NewEventPage() {
       if (form.eventType === 'Sistem Kelas' && classes.length === 0) {
         throw new Error('Minimal satu kelas wajib dibuat untuk event Sistem Kelas')
       }
+      if (form.isPaid && form.paymentMethod === 'gateway' && !form.paymenkuChannelCode) {
+        throw new Error('Channel Paymenku wajib dipilih.')
+      }
       const invalidClass = classes.find((eventClass) => eventClass.quota !== null && (!Number.isInteger(eventClass.quota) || eventClass.quota < 1))
       if (invalidClass) {
         throw new Error(`Kuota kelas "${invalidClass.name}" harus berupa angka positif`)
@@ -210,6 +246,16 @@ export default function NewEventPage() {
           allowPublic: form.isOpenForPublic,
           is_paid: form.isPaid,
           isPaidEvent: form.isPaid,
+          payment_method: form.isPaid ? form.paymentMethod : 'manual',
+          paymentMethod: form.isPaid ? form.paymentMethod : 'manual',
+          gateway_provider: form.isPaid && form.paymentMethod === 'gateway' ? 'paymenku' : null,
+          gatewayProvider: form.isPaid && form.paymentMethod === 'gateway' ? 'paymenku' : null,
+          gateway_config: form.isPaid && form.paymentMethod === 'gateway'
+            ? { channelCode: form.paymenkuChannelCode, channelName: form.paymenkuChannelName }
+            : null,
+          gatewayConfig: form.isPaid && form.paymentMethod === 'gateway'
+            ? { channelCode: form.paymenkuChannelCode, channelName: form.paymenkuChannelName }
+            : null,
           price_niam: Number(form.priceNiam || 0),
           priceNiam: Number(form.priceNiam || 0),
           price_public: Number(form.pricePublic || 0),
@@ -552,7 +598,7 @@ export default function NewEventPage() {
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { value: 'manual', label: 'Transfer Manual', desc: 'Kode unik 3 digit' },
-                  { value: 'gateway', label: 'Midtrans Snap', desc: 'QRIS, VA, dll' },
+                  { value: 'gateway', label: 'Paymenku', desc: 'QRIS, VA, e-wallet' },
                 ].map(opt => (
                   <button key={opt.value} type="button" onClick={() => update('paymentMethod', opt.value as PaymentMethod)}
                     className={`p-3 rounded-xl border-2 text-left transition-all ${form.paymentMethod === opt.value ? 'border-[#1B4332] bg-[#1B4332]/5' : 'border-gray-200 hover:border-gray-300'}`}>
@@ -587,30 +633,40 @@ export default function NewEventPage() {
               </div>
             )}
 
-            {/* Midtrans Config (for gateway) */}
+            {/* Paymenku Config (for gateway) */}
             {form.paymentMethod === 'gateway' && (
               <div className="space-y-3 p-4 bg-blue-50 rounded-xl border border-blue-100">
-                <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">Konfigurasi Midtrans</p>
-                <div className="flex items-center justify-between p-3 bg-white rounded-xl border border-blue-100">
-                  <div>
-                    <p className="text-xs font-semibold text-gray-700">Mode Sandbox</p>
-                    <p className="text-[10px] text-gray-400">Aktifkan untuk testing, matikan untuk production</p>
-                  </div>
-                  <Switch checked={form.midtransSandbox} onCheckedChange={v => update('midtransSandbox', v)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-gray-600">Server Key</Label>
-                  <Input type="password" value={form.midtransServerKey} onChange={e => update('midtransServerKey', e.target.value)}
-                    placeholder="SB-Mid-server-..." className="rounded-xl text-sm font-mono" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-gray-600">Client Key</Label>
-                  <Input value={form.midtransClientKey} onChange={e => update('midtransClientKey', e.target.value)}
-                    placeholder="SB-Mid-client-..." className="rounded-xl text-sm font-mono" />
-                </div>
-                <p className="text-[10px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg p-2">
-                  ⚠️ Server Key akan dienkripsi sebelum disimpan ke database. Jangan bagikan ke siapapun.
+                <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">Konfigurasi Paymenku</p>
+                <p className="text-[10px] text-gray-500 bg-white border border-blue-100 rounded-lg p-2">
+                  API key dan webhook secret disimpan di environment server.
                 </p>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-gray-600">Channel Pembayaran</Label>
+                  <Select
+                    value={form.paymenkuChannelCode}
+                    onValueChange={(value) => {
+                      const channel = paymenkuChannels.find((item) => item.code === value)
+                      update('paymenkuChannelCode', value)
+                      update('paymenkuChannelName', channel?.name ?? value)
+                    }}
+                  >
+                    <SelectTrigger className="rounded-xl text-sm bg-white">
+                      <SelectValue placeholder={isLoadingChannels ? 'Memuat channel...' : 'Pilih channel Paymenku'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {paymenkuChannels.map((channel) => (
+                        <SelectItem key={channel.code} value={channel.code}>
+                          {channel.name} ({channel.code})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {form.paymenkuChannelCode ? (
+                  <p className="text-[10px] text-blue-700 bg-white border border-blue-100 rounded-lg p-2">
+                    Channel aktif: {form.paymenkuChannelName || form.paymenkuChannelCode}
+                  </p>
+                ) : null}
               </div>
             )}
           </div>

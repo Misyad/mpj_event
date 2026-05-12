@@ -1,7 +1,8 @@
 import { randomUUID } from 'crypto'
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise'
-import type { CustomField, Event, EventCategory, EventClass, EventScope, LocationType, Participant, PaymentRecord, RegistrationStatus } from '@/types'
+import type { CustomField, Event, EventCategory, EventClass, EventPaymentMethod, EventScope, GatewayProvider, LocationType, Participant, PaymentRecord, RegistrationStatus } from '@/types'
 import { withDb } from '@/lib/server/db'
+import { createPaymenkuTransaction, normalizePaymenkuStatus, type PaymenkuWebhookPayload } from '@/lib/server/paymenku'
 
 const DEFAULT_BANK_ACCOUNT = {
   bank_name: 'BCA',
@@ -24,6 +25,9 @@ type EventRow = RowDataPacket & {
   end_date: Date | string | null
   is_open_for_public: 0 | 1
   is_paid: 0 | 1
+  payment_method: EventPaymentMethod | null
+  gateway_provider: GatewayProvider | null
+  gateway_config: string | Event['gateway_config'] | null
   price_niam: number
   price_public: number
   status: string
@@ -97,8 +101,12 @@ type PaymentCoreRequest = {
   sourceId: string
   amount: number
   amountSnapshot: number
-  paymentMethod: 'manual'
-  paymentChannel: 'bank_transfer'
+  paymentMethod: EventPaymentMethod
+  paymentChannel: string
+  gatewayProvider?: string | null
+  externalRef?: string | null
+  checkoutUrl?: string | null
+  paymentInfo?: Record<string, unknown> | null
   status: PaymentCoreStatus
 }
 
@@ -155,6 +163,13 @@ type EventPayload = {
   allowPublic?: boolean
   is_paid?: boolean
   isPaidEvent?: boolean
+  payment_method?: EventPaymentMethod
+  paymentMethod?: EventPaymentMethod
+  gateway_provider?: GatewayProvider | null
+  gatewayProvider?: GatewayProvider | null
+  gateway_config?: Event['gateway_config']
+  gatewayConfig?: Event['gateway_config']
+  paymenkuChannelCode?: string
   price_niam?: number
   priceNiam?: number
   price_public?: number
@@ -236,6 +251,22 @@ function toNullableInteger(value: unknown) {
   return parsed
 }
 
+function normalizePaymentMethod(value: unknown): EventPaymentMethod {
+  return value === 'gateway' ? 'gateway' : 'manual'
+}
+
+function normalizeGatewayConfig(value: unknown): Event['gateway_config'] {
+  const parsed = parseJson<Record<string, unknown>>(value) ?? {}
+  const channelCode = getString(parsed.channelCode ?? parsed.channel_code)
+  const channelName = getString(parsed.channelName ?? parsed.channel_name)
+  return channelCode || channelName ? { channelCode, channelName } : null
+}
+
+function stringifyGatewayConfig(value: unknown) {
+  const normalized = normalizeGatewayConfig(value)
+  return normalized ? JSON.stringify(normalized) : null
+}
+
 function mapEvent(row: EventRow, customFields: CustomField[] = [], classes: EventClass[] = []): Event {
   const dateStart = toIsoString(row.start_date) ?? new Date().toISOString()
   const dateEnd = toIsoString(row.end_date)
@@ -246,6 +277,8 @@ function mapEvent(row: EventRow, customFields: CustomField[] = [], classes: Even
   const status = toLegacyEventStatus(row.status)
   const v4Status = toV4EventStatus(row.status)
   const slug = row.slug || slugify(row.title)
+  const paymentMethod = normalizePaymentMethod(row.payment_method)
+  const gatewayConfig = normalizeGatewayConfig(row.gateway_config)
 
   return {
     id: row.id,
@@ -268,6 +301,12 @@ function mapEvent(row: EventRow, customFields: CustomField[] = [], classes: Even
     allowPublic: Boolean(row.is_open_for_public),
     is_paid: Boolean(row.is_paid),
     isPaidEvent: Boolean(row.is_paid),
+    payment_method: paymentMethod,
+    paymentMethod,
+    gateway_provider: row.gateway_provider ?? null,
+    gatewayProvider: row.gateway_provider ?? null,
+    gateway_config: gatewayConfig,
+    gatewayConfig,
     price_niam: Number(row.price_niam ?? 0),
     priceNiam: Number(row.price_niam ?? 0),
     price_public: Number(row.price_public ?? 0),
@@ -609,6 +648,9 @@ export async function ensureEventV4Schema(connection: PoolConnection) {
   await ensureColumn(connection, 'mpj_event_events', 'is_public', 'TINYINT(1) NOT NULL DEFAULT 1')
   await ensureColumn(connection, 'mpj_event_events', 'attended_count', 'INT NOT NULL DEFAULT 0')
   await ensureColumn(connection, 'mpj_event_events', 'registration_deadline', 'DATETIME NULL')
+  await ensureColumn(connection, 'mpj_event_events', 'payment_method', "VARCHAR(50) NOT NULL DEFAULT 'manual'")
+  await ensureColumn(connection, 'mpj_event_events', 'gateway_provider', 'VARCHAR(50) NULL')
+  await ensureColumn(connection, 'mpj_event_events', 'gateway_config', 'JSON NULL')
 
   await ensureColumn(connection, 'mpj_event_participants', 'user_id', 'VARCHAR(36) NULL')
   await ensureColumn(connection, 'mpj_event_participants', 'niam', 'VARCHAR(50) NULL')
@@ -663,16 +705,24 @@ export async function ensureEventV4Schema(connection: PoolConnection) {
       payment_method VARCHAR(50) NOT NULL DEFAULT 'manual',
       payment_channel VARCHAR(50) NOT NULL DEFAULT 'bank_transfer',
       external_ref VARCHAR(120) NULL,
+      checkout_url VARCHAR(700) NULL,
+      payment_info JSON NULL,
+      external_status VARCHAR(50) NULL,
       status VARCHAR(50) NOT NULL DEFAULT 'waiting_payment',
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       paid_at DATETIME NULL,
+      expires_at DATETIME NULL,
       verified_at DATETIME NULL,
       PRIMARY KEY (id),
       UNIQUE KEY mpj_payment_core_source_key (source_type, source_id),
       KEY mpj_payment_core_status_idx (status)
     )
   `)
+  await ensureColumn(connection, 'mpj_payment_core_payments', 'checkout_url', 'VARCHAR(700) NULL')
+  await ensureColumn(connection, 'mpj_payment_core_payments', 'payment_info', 'JSON NULL')
+  await ensureColumn(connection, 'mpj_payment_core_payments', 'external_status', 'VARCHAR(50) NULL')
+  await ensureColumn(connection, 'mpj_payment_core_payments', 'expires_at', 'DATETIME NULL')
 
   await connection.query(`
     CREATE TABLE IF NOT EXISTS mpj_payment_core_audit_logs (
@@ -769,6 +819,9 @@ const EVENT_SELECT = `
     end_date,
     is_open_for_public,
     is_paid,
+    payment_method,
+    gateway_provider,
+    gateway_config,
     price_niam,
     price_public,
     status,
@@ -920,6 +973,11 @@ export async function getPaymentRecordsByEventFromDb(eventIdentifier: string): P
         amount_snapshot: number | null
         participant_payment_status: string
         payment_status: string | null
+        payment_method: string | null
+        payment_channel: string | null
+        external_ref: string | null
+        checkout_url: string | null
+        external_status: string | null
         submitted_at: Date | string | null
         verified_at: Date | string | null
       }>>(
@@ -932,6 +990,11 @@ export async function getPaymentRecordsByEventFromDb(eventIdentifier: string): P
             pc.amount_snapshot,
             p.payment_status AS participant_payment_status,
             pc.status AS payment_status,
+            pc.payment_method,
+            pc.payment_channel,
+            pc.external_ref,
+            pc.checkout_url,
+            pc.external_status,
             pc.created_at AS submitted_at,
             pc.verified_at
           FROM mpj_event_participants p
@@ -954,6 +1017,11 @@ export async function getPaymentRecordsByEventFromDb(eventIdentifier: string): P
         status: row.participant_payment_status as PaymentRecord['status'],
         submitted_at: toIsoString(row.submitted_at) ?? null,
         verified_at: toIsoString(row.verified_at) ?? null,
+        provider: row.payment_method === 'gateway' ? 'paymenku' : 'manual',
+        channel: row.payment_channel,
+        externalRef: row.external_ref,
+        checkoutUrl: row.checkout_url,
+        externalStatus: row.external_status,
       }))
     } finally {
       connection.release()
@@ -1136,19 +1204,26 @@ export async function createEventInDb(payload: EventPayload) {
       const slug = getString(payload.slug) || slugify(title)
       const status = payload.status || 'draft'
       const isPublished = Boolean(payload.isPublished ?? payload.is_published ?? false)
+      const paymentMethod = normalizePaymentMethod(payload.paymentMethod ?? payload.payment_method)
+      const gatewayProvider = paymentMethod === 'gateway' ? getString(payload.gatewayProvider ?? payload.gateway_provider) || 'paymenku' : null
+      const gatewayConfig = paymentMethod === 'gateway'
+        ? stringifyGatewayConfig(payload.gatewayConfig ?? payload.gateway_config ?? { channelCode: payload.paymenkuChannelCode })
+        : null
 
       await connection.query<ResultSetHeader>(
         `
           INSERT INTO mpj_event_events (
             id, title, slug, category, poster_url, description, location_gmaps,
             location_name, location_type, meeting_url, start_date, end_date,
-            is_open_for_public, is_paid, price_niam, price_public, status,
+            is_open_for_public, is_paid, payment_method, gateway_provider, gateway_config,
+            price_niam, price_public, status,
             scope, region_id, is_published, is_public, max_participants,
             current_participants, attended_count, status_pendaftaran, registration_deadline
           ) VALUES (
             :id, :title, :slug, :category, :posterUrl, :description, :locationMapsUrl,
             :locationName, :locationType, :meetingUrl, :startDate, :endDate,
-            :allowPublic, :isPaid, :priceNiam, :priceUmum, :status,
+            :allowPublic, :isPaid, :paymentMethod, :gatewayProvider, CAST(:gatewayConfig AS JSON),
+            :priceNiam, :priceUmum, :status,
             :scope, :regionId, :isPublished, :isPublic, :quota,
             0, 0, :registrationStatus, :registrationDeadline
           )
@@ -1168,6 +1243,9 @@ export async function createEventInDb(payload: EventPayload) {
           endDate: toNullableDate(payload.end_date ?? payload.dateEnd),
           allowPublic: toBooleanInt(payload.allowPublic ?? payload.is_open_for_public, true),
           isPaid: toBooleanInt(payload.isPaidEvent ?? payload.is_paid),
+          paymentMethod,
+          gatewayProvider,
+          gatewayConfig,
           priceNiam: toNullableInteger(payload.priceNiam ?? payload.price_niam) ?? 0,
           priceUmum: toNullableInteger(payload.priceUmum ?? payload.price_public) ?? 0,
           status,
@@ -1233,6 +1311,18 @@ export async function updateEventInDb(identifier: string, payload: EventPayload)
       if (payload.end_date !== undefined || payload.dateEnd !== undefined) setField('end_date', 'endDate', toNullableDate(payload.end_date ?? payload.dateEnd))
       if (payload.is_open_for_public !== undefined || payload.allowPublic !== undefined) setField('is_open_for_public', 'allowPublic', toBooleanInt(payload.allowPublic ?? payload.is_open_for_public))
       if (payload.is_paid !== undefined || payload.isPaidEvent !== undefined) setField('is_paid', 'isPaid', toBooleanInt(payload.isPaidEvent ?? payload.is_paid))
+      if (payload.payment_method !== undefined || payload.paymentMethod !== undefined) {
+        const paymentMethod = normalizePaymentMethod(payload.paymentMethod ?? payload.payment_method)
+        setField('payment_method', 'paymentMethod', paymentMethod)
+        setField('gateway_provider', 'gatewayProviderFromMethod', paymentMethod === 'gateway' ? 'paymenku' : null)
+        if (paymentMethod === 'manual') setField('gateway_config', 'gatewayConfigFromMethod', null)
+      }
+      if (payload.gateway_provider !== undefined || payload.gatewayProvider !== undefined) {
+        setField('gateway_provider', 'gatewayProvider', getString(payload.gatewayProvider ?? payload.gateway_provider) || null)
+      }
+      if (payload.gateway_config !== undefined || payload.gatewayConfig !== undefined || payload.paymenkuChannelCode !== undefined) {
+        setField('gateway_config', 'gatewayConfig', stringifyGatewayConfig(payload.gatewayConfig ?? payload.gateway_config ?? { channelCode: payload.paymenkuChannelCode }))
+      }
       if (payload.price_niam !== undefined || payload.priceNiam !== undefined) {
         if (published) throw new Error('Harga tidak boleh diubah setelah publish')
         setField('price_niam', 'priceNiam', toNullableInteger(payload.priceNiam ?? payload.price_niam) ?? 0)
@@ -1300,27 +1390,62 @@ async function createPaymentCoreRequest(
   connection: PoolConnection,
   participantId: string,
   amount: number,
+  options: {
+    event?: Event
+    customerName?: string
+    customerEmail?: string
+    customerPhone?: string
+  } = {},
 ): Promise<PaymentCoreRequest> {
   const paymentId = randomUUID()
+  const event = options.event
+  const paymentMethod = event?.payment_method === 'gateway' ? 'gateway' : 'manual'
+  const channelCode = paymentMethod === 'gateway'
+    ? getString(event?.gateway_config?.channelCode)
+    : 'bank_transfer'
+
+  if (paymentMethod === 'gateway' && !channelCode) {
+    throw new Error('Channel Paymenku belum dipilih untuk event ini')
+  }
+
   const paymentRequest: PaymentCoreRequest = {
     paymentId,
     sourceType: 'event_registration',
     sourceId: participantId,
     amount,
     amountSnapshot: amount,
-    paymentMethod: 'manual',
-    paymentChannel: 'bank_transfer',
+    paymentMethod,
+    paymentChannel: channelCode,
+    gatewayProvider: paymentMethod === 'gateway' ? 'paymenku' : null,
     status: 'waiting_payment',
+  }
+
+  if (paymentMethod === 'gateway') {
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || '').replace(/\/+$/, '')
+    const payment = await createPaymenkuTransaction({
+      referenceId: paymentId,
+      amount,
+      customerName: options.customerName || 'Peserta MPJ',
+      customerEmail: options.customerEmail || 'no-reply@mpj-event.local',
+      customerPhone: options.customerPhone,
+      channelCode,
+      returnUrl: appUrl ? `${appUrl}/ticket?paymentId=${encodeURIComponent(paymentId)}` : `${process.env.NEXT_PUBLIC_MPJ_EVENT_URL || ''}/ticket?paymentId=${encodeURIComponent(paymentId)}`,
+    })
+
+    paymentRequest.externalRef = payment.trxId
+    paymentRequest.checkoutUrl = payment.payUrl
+    paymentRequest.paymentInfo = payment.paymentInfo
+    paymentRequest.status = normalizePaymenkuStatus(payment.status) as PaymentCoreStatus
   }
 
   await connection.query<ResultSetHeader>(
     `
       INSERT INTO mpj_payment_core_payments (
         id, source_type, source_id, amount_snapshot, payment_method,
-        payment_channel, status
+        payment_channel, external_ref, checkout_url, payment_info, external_status, status, expires_at
       ) VALUES (
         :paymentId, :sourceType, :sourceId, :amount, :paymentMethod,
-        :paymentChannel, :status
+        :paymentChannel, :externalRef, :checkoutUrl, CAST(:paymentInfo AS JSON), :externalStatus, :status, :expiresAt
       )
     `,
     {
@@ -1330,7 +1455,12 @@ async function createPaymentCoreRequest(
       amount,
       paymentMethod: paymentRequest.paymentMethod,
       paymentChannel: paymentRequest.paymentChannel,
+      externalRef: paymentRequest.externalRef ?? null,
+      checkoutUrl: paymentRequest.checkoutUrl ?? null,
+      paymentInfo: paymentRequest.paymentInfo ? JSON.stringify(paymentRequest.paymentInfo) : null,
+      externalStatus: paymentRequest.status,
       status: paymentRequest.status,
+      expiresAt: toNullableDate(paymentRequest.paymentInfo?.expiration_date),
     },
   )
 
@@ -1338,6 +1468,10 @@ async function createPaymentCoreRequest(
     sourceType: paymentRequest.sourceType,
     sourceId: participantId,
     amount,
+    paymentMethod: paymentRequest.paymentMethod,
+    paymentChannel: paymentRequest.paymentChannel,
+    gatewayProvider: paymentRequest.gatewayProvider,
+    externalRef: paymentRequest.externalRef,
   })
 
   return paymentRequest
@@ -1411,8 +1545,11 @@ export async function registerEventParticipant(eventIdentifier: string, payload:
       const ticketCode = `MPJ-${event.id.slice(0, 8)}-${randomUUID()}`
       const baseAmount = event.isPaidEvent ? (registrationPath === 'NIAM' ? event.priceNiam ?? 0 : event.priceUmum ?? 0) : 0
       const requestedAmount = Number(payload.final_amount ?? 0)
+      const usesGateway = event.payment_method === 'gateway'
       const paymentAmount =
-        event.isPaidEvent && requestedAmount >= baseAmount && requestedAmount <= baseAmount + 999
+        usesGateway
+          ? baseAmount
+          : event.isPaidEvent && requestedAmount >= baseAmount && requestedAmount <= baseAmount + 999
           ? requestedAmount
           : baseAmount
       const participantStatus = event.isPaidEvent ? 'registered' : 'confirmed'
@@ -1474,7 +1611,12 @@ export async function registerEventParticipant(eventIdentifier: string, payload:
       )
 
       const paymentRequest = event.isPaidEvent
-        ? await createPaymentCoreRequest(connection, participantId, paymentAmount)
+        ? await createPaymentCoreRequest(connection, participantId, paymentAmount, {
+            event,
+            customerName: fullName,
+            customerEmail: email,
+            customerPhone: whatsapp,
+          })
         : null
 
       if (paymentRequest) {
@@ -1637,6 +1779,94 @@ export async function confirmParticipantFromPayment(payload: {
       const [rows] = await connection.query<ParticipantRow[]>(
         'SELECT * FROM mpj_event_participants WHERE id = :participantId LIMIT 1',
         { participantId },
+      )
+      if (!rows[0]) throw new Error('Participant tidak ditemukan')
+
+      await connection.commit()
+      return mapParticipant(rows[0])
+    } catch (error) {
+      await connection.rollback()
+      throw error
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function applyPaymenkuPaymentUpdate(payload: PaymenkuWebhookPayload) {
+  const paymentId = getString(payload.reference_id)
+  const externalRef = getString(payload.trx_id)
+  if (!paymentId && !externalRef) throw new Error('reference_id atau trx_id wajib diisi')
+
+  const normalizedStatus = normalizePaymenkuStatus(payload.status) as PaymentCoreStatus
+  const verified = normalizedStatus === 'verified'
+  const paidAt = toNullableDate(payload.paid_at)
+
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+
+    try {
+      await ensureEventV4Schema(connection)
+      await connection.beginTransaction()
+
+      const [paymentRows] = await connection.query<RowDataPacket[]>(
+        `
+          SELECT id, source_id
+          FROM mpj_payment_core_payments
+          WHERE (:paymentId <> '' AND id = :paymentId)
+            OR (:externalRef <> '' AND external_ref = :externalRef)
+          LIMIT 1
+          FOR UPDATE
+        `,
+        { paymentId, externalRef },
+      )
+      const paymentRow = paymentRows[0]
+      if (!paymentRow) throw new Error('Payment Core record tidak ditemukan')
+
+      await connection.query<ResultSetHeader>(
+        `
+          UPDATE mpj_payment_core_payments
+          SET
+            external_ref = COALESCE(NULLIF(:externalRef, ''), external_ref),
+            external_status = :externalStatus,
+            status = :status,
+            paid_at = CASE WHEN :verified = 1 THEN COALESCE(:paidAt, paid_at, NOW()) ELSE paid_at END,
+            verified_at = CASE WHEN :verified = 1 THEN COALESCE(verified_at, NOW()) ELSE verified_at END,
+            payment_info = CAST(:paymentInfo AS JSON)
+          WHERE id = :paymentId
+        `,
+        {
+          paymentId: paymentRow.id,
+          externalRef,
+          externalStatus: payload.status ?? null,
+          status: normalizedStatus,
+          verified: verified ? 1 : 0,
+          paidAt,
+          paymentInfo: JSON.stringify(payload),
+        },
+      )
+
+      await appendPaymentCoreAudit(connection, String(paymentRow.id), 'paymenku_webhook_received', {
+        event: payload.event,
+        status: payload.status,
+        normalizedStatus,
+        trxId: externalRef,
+      })
+
+      if (verified) {
+        await connection.query<ResultSetHeader>(
+          `
+            UPDATE mpj_event_participants
+            SET status = 'confirmed', attendance_status = 'Confirmed', payment_status = 'Paid', payment_id = :paymentId
+            WHERE id = :participantId
+          `,
+          { participantId: paymentRow.source_id, paymentId: paymentRow.id },
+        )
+      }
+
+      const [rows] = await connection.query<ParticipantRow[]>(
+        'SELECT * FROM mpj_event_participants WHERE id = :participantId LIMIT 1',
+        { participantId: paymentRow.source_id },
       )
       if (!rows[0]) throw new Error('Participant tidak ditemukan')
 

@@ -18,6 +18,12 @@ export type RegistrationStatus = 'open' | 'closed' | 'full'
 export type SpeakerCategory = 'Tech' | 'Bisnis' | 'Desain' | 'Jurnalistik' | 'Keagamaan' | 'Lainnya'
 export type EventScope = 'pusat' | 'regional'
 export type LocationType = 'offline' | 'online'
+export type EventPaymentMethod = 'manual' | 'gateway'
+export type GatewayProvider = 'paymenku' | string
+export type GatewayConfig = {
+  channelCode?: string
+  channelName?: string
+}
 
 export type CustomFieldType = 'short_text' | 'long_text' | 'radio' | 'dropdown' | 'checkbox'
 
@@ -66,6 +72,12 @@ export interface Event {
   allowPublic?: boolean
   is_paid: boolean
   isPaidEvent?: boolean
+  payment_method?: EventPaymentMethod
+  paymentMethod?: EventPaymentMethod
+  gateway_provider?: GatewayProvider | null
+  gatewayProvider?: GatewayProvider | null
+  gateway_config?: GatewayConfig | null
+  gatewayConfig?: GatewayConfig | null
   price_niam: number
   priceNiam?: number
   price_public: number
@@ -157,6 +169,11 @@ export interface PaymentRecord {
   status: PaymentStatus
   submitted_at: string | null
   verified_at: string | null
+  provider?: string | null
+  channel?: string | null
+  externalRef?: string | null
+  checkoutUrl?: string | null
+  externalStatus?: string | null
 }
 
 export interface Pesantren {
