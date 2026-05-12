@@ -26,21 +26,25 @@ export function RoleLoginForm({
   nextPath,
   embedded = false,
   onAuthenticated,
+  onNavigate,
 }: {
   role?: AuthRole
   nextPath?: string
   embedded?: boolean
   onAuthenticated?: () => void
+  onNavigate?: () => void
 }) {
   const lockedConfig = role ? getAuthRoleConfig(role) : null
   const HeaderIcon = lockedConfig?.icon ?? LockKeyhole
   const router = useRouter()
+  const signupHref = nextPath ? `/auth/user-register?next=${encodeURIComponent(nextPath)}` : '/auth/user-register'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(true)
   const [availableRoles, setAvailableRoles] = useState<AuthRole[] | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const showPublicSignup = !availableRoles && (!role || role === 'user')
 
   async function submitLogin(selectedRole?: AuthRole) {
     setError('')
@@ -218,6 +222,19 @@ export function RoleLoginForm({
             {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             Masuk
           </Button>
+
+          {showPublicSignup ? (
+            <>
+              <div className="text-center text-sm font-semibold text-gray-400">atau</div>
+              <Link
+                href={signupHref}
+                onClick={() => onNavigate?.()}
+                className="flex h-11 w-full items-center justify-center rounded-2xl border border-[#1B4332]/15 bg-white text-sm font-bold text-[#1B4332] transition hover:bg-[#f4f7f5]"
+              >
+                Buat akun
+              </Link>
+            </>
+          ) : null}
         </div>
       )}
     </form>

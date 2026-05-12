@@ -28,6 +28,7 @@ type RegistrationContext = {
   userId: string | null
   fullName: string | null
   email: string | null
+  whatsapp: string | null
 }
 
 type MemberLookup = {
@@ -70,7 +71,7 @@ const btnGold =
 
 export function RegisterForm({
   event,
-  registrationContext = { isLoggedIn: false, userId: null, fullName: null, email: null },
+  registrationContext = { isLoggedIn: false, userId: null, fullName: null, email: null, whatsapp: null },
 }: {
   event: Event
   registrationContext?: RegistrationContext
@@ -84,7 +85,7 @@ export function RegisterForm({
     niam: '',
     fullName: registrationContext.fullName ?? '',
     email: registrationContext.email ?? '',
-    whatsapp: '',
+    whatsapp: registrationContext.whatsapp ?? '',
     institution: '',
     institutionId: null,
     selectedClassId: '',

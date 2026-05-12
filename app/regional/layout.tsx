@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-import { BarChart3, Building2, CalendarDays, LayoutDashboard, UserCheck } from 'lucide-react'
+import { BarChart3, CalendarDays, LayoutDashboard, UserCheck } from 'lucide-react'
+import { BrandMark } from '@/components/BrandMark'
 import { LogoutButton } from '@/components/auth/LogoutButton'
 import { AUTH_ROLES } from '@/lib/auth/roles'
 import { hasPermission, type AdminPermission } from '@/lib/auth/permissions'
@@ -22,9 +23,7 @@ export default async function RegionalLayout({ children }: { children: ReactNode
     <div className="min-h-screen bg-[#eef3ef] text-[#0f2f25]">
       <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-[#dfe8e1] bg-[#123d2d] text-white lg:block">
         <div className="flex h-20 items-center gap-3 border-b border-white/10 px-5">
-          <div className="flex size-10 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-200">
-            <Building2 className="h-5 w-5" />
-          </div>
+          <BrandMark className="h-6 w-6" />
           <div>
             <p className="text-sm font-extrabold">MPJ Event</p>
             <p className="text-xs font-semibold uppercase tracking-wide text-white/55">Admin Regional</p>
