@@ -23,7 +23,7 @@ export const AUTH_ROUTE_CONFIGS: AuthRouteConfig[] = [
   {
     role: 'user',
     loginPath: '/auth/user-login',
-    dashboardPath: '/dashboard',
+    dashboardPath: '/profile',
     cookieName: 'mpj_user_token',
   },
 ]
@@ -38,6 +38,7 @@ export function getRequiredRoleForPath(pathname: string): AuthRole | null {
   if (pathname.startsWith('/super-admin')) return 'super-admin'
   if (pathname.startsWith('/regional')) return 'regional-admin'
   if (pathname === '/dashboard' || pathname.startsWith('/dashboard/')) return 'user'
+  if (pathname === '/profile' || pathname.startsWith('/profile/')) return 'user'
   return null
 }
 
@@ -48,7 +49,11 @@ export function getSafeRedirectPath(candidate: string | null | undefined, role: 
 
   const [pathname] = candidate.split('?')
   const requiredRole = getRequiredRoleForPath(pathname)
-  if (!requiredRole || requiredRole !== role) return fallback
+  if (!requiredRole) {
+    if (role === 'user') return candidate
+    return fallback
+  }
+  if (requiredRole !== role) return fallback
 
   return candidate
 }

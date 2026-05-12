@@ -58,3 +58,19 @@ npm.cmd install mysql2
 ```
 
 If this package is not installed, `/api/health/db` returns a clear setup error instead of failing silently.
+
+## Public Register OTP Status
+
+- OTP email flow for public user register is prepared for a later phase.
+- Current frontend flag: `NEXT_PUBLIC_USER_REGISTER_OTP_ENABLED=false`
+- While this flag is `false`:
+  - `/auth/user-register` does not show OTP UI
+  - register submit does not call OTP endpoints
+  - no OTP email is sent
+  - user is redirected to `/auth/user-login` to continue with the existing login flow
+- When the flag is switched to `true`, the intended flow remains:
+  - biodata
+  - request OTP
+  - verify OTP
+  - auto-login
+  - redirect back to the intended public event route
