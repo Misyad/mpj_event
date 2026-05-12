@@ -234,7 +234,7 @@ export default function NewEventPage() {
 
       setIsSubmitting(false)
       setSubmitted(true)
-      setTimeout(() => router.push('/admin/events'), 1500)
+      setTimeout(() => router.push('/admin-pusat/events'), 1500)
     } catch (error) {
       setIsSubmitting(false)
       setSubmitError(error instanceof Error ? error.message : 'Gagal membuat event')
@@ -259,7 +259,7 @@ export default function NewEventPage() {
     <form onSubmit={handleSubmit} className="p-4 md:p-8 space-y-6 max-w-3xl">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Link href="/admin/events">
+        <Link href="/admin-pusat/events">
           <button type="button" className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors">
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -677,7 +677,7 @@ export default function NewEventPage() {
 
       {/* ── Submit ───────────────────────────── */}
       <div className="flex gap-3 pb-8">
-        <Link href="/admin/events" className="flex-1">
+        <Link href="/admin-pusat/events" className="flex-1">
           <Button type="button" variant="outline" className="w-full rounded-xl">Batal</Button>
         </Link>
         <Button type="submit" disabled={isSubmitting}

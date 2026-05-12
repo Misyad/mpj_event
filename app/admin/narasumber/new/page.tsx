@@ -56,7 +56,7 @@ export default function NewSpeakerPage() {
     setTimeout(() => {
       setIsSubmitting(false)
       setSubmitted(true)
-      setTimeout(() => router.push('/admin/narasumber'), 1200)
+      setTimeout(() => router.push('/admin-pusat/narasumber'), 1200)
     }, 900)
   }
 
@@ -76,7 +76,7 @@ export default function NewSpeakerPage() {
     <form onSubmit={handleSubmit} className="p-4 md:p-8 space-y-6 max-w-2xl">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <Link href="/admin/narasumber">
+        <Link href="/admin-pusat/narasumber">
           <button type="button" className="p-1.5 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors">
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -165,7 +165,7 @@ export default function NewSpeakerPage() {
 
       {/* Submit */}
       <div className="flex gap-3 pb-8">
-        <Link href="/admin/narasumber" className="flex-1">
+        <Link href="/admin-pusat/narasumber" className="flex-1">
           <Button type="button" variant="outline" className="w-full rounded-xl">Batal</Button>
         </Link>
         <Button type="submit" disabled={isSubmitting}

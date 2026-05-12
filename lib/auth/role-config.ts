@@ -11,7 +11,7 @@ export const AUTH_ROUTE_CONFIGS: AuthRouteConfig[] = [
   {
     role: 'super-admin',
     loginPath: '/auth/super-admin-login',
-    dashboardPath: '/super-admin/dashboard',
+    dashboardPath: '/admin-pusat/dashboard',
     cookieName: 'mpj_super_admin_token',
   },
   {
@@ -33,6 +33,7 @@ export function getAuthRouteConfig(role: AuthRole) {
 }
 
 export function getRequiredRoleForPath(pathname: string): AuthRole | null {
+  if (pathname === '/admin-pusat' || pathname.startsWith('/admin-pusat/')) return 'super-admin'
   if (pathname === '/admin' || pathname.startsWith('/admin/')) return 'super-admin'
   if (pathname.startsWith('/super-admin')) return 'super-admin'
   if (pathname.startsWith('/regional')) return 'regional-admin'

@@ -128,7 +128,7 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
     return (
       <div className="p-8 flex flex-col items-center justify-center min-h-[60vh] text-center">
         <p className="text-lg font-bold text-[#1B4332]">{error || 'Event tidak ditemukan.'}</p>
-        <Link href="/admin/events"><Button variant="outline" className="mt-4 rounded-xl">← Kembali</Button></Link>
+        <Link href="/admin-pusat/events"><Button variant="outline" className="mt-4 rounded-xl">← Kembali</Button></Link>
       </div>
     )
   }
@@ -148,7 +148,7 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
 
       {/* Header */}
       <div className="flex items-start gap-3">
-        <Link href="/admin/events">
+        <Link href="/admin-pusat/events">
           <button className="mt-1 p-1.5 rounded-xl hover:bg-gray-100 text-gray-500 transition-colors">
             <ArrowLeft className="w-4 h-4" />
           </button>

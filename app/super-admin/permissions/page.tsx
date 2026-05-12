@@ -2,6 +2,8 @@ import { PermissionMatrix } from '@/components/rbac/PermissionMatrix'
 import { ADMIN_PERMISSIONS, PERMISSION_LABELS } from '@/lib/auth/permissions'
 import { listRolesWithPermissions } from '@/lib/server/rbac'
 
+export const dynamic = 'force-dynamic'
+
 export default async function SuperAdminPermissionsPage() {
   const roles = await listRolesWithPermissions()
   const permissions = ADMIN_PERMISSIONS.map((code) => ({

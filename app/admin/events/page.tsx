@@ -157,7 +157,7 @@ export default function MasterEventPage() {
             Lifecycle event Admin Pusat dari daftar event hingga publikasi.
           </p>
         </div>
-        <Link href="/admin/events/new">
+        <Link href="/admin-pusat/events/new">
           <Button className="bg-[#1B4332] hover:bg-[#14532d] text-white rounded-xl">
             <Plus className="w-4 h-4" />
             Create Event
@@ -278,13 +278,13 @@ export default function MasterEventPage() {
                       </div>
 
                       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                        <Link href={`/admin/events/${event.id}`}>
+                        <Link href={`/admin-pusat/events/${event.id}`}>
                           <Button variant="outline" className="w-full rounded-xl sm:w-auto">
                             <Eye className="w-4 h-4" />
                             View Detail
                           </Button>
                         </Link>
-                        <Link href={`/admin/events/${event.id}`}>
+                        <Link href={`/admin-pusat/events/${event.id}`}>
                           <Button variant="outline" className="w-full rounded-xl sm:w-auto" disabled={readOnly}>
                             <Pencil className="w-4 h-4" />
                             Edit Event

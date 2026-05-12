@@ -9,8 +9,8 @@ Sistem manajemen event untuk publikasi acara, pendaftaran peserta, ticketing, pe
 - **Ticketing & QR**: Membuat kode tiket/QR unik untuk validasi dan check-in.
 - **Certificate**: Sertifikat printable tersedia setelah peserta hadir dan event selesai.
 - **QR Attendance**: Check-in peserta berbasis web dengan validasi backend.
-- **Admin Event**: Kelola event, peserta, pembayaran, narasumber, master data, dan detail event.
-- **Role Dashboard**: Super Admin, Admin Regional, dan User/Peserta memiliki route login dan dashboard masing-masing.
+- **Admin Pusat**: Kelola event, peserta, pembayaran, narasumber, master data, role admin, dan permission.
+- **Role Dashboard**: Admin Pusat, Admin Regional, dan User/Peserta memiliki route login dan dashboard masing-masing.
 - **Database-backed API**: Route handler Next.js membaca dan menulis data event ke MySQL/MariaDB.
 
 ## Tech Stack
@@ -25,8 +25,8 @@ Sistem manajemen event untuk publikasi acara, pendaftaran peserta, ticketing, pe
 ## Struktur Utama
 
 - `app/(public)/`: Portal publik, event detail, registrasi, ticket, certificate, dan scanner.
-- `app/admin/`: Dashboard admin event.
-- `app/super-admin/`: Dashboard role, permission, dan admin regional.
+- `app/admin-pusat/`: Dashboard utama Admin Pusat untuk operasional event dan RBAC.
+- `app/admin/` dan `app/super-admin/`: Route lama yang diarahkan ke `app/admin-pusat/`.
 - `app/regional/`: Dashboard dan monitoring regional.
 - `app/api/`: API auth, event, ticket, regional, admin, dan super-admin.
 - `lib/server/`: Logic server-side untuk database event dan RBAC.

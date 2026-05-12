@@ -23,7 +23,7 @@ export default function AdminDashboardPage() {
           <h1 className="text-xl md:text-2xl font-extrabold text-[#1B4332] tracking-tight">Dashboard</h1>
           <p className="text-sm text-gray-500 mt-0.5">Selamat datang di panel administrasi MPJ Event.</p>
         </div>
-        <Link href="/admin/events">
+        <Link href="/admin-pusat/events">
           <div className="inline-flex items-center gap-2 bg-[#1B4332] hover:bg-[#14532d] text-white text-sm font-semibold px-4 py-2 rounded-xl transition-colors cursor-pointer">
             <Calendar className="w-4 h-4" />
             Kelola Event
@@ -63,7 +63,7 @@ export default function AdminDashboardPage() {
               <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
               <h2 className="font-bold text-[#1B4332] text-sm">Menunggu Persetujuan</h2>
             </div>
-            <Link href="/admin/events" className="flex items-center gap-1 text-xs text-[#C9A227] font-semibold hover:underline">
+            <Link href="/admin-pusat/events" className="flex items-center gap-1 text-xs text-[#C9A227] font-semibold hover:underline">
               Lihat Semua <ArrowUpRight className="w-3 h-3" />
             </Link>
           </div>
@@ -77,7 +77,7 @@ export default function AdminDashboardPage() {
                 <p className="text-xs text-gray-400 mt-1">Tidak ada event menunggu approval</p>
               </div>
             ) : pendingEvents.map(event => (
-              <Link key={event.id} href={`/admin/events/${event.id}`}>
+              <Link key={event.id} href={`/admin-pusat/events/${event.id}`}>
                 <div className="flex items-center gap-3 px-5 py-3.5 hover:bg-amber-50 transition-colors cursor-pointer group">
                   <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
                     <Calendar className="w-4 h-4 text-amber-600" />
@@ -97,13 +97,13 @@ export default function AdminDashboardPage() {
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-50">
             <h2 className="font-bold text-[#1B4332] text-sm">Event Terbaru</h2>
-            <Link href="/admin/events" className="flex items-center gap-1 text-xs text-[#C9A227] font-semibold hover:underline">
+            <Link href="/admin-pusat/events" className="flex items-center gap-1 text-xs text-[#C9A227] font-semibold hover:underline">
               Lihat Semua <ArrowUpRight className="w-3 h-3" />
             </Link>
           </div>
           <div className="divide-y divide-gray-50">
             {recentEvents.map(event => (
-              <Link key={event.id} href={`/admin/events/${event.id}`}>
+              <Link key={event.id} href={`/admin-pusat/events/${event.id}`}>
                 <div className="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors cursor-pointer group">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-[#1B4332] line-clamp-1 group-hover:text-[#C9A227] transition-colors">{event.title}</p>
@@ -120,8 +120,8 @@ export default function AdminDashboardPage() {
       {/* ─── Quick Links (Mobile-friendly) ───────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {[
-          { label: 'Master Event', desc: 'Kelola & approve event', href: '/admin/events', icon: Calendar, color: 'bg-blue-600' },
-          { label: 'Master Data', desc: 'Pesantren & kru', href: '/admin/master-data', icon: Database, color: 'bg-purple-600' },
+          { label: 'Master Event', desc: 'Kelola & approve event', href: '/admin-pusat/events', icon: Calendar, color: 'bg-blue-600' },
+          { label: 'Master Data', desc: 'Pesantren & kru', href: '/admin-pusat/master-data', icon: Database, color: 'bg-purple-600' },
           { label: 'Scan Absensi', desc: 'QR scanner panitia', href: '/scan', icon: Users, color: 'bg-emerald-600' },
         ].map(({ label, desc, href, icon: Icon, color }) => (
           <Link key={href} href={href}>

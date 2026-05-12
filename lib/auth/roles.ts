@@ -26,11 +26,11 @@ export type AuthRoleConfig = {
 export const AUTH_ROLE_CONFIGS: AuthRoleConfig[] = [
   {
     role: AUTH_ROLES.superAdmin,
-    title: 'Super Admin',
+    title: 'Admin Pusat',
     shortTitle: 'Admin Pusat',
-    description: 'Full access untuk seluruh sistem, approval, analytics global, dan master settings.',
+    description: 'Full access untuk operasional pusat, approval, analytics global, dan master settings.',
     loginPath: getAuthRouteConfig(AUTH_ROLES.superAdmin)?.loginPath ?? '/auth/super-admin-login',
-    dashboardPath: getAuthRouteConfig(AUTH_ROLES.superAdmin)?.dashboardPath ?? '/super-admin/dashboard',
+    dashboardPath: getAuthRouteConfig(AUTH_ROLES.superAdmin)?.dashboardPath ?? '/admin-pusat/dashboard',
     cookieName: getAuthRouteConfig(AUTH_ROLES.superAdmin)?.cookieName ?? 'mpj_super_admin_token',
     badge: 'Full Access',
     icon: Crown,

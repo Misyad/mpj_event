@@ -1,6 +1,8 @@
 import { AdminRegionalTable } from '@/components/rbac/AdminRegionalTable'
 import { listRegionalAdmins, listRegionals } from '@/lib/server/rbac'
 
+export const dynamic = 'force-dynamic'
+
 export default async function SuperAdminRolesPage() {
   const [admins, regionals] = await Promise.all([listRegionalAdmins(), listRegionals()])
 

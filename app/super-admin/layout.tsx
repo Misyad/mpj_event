@@ -7,11 +7,11 @@ import { hasPermission, type AdminPermission } from '@/lib/auth/permissions'
 import { getCurrentAdminSession } from '@/lib/server/rbac'
 
 const menuItems: Array<{ href: string; label: string; icon: typeof LayoutDashboard; permission?: AdminPermission }> = [
-  { href: '/super-admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/super-admin/roles', label: 'Role Admin', icon: UsersRound },
-  { href: '/super-admin/permissions', label: 'Permissions', icon: KeyRound },
-  { href: '/super-admin/dashboard', label: 'Analytics', icon: BarChart3, permission: 'analytics.read' },
-  { href: '/super-admin/dashboard', label: 'Settings', icon: Settings, permission: 'settings.read' },
+  { href: '/admin-pusat/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/admin-pusat/roles', label: 'Role Admin', icon: UsersRound },
+  { href: '/admin-pusat/permissions', label: 'Permissions', icon: KeyRound },
+  { href: '/admin-pusat/dashboard', label: 'Analytics', icon: BarChart3, permission: 'analytics.read' },
+  { href: '/admin-pusat/dashboard', label: 'Settings', icon: Settings, permission: 'settings.read' },
 ]
 
 export default async function SuperAdminLayout({ children }: { children: ReactNode }) {
@@ -28,7 +28,7 @@ export default async function SuperAdminLayout({ children }: { children: ReactNo
           </div>
           <div>
             <p className="text-sm font-extrabold">MPJ Event</p>
-            <p className="text-xs font-semibold uppercase tracking-wide text-white/55">Super Admin</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-white/55">Admin Pusat</p>
           </div>
         </div>
         <nav className="space-y-1 p-3">
@@ -43,7 +43,7 @@ export default async function SuperAdminLayout({ children }: { children: ReactNo
           })}
         </nav>
         <div className="absolute inset-x-0 bottom-0 border-t border-white/10 p-4">
-          <LogoutButton className="text-white/55 hover:text-white" nextPath="/super-admin/dashboard" />
+          <LogoutButton className="text-white/55 hover:text-white" nextPath="/admin-pusat/dashboard" />
         </div>
       </aside>
       <div className="lg:pl-64">
@@ -51,9 +51,9 @@ export default async function SuperAdminLayout({ children }: { children: ReactNo
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-extrabold">MPJ Event</p>
-              <p className="text-xs font-semibold text-gray-500">Super Admin</p>
+              <p className="text-xs font-semibold text-gray-500">Admin Pusat</p>
             </div>
-            <LogoutButton className="rounded-full bg-[#C9A227]/20 px-3 py-1 text-xs font-bold text-[#7a6112]" nextPath="/super-admin/dashboard" />
+            <LogoutButton className="rounded-full bg-[#C9A227]/20 px-3 py-1 text-xs font-bold text-[#7a6112]" nextPath="/admin-pusat/dashboard" />
           </div>
         </header>
         {children}

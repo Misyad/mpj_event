@@ -4,6 +4,19 @@ import { verifyAccessToken } from '@/lib/auth/token'
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname
+
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = pathname === '/admin' ? '/admin-pusat/dashboard' : pathname.replace(/^\/admin/, '/admin-pusat')
+    return NextResponse.redirect(redirectUrl)
+  }
+
+  if (pathname === '/super-admin' || pathname.startsWith('/super-admin/')) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = pathname === '/super-admin' ? '/admin-pusat/dashboard' : pathname.replace(/^\/super-admin/, '/admin-pusat')
+    return NextResponse.redirect(redirectUrl)
+  }
+
   const requiredRole = getRequiredRoleForPath(pathname)
 
   if (!requiredRole) return NextResponse.next()
@@ -23,5 +36,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/super-admin/:path*', '/regional/:path*', '/dashboard/:path*'],
+  matcher: ['/admin-pusat/:path*', '/admin/:path*', '/super-admin/:path*', '/regional/:path*', '/dashboard/:path*'],
 }

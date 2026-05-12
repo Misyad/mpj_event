@@ -47,7 +47,7 @@ export default function NarasumberPage() {
           <h1 className="text-xl md:text-2xl font-extrabold text-[#1B4332]">Narasumber</h1>
           <p className="text-sm text-gray-500 mt-0.5">Kelola daftar pembicara & narasumber event</p>
         </div>
-        <Link href="/admin/narasumber/new">
+        <Link href="/admin-pusat/narasumber/new">
           <Button className="bg-[#1B4332] hover:bg-[#14532d] text-white gap-1.5 h-9 text-sm rounded-xl">
             <Plus className="w-4 h-4" /> Tambah
           </Button>

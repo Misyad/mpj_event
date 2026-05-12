@@ -323,7 +323,7 @@ export default function MasterPesertaPage() {
                   </td>
                   <td className="px-4 py-3.5">
                     <div className="flex flex-wrap gap-1.5">
-                      <Link href={`/admin/events/${p.event_id}`} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-600 transition-colors hover:border-[#1B4332] hover:text-[#1B4332]">
+                      <Link href={`/admin-pusat/events/${p.event_id}`} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-600 transition-colors hover:border-[#1B4332] hover:text-[#1B4332]">
                         <ExternalLink className="h-3 w-3" />
                         Event
                       </Link>
@@ -363,7 +363,7 @@ export default function MasterPesertaPage() {
                 )}
               </div>
               <div className="flex gap-2">
-                <Link href={`/admin/events/${p.event_id}`} className="text-xs font-semibold text-[#1B4332] hover:underline">Detail event</Link>
+                <Link href={`/admin-pusat/events/${p.event_id}`} className="text-xs font-semibold text-[#1B4332] hover:underline">Detail event</Link>
                 <Link href={`/ticket/${encodeURIComponent(p.ticketCode || p.qr_token)}`} className="text-xs font-semibold text-[#1B4332] hover:underline">Tiket</Link>
               </div>
             </div>
