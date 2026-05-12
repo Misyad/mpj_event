@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import type { AuthRole } from '@/lib/auth/roles'
 import { getAuthRoleConfig } from '@/lib/auth/roles'
+import { getSafeRedirectPath } from '@/lib/auth/role-config'
+import { setRoleSessionCookies } from '@/lib/auth/session-cookies'
 import { loginAdmin } from '@/lib/server/rbac'
 
 export const runtime = 'nodejs'
@@ -9,13 +11,13 @@ export const dynamic = 'force-dynamic'
 export async function POST(request: NextRequest) {
   try {
     const payload = await request.json()
-    const role = payload.role as AuthRole
+    const role = typeof payload.role === 'string' ? (payload.role as AuthRole) : undefined
     const email = typeof payload.email === 'string' ? payload.email.trim() : ''
     const password = typeof payload.password === 'string' ? payload.password : ''
     const remember = Boolean(payload.remember)
-    const config = getAuthRoleConfig(role)
+    const config = role ? getAuthRoleConfig(role) : null
 
-    if (!config) {
+    if (role && !config) {
       return NextResponse.json({ ok: false, error: 'Role login tidak valid' }, { status: 400 })
     }
 
@@ -29,27 +31,23 @@ export async function POST(request: NextRequest) {
       password,
       remember,
     })
-    const response = NextResponse.json({ ok: true, role, redirectTo: config.dashboardPath })
 
-    response.cookies.set(config.cookieName, login.accessToken, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-      maxAge: login.maxAge,
-    })
-    response.cookies.set(`${config.cookieName}_refresh`, login.refreshToken, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-      maxAge: login.maxAge,
-    })
-    response.cookies.set('mpj_active_role', role, {
-      httpOnly: false,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
+    if (login.requiresRoleSelection) {
+      return NextResponse.json({
+        ok: true,
+        requiresRoleSelection: true,
+        roles: login.roles,
+        user: login.user,
+      })
+    }
+
+    const redirectTo = getSafeRedirectPath(typeof payload.next === 'string' ? payload.next : null, login.role)
+    const response = NextResponse.json({ ok: true, role: login.role, redirectTo })
+
+    setRoleSessionCookies(response, {
+      role: login.role,
+      accessToken: login.accessToken,
+      refreshToken: login.refreshToken,
       maxAge: login.maxAge,
     })
 

@@ -416,22 +416,24 @@ export async function writeActivityLog(
   )
 }
 
-async function getUserPermissions(connection: PoolConnection, userId: string) {
+async function getUserPermissions(connection: PoolConnection, userId: string, role?: AuthRole) {
   const [rows] = await connection.query<RowDataPacket[]>(
     `
       SELECT DISTINCT p.code
       FROM user_roles ur
+      JOIN roles r ON r.id = ur.role_id
       JOIN role_permissions rp ON rp.role_id = ur.role_id
       JOIN permissions p ON p.id = rp.permission_id
       WHERE ur.user_id = :userId
+        AND (:role = '' OR r.code = :role)
       ORDER BY p.code ASC
     `,
-    { userId },
+    { userId, role: role ?? '' },
   )
   return rows.map((row) => String(row.code))
 }
 
-async function getPrimaryRole(connection: PoolConnection, userId: string) {
+async function getUserRoles(connection: PoolConnection, userId: string) {
   const [rows] = await connection.query<RowDataPacket[]>(
     `
       SELECT r.code
@@ -439,11 +441,16 @@ async function getPrimaryRole(connection: PoolConnection, userId: string) {
       JOIN roles r ON r.id = ur.role_id
       WHERE ur.user_id = :userId
       ORDER BY r.code ASC
-      LIMIT 1
     `,
     { userId },
   )
-  return rows[0]?.code as AuthRole | undefined
+
+  const roleOrder: AuthRole[] = [AUTH_ROLES.superAdmin, AUTH_ROLES.regionalAdmin, AUTH_ROLES.user]
+  const roles = rows
+    .map((row) => String(row.code))
+    .filter((role): role is AuthRole => roleOrder.includes(role as AuthRole))
+
+  return roles.sort((a, b) => roleOrder.indexOf(a) - roleOrder.indexOf(b))
 }
 
 async function getRegionalId(connection: PoolConnection, userId: string) {
@@ -454,37 +461,56 @@ async function getRegionalId(connection: PoolConnection, userId: string) {
   return (rows[0]?.regional_id as string | undefined) ?? null
 }
 
-export async function loginAdmin(request: NextRequest, payload: { role: AuthRole; email: string; password: string; remember: boolean }) {
+export async function loginAdmin(request: NextRequest, payload: { role?: AuthRole; email: string; password: string; remember: boolean }) {
   return withDb(async (db) => {
     const connection = await db.getConnection()
     const meta = requestMeta(request)
+    const requestedRole = payload.role ?? null
     try {
       await ensureRbacSchema(connection)
       const [userRows] = await connection.query<UserRow[]>('SELECT * FROM users WHERE email = :email LIMIT 1', { email: payload.email })
       const user = userRows[0]
 
       if (!user) {
-        await auditLogin(connection, { email: payload.email, roleCode: payload.role, success: false, failureReason: 'user_not_found', ...meta })
+        await auditLogin(connection, { email: payload.email, roleCode: requestedRole, success: false, failureReason: 'user_not_found', ...meta })
         throw new Error('Email atau password tidak valid')
       }
 
       if (user.status !== 'active') {
-        await auditLogin(connection, { userId: user.id, email: payload.email, roleCode: payload.role, success: false, failureReason: 'user_suspended', ...meta })
+        await auditLogin(connection, { userId: user.id, email: payload.email, roleCode: requestedRole, success: false, failureReason: 'user_suspended', ...meta })
         throw new Error('Akun admin tidak aktif')
       }
 
       if (!verifyPassword(payload.password, user.password_hash)) {
-        await auditLogin(connection, { userId: user.id, email: payload.email, roleCode: payload.role, success: false, failureReason: 'invalid_password', ...meta })
+        await auditLogin(connection, { userId: user.id, email: payload.email, roleCode: requestedRole, success: false, failureReason: 'invalid_password', ...meta })
         throw new Error('Email atau password tidak valid')
       }
 
-      const role = await getPrimaryRole(connection, user.id)
-      if (role !== payload.role) {
-        await auditLogin(connection, { userId: user.id, email: payload.email, roleCode: payload.role, success: false, failureReason: 'role_mismatch', ...meta })
+      const roles = await getUserRoles(connection, user.id)
+      if (roles.length === 0) {
+        await auditLogin(connection, { userId: user.id, email: payload.email, roleCode: requestedRole, success: false, failureReason: 'role_not_found', ...meta })
+        throw new Error('Akun ini belum memiliki role akses')
+      }
+
+      if (!payload.role && roles.length > 1) {
+        return {
+          requiresRoleSelection: true as const,
+          roles,
+          user: {
+            id: user.id,
+            email: user.email,
+            fullName: user.full_name,
+          },
+        }
+      }
+
+      const role = payload.role ?? roles[0]
+      if (!roles.includes(role)) {
+        await auditLogin(connection, { userId: user.id, email: payload.email, roleCode: role, success: false, failureReason: 'role_mismatch', ...meta })
         throw new Error('Akun ini tidak memiliki akses role yang dipilih')
       }
 
-      const permissions = await getUserPermissions(connection, user.id)
+      const permissions = await getUserPermissions(connection, user.id, role)
       const regionalId = await getRegionalId(connection, user.id)
       if (role === AUTH_ROLES.regionalAdmin && !regionalId) throw new Error('Admin Regional wajib memiliki regional_id')
 
@@ -541,7 +567,7 @@ export async function refreshAdminSession(request: NextRequest) {
     try {
       await ensureRbacSchema(connection)
 
-      for (const role of [AUTH_ROLES.superAdmin, AUTH_ROLES.regionalAdmin]) {
+      for (const role of [AUTH_ROLES.superAdmin, AUTH_ROLES.regionalAdmin, AUTH_ROLES.user]) {
         const config = getAuthRoleConfig(role)
         const refreshCookie = config ? request.cookies.get(`${config.cookieName}_refresh`)?.value : undefined
         if (!refreshCookie) continue
@@ -598,12 +624,51 @@ export async function refreshAdminSession(request: NextRequest) {
 }
 
 export async function revokeCurrentSession(request: NextRequest) {
-  const session = await getSessionFromRequest(request)
-  if (!session) return null
+  const accessSession = await getSessionFromRequest(request)
+
   return withDb(async (db) => {
     const connection = await db.getConnection()
     try {
       await ensureRbacSchema(connection)
+      let session = accessSession
+
+      if (!session) {
+        for (const role of [AUTH_ROLES.superAdmin, AUTH_ROLES.regionalAdmin, AUTH_ROLES.user]) {
+          const config = getAuthRoleConfig(role)
+          const refreshCookie = config ? request.cookies.get(`${config.cookieName}_refresh`)?.value : undefined
+          if (!refreshCookie) continue
+
+          const [sessionId, refreshSecret] = refreshCookie.split('.')
+          if (!sessionId || !refreshSecret) continue
+
+          const [sessions] = await connection.query<RowDataPacket[]>(
+            `
+              SELECT id, user_id, role_code, regional_id, refresh_token_hash
+              FROM admin_sessions
+              WHERE id = :sessionId
+                AND role_code = :role
+                AND revoked_at IS NULL
+              LIMIT 1
+            `,
+            { sessionId, role },
+          )
+          const refreshSession = sessions[0]
+          if (!refreshSession || !verifyPassword(refreshSecret, String(refreshSession.refresh_token_hash))) continue
+
+          session = {
+            sessionId: String(refreshSession.id),
+            userId: String(refreshSession.user_id),
+            role,
+            regionalId: refreshSession.regional_id ? String(refreshSession.regional_id) : null,
+            permissions: await getUserPermissions(connection, String(refreshSession.user_id)),
+            exp: Math.floor(Date.now() / 1000),
+          }
+          break
+        }
+      }
+
+      if (!session) return null
+
       await connection.query('UPDATE admin_sessions SET revoked_at = NOW() WHERE id = :sessionId AND revoked_at IS NULL', {
         sessionId: session.sessionId,
       })
@@ -622,7 +687,7 @@ export async function revokeCurrentSession(request: NextRequest) {
 }
 
 export async function getSessionFromRequest(request: NextRequest, role?: AuthRole): Promise<AdminSession | null> {
-  const candidateRoles = role ? [role] : [AUTH_ROLES.superAdmin, AUTH_ROLES.regionalAdmin]
+  const candidateRoles = role ? [role] : [AUTH_ROLES.superAdmin, AUTH_ROLES.regionalAdmin, AUTH_ROLES.user]
   for (const candidateRole of candidateRoles) {
     const config = getAuthRoleConfig(candidateRole)
     const token = config ? request.cookies.get(config.cookieName)?.value : undefined
@@ -634,7 +699,7 @@ export async function getSessionFromRequest(request: NextRequest, role?: AuthRol
 
 export async function getCurrentAdminSession(role?: AuthRole): Promise<AdminSession | null> {
   const cookieStore = await cookies()
-  const candidateRoles = role ? [role] : [AUTH_ROLES.superAdmin, AUTH_ROLES.regionalAdmin]
+  const candidateRoles = role ? [role] : [AUTH_ROLES.superAdmin, AUTH_ROLES.regionalAdmin, AUTH_ROLES.user]
   for (const candidateRole of candidateRoles) {
     const config = getAuthRoleConfig(candidateRole)
     const token = config ? cookieStore.get(config.cookieName)?.value : undefined

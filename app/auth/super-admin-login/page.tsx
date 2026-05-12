@@ -1,6 +1,12 @@
+import { redirect } from 'next/navigation'
 import { RoleLoginForm } from '@/components/auth/RoleLoginForm'
-import { AUTH_ROLES } from '@/lib/auth/roles'
+import { getSafeRedirectPath } from '@/lib/auth/role-config'
+import { getCurrentAdminSession } from '@/lib/server/rbac'
 
-export default function SuperAdminLoginPage() {
-  return <RoleLoginForm role={AUTH_ROLES.superAdmin} />
+export default async function SuperAdminLoginPage({ searchParams }: { searchParams: Promise<{ next?: string }> }) {
+  const { next } = await searchParams
+  const session = await getCurrentAdminSession()
+  if (session) redirect(getSafeRedirectPath(next, session.role))
+
+  return <RoleLoginForm nextPath={next} />
 }

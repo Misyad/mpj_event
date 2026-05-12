@@ -3,7 +3,8 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
-import { Calendar, ChevronRight, Database, LayoutDashboard, LogOut, Menu, QrCode, UserCheck, Users2, X } from 'lucide-react'
+import { Calendar, ChevronRight, Database, LayoutDashboard, Menu, QrCode, UserCheck, Users2, X } from 'lucide-react'
+import { LogoutButton } from '@/components/auth/LogoutButton'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -77,10 +78,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <p className="text-white/30 text-[10px] truncate">admin@mpj.id</p>
             </div>
           </div>
-          <Link href="/" className="flex items-center gap-2 text-xs text-white/40 hover:text-white/70 transition-colors group">
-            <LogOut className="w-3.5 h-3.5 group-hover:text-white/70" />
-            Kembali ke Publik
-          </Link>
+          <LogoutButton className="text-white/40 hover:text-white/70" nextPath="/admin" />
         </div>
       </aside>
 
@@ -143,10 +141,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   <p className="text-white/30 text-[10px]">admin@mpj.id</p>
                 </div>
               </div>
-              <Link href="/" onClick={() => setOpen(false)} className="flex items-center gap-2 text-xs text-white/40 hover:text-white/70 transition-colors">
-                <LogOut className="w-3.5 h-3.5" />
-                Kembali ke Publik
-              </Link>
+              <LogoutButton className="text-white/40 hover:text-white/70" nextPath="/admin" />
             </div>
           </aside>
         </div>

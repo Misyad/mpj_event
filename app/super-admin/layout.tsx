@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { BarChart3, Crown, KeyRound, LayoutDashboard, Settings, UsersRound } from 'lucide-react'
+import { LogoutButton } from '@/components/auth/LogoutButton'
 import { AUTH_ROLES } from '@/lib/auth/roles'
 import { hasPermission, type AdminPermission } from '@/lib/auth/permissions'
 import { getCurrentAdminSession } from '@/lib/server/rbac'
@@ -41,6 +42,9 @@ export default async function SuperAdminLayout({ children }: { children: ReactNo
             )
           })}
         </nav>
+        <div className="absolute inset-x-0 bottom-0 border-t border-white/10 p-4">
+          <LogoutButton className="text-white/55 hover:text-white" nextPath="/super-admin/dashboard" />
+        </div>
       </aside>
       <div className="lg:pl-64">
         <header className="sticky top-0 z-20 border-b border-[#dfe8e1] bg-[#eef3ef]/95 px-4 py-3 backdrop-blur lg:hidden">
@@ -49,7 +53,7 @@ export default async function SuperAdminLayout({ children }: { children: ReactNo
               <p className="text-sm font-extrabold">MPJ Event</p>
               <p className="text-xs font-semibold text-gray-500">Super Admin</p>
             </div>
-            <span className="rounded-full bg-[#C9A227]/20 px-3 py-1 text-xs font-bold text-[#7a6112]">Full Access</span>
+            <LogoutButton className="rounded-full bg-[#C9A227]/20 px-3 py-1 text-xs font-bold text-[#7a6112]" nextPath="/super-admin/dashboard" />
           </div>
         </header>
         {children}

@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { BarChart3, Building2, CalendarDays, LayoutDashboard, UserCheck } from 'lucide-react'
+import { LogoutButton } from '@/components/auth/LogoutButton'
 import { AUTH_ROLES } from '@/lib/auth/roles'
 import { hasPermission, type AdminPermission } from '@/lib/auth/permissions'
 import { getCurrentAdminSession } from '@/lib/server/rbac'
@@ -40,6 +41,9 @@ export default async function RegionalLayout({ children }: { children: ReactNode
             )
           })}
         </nav>
+        <div className="absolute inset-x-0 bottom-0 border-t border-white/10 p-4">
+          <LogoutButton className="text-white/55 hover:text-white" nextPath="/regional/dashboard" />
+        </div>
       </aside>
       <div className="lg:pl-64">
         <header className="sticky top-0 z-20 border-b border-[#dfe8e1] bg-[#eef3ef]/95 px-4 py-3 backdrop-blur lg:hidden">
@@ -48,7 +52,7 @@ export default async function RegionalLayout({ children }: { children: ReactNode
               <p className="text-sm font-extrabold">MPJ Event</p>
               <p className="text-xs font-semibold text-gray-500">Admin Regional</p>
             </div>
-            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">Scoped</span>
+            <LogoutButton className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700" nextPath="/regional/dashboard" />
           </div>
         </header>
         {children}

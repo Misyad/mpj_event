@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { LogIn } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { RoleLoginSelector } from '@/components/auth/RoleLoginSelector'
+import { RoleLoginForm } from '@/components/auth/RoleLoginForm'
 
 export function LoginEntryDialog() {
   const [open, setOpen] = useState(false)
@@ -18,12 +18,12 @@ export function LoginEntryDialog() {
       </DialogTrigger>
       <DialogContent className="max-w-[calc(100%-1.5rem)] rounded-3xl bg-[#f7faf8] p-5 sm:max-w-lg">
         <DialogHeader className="pr-8">
-          <DialogTitle className="text-lg font-extrabold text-[#1B4332]">Pilih akses masuk</DialogTitle>
+          <DialogTitle className="text-lg font-extrabold text-[#1B4332]">Masuk MPJ Event</DialogTitle>
           <DialogDescription className="text-sm text-gray-500">
-            Masuk sesuai role agar sistem membuka dashboard dan izin akses yang tepat.
+            Isi email dan password. Dashboard akan mengikuti role akun di database.
           </DialogDescription>
         </DialogHeader>
-        <RoleLoginSelector onSelect={() => setOpen(false)} />
+        <RoleLoginForm embedded onAuthenticated={() => setOpen(false)} />
       </DialogContent>
     </Dialog>
   )
