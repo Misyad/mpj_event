@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { EventDetailView, getEventForDetail } from '@/app/(public)/events/[id]/page'
+import { EventDetailView, getEventForDetail } from '@/app/(public)/events/event-detail'
 
 export const dynamic = 'force-dynamic'
 
