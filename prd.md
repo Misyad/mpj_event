@@ -1,15 +1,20 @@
 Dokumen Final: Modul Event & Ticketing (MPJ Apps)
-**Versi:** 2026.1 (Terintegrasi dengan NIAM & Sistem Keuangan Kode Unik) | Backend: Laravel (Custom)
-**Stack Frontend:** Next.js 14 (App Router) + Tailwind CSS + shadcn/ui
-**Status Data:** Sementara menggunakan dummy data (`lib/dummy.ts`). Nanti diganti Axios ke Laravel REST API tanpa perlu ubah komponen.
+**Versi:** 2026.2 (UX Register Disederhanakan + Auto-Detect NIAM) | Backend: Laravel (Custom)
+**Stack Frontend:** Next.js 16.2.4 (App Router) + Tailwind CSS v4 + shadcn/ui
+**Status Data:** Sementara menggunakan dummy data (`lib/dummy.ts`). Nanti diganti ke Laravel REST API / MPJ Apps API tanpa perlu ubah arsitektur UI utama.
 
 ---
 
 ## 1. Konsep Utama Modul
 
-Aplikasi publik berbasis web (seperti game.sarga.co) untuk menampilkan, mendaftarkan, dan mengelola kehadiran peserta event MPJ. Terdapat dua jalur pendaftaran (Anggota ber-NIAM & Umum) yang dilengkapi sistem pricing dinamis dan pembayaran tiket via kode unik. Modul ini juga berfungsi sebagai *Lead Generation* (rekrutmen anggota baru).
+Aplikasi publik berbasis web untuk menampilkan event, menerima pendaftaran, mengelola pembayaran tiket, dan mendukung absensi QR saat acara berlangsung.
 
-> **Catatan:** Admin Dashboard (pembuatan event, SDM panitia, LPJ, approval, takeover) sudah ditangani oleh sistem backend yang ada. Dokumen ini hanya mencakup sisi **publik & operasional lapangan**.
+Konsep jalur **NIAM** dan **UMUM** tetap dipertahankan di level data dan backend, tetapi **tidak lagi menjadi pilihan manual di awal flow publik**. Jalur peserta sekarang ditentukan otomatis oleh sistem:
+
+- jika user memiliki **NIAM valid**, pendaftaran diproses sebagai **NIAM**
+- jika NIAM kosong / tidak valid / tidak ditemukan, pendaftaran diproses sebagai **UMUM**
+
+> **Catatan:** Admin Dashboard (pembuatan event, SDM panitia, LPJ, approval, takeover) tetap ditangani di sistem backend/admin. Dokumen ini fokus pada sisi **publik & operasional lapangan**.
 
 ---
 
@@ -19,151 +24,262 @@ Aplikasi publik berbasis web (seperti game.sarga.co) untuk menampilkan, mendafta
  * id: UUID (PK)
  * title: String
  * category: Enum (Pelatihan, Seremonial, Rapat)
- * poster_url: String (rasio 4:5, max 100KB WebP/JPG)
+ * poster_url: String
  * description: Text
  * location_gmaps: String
  * start_date: Timestamp
- * is_open_for_public: Boolean (Aktifkan Jalur Umum)
- * is_paid: Boolean (Aktifkan Gateway Pembayaran)
- * price_niam: Integer (Harga khusus pemilik NIAM - *Bisa Rp 0*)
- * price_public: Integer (Harga untuk jalur umum)
+ * is_open_for_public: Boolean
+ * is_paid: Boolean
+ * price_niam: Integer (Harga anggota / pemilik NIAM)
+ * price_public: Integer (Harga umum / non-anggota)
  * status: Enum (DRAFT, PENDING, APPROVED, FINISHED, COMPLETED)
  * bank_account_id: FK ke rekening tujuan
 
 ### B. Tabel event_participants (Junction Table & Transaksi)
  * id: UUID (PK)
  * event_id: FK ke tabel events
- * crew_id: FK ke tabel crews (*Nullable* - untuk Jalur NIAM)
- * guest_id: FK ke tabel event_guests (*Nullable* - untuk Jalur Umum)
+ * crew_id: FK ke tabel crews (*Nullable* - untuk peserta NIAM)
+ * guest_id: FK ke tabel event_guests (*Nullable* - untuk peserta UMUM)
  * registration_path: Enum (NIAM, UMUM)
  * payment_status: Enum (Free, Unpaid, Pending_Approval, Paid)
- * unique_amount: Integer (Nominal transfer + 3 digit kode unik. Misal: 50.012)
- * payment_proof_url: String (Link Bukti Transfer)
+ * unique_amount: Integer
+ * payment_proof_url: String
  * attendance_status: Enum (Registered, Attended, Cancelled)
- * qr_token: String (Token unik untuk tiket/scan)
+ * qr_token: String
 
-### C. Tabel event_guests (Temporary Data Calon Anggota)
+### C. Tabel event_guests
  * id: UUID (PK)
  * full_name: String
  * institution_name: String
  * whatsapp: String
  * id_card_url: String
 
+> **Catatan penting:** Struktur database tetap mempertahankan `registration_path`, `crew_id`, dan `guest_id` karena backend masih perlu membedakan anggota dan non-anggota, walaupun UI publik sudah disederhanakan.
+
 ---
 
 ## 3. Halaman & Alur UI/UX
 
 ### Halaman 1: Event Listing (Home)
-Tampilan utama seperti game.sarga.co — card-based, image-first.
+Tampilan utama berbasis card, mobile-first.
 
 **Komponen:**
- * Header: Logo MPJ + tombol Login (untuk panitia/scan)
- * Grid kartu event, setiap kartu menampilkan:
-   * Poster event (rasio 4:5)
+ * Header: Logo MPJ + tombol Login
+ * Daftar event aktif dan event selesai
+ * Kartu event menampilkan:
+   * Poster
    * Nama event
-   * Tanggal & lokasi
-   * Badge status: `LIVE` / `UPCOMING` / `SELESAI`
-   * Badge kategori: Pelatihan / Seremonial / Rapat
- * Filter: Semua / Upcoming / Selesai
- * State kosong: Pesan "Belum ada event" jika tidak ada data
+   * Lokasi
+   * Tanggal
+   * Badge status publik: `Published` / `Selesai`
 
 **Aturan tampil:**
- * Hanya event berstatus `APPROVED` atau `FINISHED`/`COMPLETED` yang tampil
- * Event berstatus `DRAFT` / `PENDING` tidak tampil ke publik
+ * Hanya event `APPROVED`, `FINISHED`, dan `COMPLETED` yang tampil ke publik
+ * Event `DRAFT` / `PENDING` tidak tampil
 
 ---
 
 ### Halaman 2: Detail Event
-Klik kartu event → masuk halaman detail.
+Klik kartu event membuka halaman detail.
 
 **Komponen:**
- * Poster besar (full-width)
- * Nama, kategori, tanggal, jam, lokasi (dengan link Google Maps)
+ * Poster besar
+ * Nama event
+ * Badge status dan kategori
+ * Jadwal + lokasi + link Google Maps
  * Deskripsi event
- * Info harga: Jalur NIAM & Jalur Umum (jika berbayar)
- * Tombol **"Daftar Sekarang"** (hanya muncul jika status `APPROVED`)
- * Jika status `FINISHED`/`COMPLETED`: tombol daftar tersembunyi, tampilkan label "Pendaftaran Ditutup"
+ * Jika event berbayar: tampil satu informasi harga publik dengan label **HTM Event**
+ * Tombol **Daftar Sekarang** jika status `APPROVED`
+ * Jika status `FINISHED` / `COMPLETED`: tampil label pendaftaran ditutup
+
+**Catatan pricing publik:**
+ * Harga anggota (`price_niam`) tetap dipertahankan di sistem
+ * Namun di halaman detail publik yang ditampilkan hanya harga umum / publik (`price_public`) dengan redaksi **HTM Event**
 
 ---
 
 ### Halaman 3: Registrasi Peserta
 
-**Langkah 1 — Pilih Jalur:**
- * Tombol: "Jalur NIAM (Anggota)" atau "Jalur Umum"
- * Jalur Umum hanya muncul jika `is_open_for_public = true`
+Flow pendaftaran publik disederhanakan dan tidak lagi menampilkan pilihan:
+- Jalur NIAM
+- Jalur Umum
 
-**Langkah 2 — Input Data:**
- * **Jalur NIAM:** Input NIAM → sistem validasi ke backend → tampilkan ringkasan profil (nama, foto, unit)
- * **Jalur Umum:** Form manual (Nama Lengkap, No. WhatsApp, Asal Instansi, Upload KTP/Identitas)
+Sebagai gantinya, sistem menggunakan **auto-detect NIAM** dan data profil user/login.
 
-**Langkah 3 — Konfirmasi & Invoice:**
- * Tampilkan ringkasan pendaftaran
- * Jika event **gratis**: langsung submit → status `Registered` → redirect ke halaman E-Tiket
- * Jika event **berbayar**:
-   * Tampilkan invoice dengan kode unik (Contoh: Rp 100.**012**)
-   * Info rekening tujuan
-   * Tombol "Saya Sudah Transfer" → form upload bukti transfer
-   * Setelah upload: status menjadi `Pending_Approval`, tampilkan halaman menunggu verifikasi
+#### Progress Step
+ 1. **Data Diri**
+ 2. **Pembayaran**
+ 3. **Selesai**
+
+#### Kondisi User
+
+##### A. User sudah login dan data lengkap
+ * Sistem mengambil data profil yang tersedia
+ * Auto-fill:
+   * NIAM / Nomor Anggota
+   * Nama Lengkap
+   * Nomor WhatsApp
+   * Asal Pesantren / Instansi
+ * Jika data lengkap dan NIAM valid:
+   * tampil ringkasan / konfirmasi data singkat
+   * user tidak perlu isi form ulang
+   * internal `registration_path = NIAM`
+   * harga memakai `price_niam`
+
+##### B. User sudah login tapi data belum lengkap
+ * Sistem menampilkan form data diri
+ * Field yang tersedia sudah terisi sebagian
+ * User hanya melengkapi data yang kosong
+
+##### C. User belum login
+ * Langsung masuk ke form data diri manual
+
+#### Field Data Diri
+ * **NIAM / Nomor Anggota**
+   * opsional
+   * helper text:
+     *Isi jika Anda anggota MPJ. Kosongkan jika belum memiliki NIAM.*
+ * **Nama Lengkap**
+ * **Nomor WhatsApp**
+ * **Asal Pesantren / Instansi**
+
+#### Perilaku NIAM
+ * Jika NIAM valid / ditemukan:
+   * internal `registration_path = NIAM`
+   * harga memakai `price_niam`
+   * boleh tampil microcopy positif seperti:
+     - `Data anggota terdeteksi`
+     - `Harga anggota diterapkan`
+ * Jika NIAM kosong:
+   * internal `registration_path = UMUM`
+   * harga memakai `price_public`
+   * tidak perlu pesan tambahan
+ * Jika NIAM diisi tetapi tidak valid / tidak ditemukan:
+   * internal `registration_path = UMUM`
+   * harga memakai `price_public`
+   * tidak tampil warning/error merah
+   * flow tetap lanjut normal
+
+#### Field Asal Pesantren / Instansi
+Field ini tidak lagi berupa input teks bebas biasa. UX-nya menggunakan **searchable autocomplete / combobox floating**:
+
+ * User mengetik nama pesantren/instansi
+ * Suggestion muncul floating di bawah input
+ * Dropdown tidak mendorong layout ke bawah
+ * User klik satu opsi, nilai langsung mengisi input
+ * Sumber data sementara berasal dari master data dummy frontend:
+   * pesantren
+   * media/unit
+   * data turunan organisasi yang relevan
+
+**Empty state:**
+ * Jika data tidak ditemukan, tampil pesan halus:
+   *`Data belum tersedia. Pastikan penulisan sudah benar.`*
+ * Untuk event publik, boleh ada aksi:
+   *`Gunakan sebagai instansi baru`*
+ * Tidak ada error merah
+
+**Auto-fill instansi:**
+ * Jika user login punya data instansi, field ini otomatis terisi
+ * Jika NIAM valid dan data anggota punya unit/pesantren, field ini ikut otomatis terisi
 
 ---
 
-### Halaman 4: E-Tiket
-Diakses setelah status `Paid` atau `Free`.
+### Halaman 4: Konfirmasi & Pembayaran
+
+Setelah data valid:
+
+#### Jika event gratis (`is_paid = false`)
+ * Submit pendaftaran
+ * Tampilkan state sukses
+ * Redirect ke halaman tiket menggunakan query:
+
+```text
+/ticket?token=...
+```
+
+#### Jika event berbayar (`is_paid = true`)
+ * Tampilkan invoice
+ * Tampilkan harga tiket sesuai hasil auto-detect:
+   * `price_niam` jika NIAM valid
+   * `price_public` jika umum
+ * Tampilkan kode unik
+ * Tampilkan rekening tujuan
+ * User upload bukti transfer
+ * Setelah upload:
+   * status menjadi `Pending_Approval`
+   * tampil state **Menunggu Verifikasi Panitia**
+   * user **tidak langsung** diarahkan ke tiket aktif sebelum status `Paid`
+
+---
+
+### Halaman 5: E-Tiket
+Diakses setelah status `Free` atau `Paid`.
+
+**Akses route:**
+
+```text
+/ticket?token=...
+```
 
 **Komponen:**
- * QR Code besar (dari `qr_token`)
- * Nama peserta, nama event, tanggal
- * Status tiket: `VALID` / `SUDAH DIGUNAKAN`
- * **Peserta NIAM:** Info bahwa E-ID Card NIAM mereka juga berlaku sebagai tiket
- * **Peserta Umum:** QR Code ini adalah satu-satunya tiket masuk
- * Tombol simpan / screenshot guide
+ * QR Code dari `qr_token`
+ * Nama peserta
+ * Informasi event
+ * Status tiket
+ * Info tambahan untuk peserta NIAM bila relevan
+
+**Fallback UX:**
+ * Jika token kosong: tampil pesan token tidak ditemukan
+ * Jika token tidak valid: tampil pesan tiket tidak ditemukan
+ * Tidak menggunakan route `/ticket/[token]`
 
 ---
 
-### Halaman 5: Scan Absensi (Panitia — Mobile-First)
-Halaman khusus panitia, diakses via login. Didesain untuk layar HP.
+### Halaman 6: Scan Absensi (Panitia)
+Halaman mobile-first untuk panitia.
 
 **Flow:**
- 1. Panitia login → pilih event yang sedang berlangsung
- 2. Kamera aktif otomatis (Web-Based QR Scanner)
- 3. Peserta tunjukkan QR dari E-Tiket atau E-ID Card NIAM
- 4. Scan sukses → tampilkan konfirmasi: nama peserta + foto (jika NIAM) + badge **HADIR**
- 5. Scan gagal/sudah dipakai → tampilkan pesan error merah
-
-**Validasi:**
- * Satu QR hanya bisa discan 1x per event (cegah absen ganda)
- * Sistem catat timestamp kehadiran
+ 1. Panitia login
+ 2. Kamera aktif
+ 3. Scan QR peserta
+ 4. Jika sukses: tampil nama + status hadir
+ 5. Jika gagal / sudah digunakan: tampil pesan gagal
 
 ---
 
-## 4. Fitur Pasca-Event (Conversion Funnel)
-
- 1. 24 jam setelah acara selesai, sistem (backend) mengekstrak data `event_guests` berstatus `Attended`
- 2. Admin Pusat dapat broadcast WhatsApp/Email ke tamu tersebut:
-    > *"Terima kasih partisipasinya! Gabung menjadi anggota resmi MPJ untuk mendapatkan harga khusus di event selanjutnya."*
- 3. Disertakan link pendaftaran anggota institusi
-
----
-
-## 5. Data & Integrasi API
+## 4. Data & Integrasi API
 
 ### Fase Development (Sekarang)
-Seluruh data menggunakan **dummy data statis** di `lib/dummy.ts`. Shape data mengikuti struktur response API Laravel asli agar nanti migrasi mudah.
+Seluruh data masih menggunakan **dummy data statis**.
+
+Beberapa adapter frontend-only sudah disiapkan agar nanti mudah diganti ke API nyata:
+
+ * `getCurrentUser()` untuk simulasi session/login publik
+ * `getInstitutionOptions()` untuk master data instansi
+ * `searchInstitutions(query)` untuk autocomplete instansi
+
+Adapter tersebut hanya untuk pengembangan frontend dan nanti dapat diganti ke source data MPJ Apps / Laravel tanpa mengubah alur UI utama.
 
 ### Fase Production (Setelah Backend Siap)
-Ganti source data di setiap page dengan Axios call ke Laravel REST API. Tidak perlu ubah komponen UI.
+Source data akan dipindah ke backend / API:
 
-```
-lib/dummy.ts  →  lib/api.ts (Axios + Sanctum token)
-```
+ * event listing
+ * detail event
+ * validasi NIAM
+ * profile login user
+ * master pesantren / instansi
+ * registrasi peserta
+ * pembayaran
+ * verifikasi tiket
 
 ---
 
-## 6. Ketentuan Teknis Frontend
+## 5. Ketentuan Teknis Frontend
 
- * **Image:** Poster ditampilkan dalam rasio 4:5, lazy-loaded
- * **QR Scanner:** html5-qrcode (web-based, akses kamera browser)
- * **Image Compression:** client-side sebelum upload (max 100KB)
- * **Auth Panitia:** Token-based via Laravel Sanctum (hanya untuk halaman Scan)
- * **API:** REST API dari Laravel backend
- * **Layout:** Mobile-only. Max-width ~430px, layout vertikal. Tidak perlu tampilan desktop.
+ * Mobile-first, max-width sekitar 430px
+ * QR scanner berbasis web
+ * Ticket route tetap memakai query `token`
+ * Detail event publik hanya menampilkan `HTM Event`
+ * Harga final peserta tetap ditentukan di step pembayaran / invoice
+ * Logic backend/database tidak berubah meskipun UX register disederhanakan

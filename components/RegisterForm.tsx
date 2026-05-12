@@ -1,9 +1,24 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { AlertCircle, ArrowLeft, BadgeCheck, CheckCircle, Loader2, Upload, UserRound, XCircle } from 'lucide-react'
+import {
+  AlertCircle,
+  ArrowLeft,
+  BadgeCheck,
+  CheckCircle,
+  Loader2,
+  Search,
+  Upload,
+  UserRound,
+  XCircle,
+} from 'lucide-react'
+import {
+  getInstitutionOptions,
+  searchInstitutions,
+  type InstitutionOption,
+} from '@/lib/institution-options'
 import type { Event } from '@/types'
 
 type Step = 1 | 2
@@ -29,6 +44,7 @@ type FormData = {
   email: string
   whatsapp: string
   institution: string
+  institutionId: string | null
   selectedClassId: string
   customResponses: Record<string, string | string[]>
   proofFile: File | null
@@ -40,6 +56,10 @@ function generateUniqueCode() {
 
 function formatRupiah(amount: number) {
   return 'Rp ' + amount.toLocaleString('id-ID')
+}
+
+function normalizeNiam(value: string) {
+  return value.trim().toUpperCase()
 }
 
 const inputClass =
@@ -56,6 +76,9 @@ export function RegisterForm({
   registrationContext?: RegistrationContext
 }) {
   const router = useRouter()
+  const institutionOptions = useMemo(() => getInstitutionOptions(), [])
+  const institutionRef = useRef<HTMLDivElement>(null)
+
   const [step, setStep] = useState<Step>(1)
   const [form, setForm] = useState<FormData>({
     niam: '',
@@ -63,6 +86,7 @@ export function RegisterForm({
     email: registrationContext.email ?? '',
     whatsapp: '',
     institution: '',
+    institutionId: null,
     selectedClassId: '',
     customResponses: {},
     proofFile: null,
@@ -74,7 +98,14 @@ export function RegisterForm({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [submitError, setSubmitError] = useState('')
+  const [institutionOpen, setInstitutionOpen] = useState(false)
+  const [institutionQuery, setInstitutionQuery] = useState('')
 
+  const filteredInstitutions = useMemo(
+    () => searchInstitutions(institutionQuery || form.institution),
+    [form.institution, institutionQuery],
+  )
+  const canUseCustomInstitution = event.is_open_for_public && institutionQuery.trim().length > 0
   const isNiamRegistration = Boolean(member)
   const finalName = member?.fullName ?? form.fullName
   const finalInstitution = member?.unit ?? form.institution
@@ -83,7 +114,6 @@ export function RegisterForm({
   const selectedClass = event.classes?.find((eventClass) => eventClass.id === form.selectedClassId)
   const hasClasses = Boolean(event.classes?.length)
 
-  const manualFieldsRequired = !isNiamRegistration
   const customFieldsValid = useMemo(() => {
     if (!event.custom_fields) return true
     return event.custom_fields.every((field) => {
@@ -94,9 +124,20 @@ export function RegisterForm({
   }, [event.custom_fields, form.customResponses])
 
   const canContinueToPayment = Boolean(finalName)
-    && (!manualFieldsRequired || (Boolean(form.whatsapp) && Boolean(finalInstitution)))
+    && (isNiamRegistration || (Boolean(form.whatsapp) && Boolean(finalInstitution)))
     && (!hasClasses || Boolean(form.selectedClassId))
     && customFieldsValid
+
+  useEffect(() => {
+    function handleClickOutside(eventValue: MouseEvent) {
+      if (institutionRef.current && !institutionRef.current.contains(eventValue.target as Node)) {
+        setInstitutionOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   async function validateNiam() {
     const value = form.niam.trim()
@@ -113,8 +154,21 @@ export function RegisterForm({
       const payload = await response.json()
       if (!response.ok || !payload.ok) throw new Error(payload.error || 'Validasi NIAM gagal')
 
-      setMember(payload.valid ? payload.data : null)
+      const nextMember = payload.valid ? payload.data : null
+      setMember(nextMember)
       setMemberChecked(true)
+
+      if (nextMember) {
+        const matchedInstitution = institutionOptions.find(
+          (option) => option.name.trim().toLowerCase() === nextMember.unit.trim().toLowerCase(),
+        )
+        setForm((current) => ({
+          ...current,
+          fullName: current.fullName || nextMember.fullName,
+          institution: current.institution || nextMember.unit,
+          institutionId: current.institutionId || matchedInstitution?.id || null,
+        }))
+      }
     } catch (error) {
       setMember(null)
       setMemberChecked(true)
@@ -133,6 +187,27 @@ export function RegisterForm({
     handleCustomResponse(id, current.includes(option) ? current.filter((item) => item !== option) : [...current, option])
   }
 
+  function selectInstitution(option: InstitutionOption) {
+    setForm((current) => ({
+      ...current,
+      institution: option.name,
+      institutionId: option.id,
+    }))
+    setInstitutionQuery('')
+    setInstitutionOpen(false)
+  }
+
+  function useCustomInstitution() {
+    const value = institutionQuery.trim()
+    if (!value) return
+    setForm((current) => ({
+      ...current,
+      institution: value,
+      institutionId: null,
+    }))
+    setInstitutionOpen(false)
+  }
+
   async function submitRegistration() {
     setSubmitError('')
     setIsSubmitting(true)
@@ -147,6 +222,7 @@ export function RegisterForm({
           email: form.email,
           unit: member?.unit,
           institution_name: finalInstitution,
+          institution_id: form.institutionId,
           whatsapp: form.whatsapp,
           final_amount: totalAmount,
           class_id: form.selectedClassId,
@@ -160,7 +236,8 @@ export function RegisterForm({
 
       setSubmitted(true)
       if (!payload.requiresPayment) {
-        setTimeout(() => router.push(`/ticket/${encodeURIComponent(payload.ticketCode || payload.data.ticketCode || payload.data.qr_token)}`), 800)
+        const token = payload.ticketCode || payload.data?.ticketCode || payload.data?.qr_token
+        setTimeout(() => router.push(`/ticket?token=${encodeURIComponent(token)}`), 800)
       }
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Pendaftaran gagal')
@@ -262,8 +339,8 @@ export function RegisterForm({
                   type="text"
                   placeholder="Contoh: MPJ-001"
                   value={form.niam}
-                  onChange={(event) => {
-                    setForm((current) => ({ ...current, niam: event.target.value }))
+                  onChange={(eventValue) => {
+                    setForm((current) => ({ ...current, niam: eventValue.target.value }))
                     setMember(null)
                     setMemberChecked(false)
                   }}
@@ -306,22 +383,42 @@ export function RegisterForm({
                     type="text"
                     placeholder="Nama Lengkap"
                     value={form.fullName}
-                    onChange={(event) => setForm((current) => ({ ...current, fullName: event.target.value }))}
+                    onChange={(eventValue) => setForm((current) => ({ ...current, fullName: eventValue.target.value }))}
                     className={inputClass}
                   />
                   <input
                     type="tel"
                     placeholder="No. WhatsApp (08xx)"
                     value={form.whatsapp}
-                    onChange={(event) => setForm((current) => ({ ...current, whatsapp: event.target.value }))}
+                    onChange={(eventValue) => setForm((current) => ({ ...current, whatsapp: eventValue.target.value }))}
                     className={inputClass}
                   />
-                  <input
-                    type="text"
-                    placeholder="Asal Instansi / Pesantren / Universitas"
-                    value={form.institution}
-                    onChange={(event) => setForm((current) => ({ ...current, institution: event.target.value }))}
-                    className={inputClass}
+                  <InstitutionCombobox
+                    formInstitution={form.institution}
+                    institutionId={form.institutionId}
+                    institutionOpen={institutionOpen}
+                    institutionQuery={institutionQuery}
+                    filteredInstitutions={filteredInstitutions}
+                    canUseCustomInstitution={canUseCustomInstitution}
+                    institutionRef={institutionRef}
+                    onFocus={() => {
+                      setInstitutionOpen(true)
+                      setInstitutionQuery(form.institution)
+                    }}
+                    onChange={(value) => {
+                      const matchedInstitution = institutionOptions.find(
+                        (option) => option.name.trim().toLowerCase() === value.trim().toLowerCase(),
+                      )
+                      setInstitutionOpen(true)
+                      setInstitutionQuery(value)
+                      setForm((current) => ({
+                        ...current,
+                        institution: value,
+                        institutionId: matchedInstitution?.id ?? null,
+                      }))
+                    }}
+                    onSelect={selectInstitution}
+                    onUseCustom={useCustomInstitution}
                   />
                 </div>
               </div>
@@ -360,62 +457,18 @@ export function RegisterForm({
             ) : null}
 
             {event.custom_fields?.length ? (
-              <div className="space-y-4">
-                <p className="text-sm font-extrabold text-[#1B4332]">Pertanyaan Tambahan</p>
-                {event.custom_fields.map((field) => (
-                  <div key={field.id} className="space-y-2 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-                    <label className="text-xs font-semibold text-gray-700">
-                      {field.label} {field.is_required ? <span className="text-red-500">*</span> : null}
-                    </label>
-
-                    {field.type === 'short_text' ? (
-                      <input className={inputClass} value={(form.customResponses[field.id] as string) || ''} onChange={(event) => handleCustomResponse(field.id, event.target.value)} />
-                    ) : null}
-                    {field.type === 'long_text' ? (
-                      <textarea className={`${inputClass} min-h-24 resize-none`} value={(form.customResponses[field.id] as string) || ''} onChange={(event) => handleCustomResponse(field.id, event.target.value)} />
-                    ) : null}
-                    {field.type === 'dropdown' ? (
-                      <select className={inputClass} value={(form.customResponses[field.id] as string) || ''} onChange={(event) => handleCustomResponse(field.id, event.target.value)}>
-                        <option value="" disabled>Pilih Opsi</option>
-                        {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
-                      </select>
-                    ) : null}
-                    {field.type === 'radio' ? (
-                      <div className="space-y-2 pt-1">
-                        {field.options.map((option) => (
-                          <label key={option} className="flex items-center gap-2 text-sm text-gray-700">
-                            <input type="radio" name={`radio-${field.id}`} value={option} checked={form.customResponses[field.id] === option} onChange={(event) => handleCustomResponse(field.id, event.target.value)} />
-                            {option}
-                          </label>
-                        ))}
-                      </div>
-                    ) : null}
-                    {field.type === 'checkbox' ? (
-                      <div className="space-y-2 pt-1">
-                        {field.options.map((option) => {
-                          const checked = ((form.customResponses[field.id] as string[]) || []).includes(option)
-                          return (
-                            <label key={option} className="flex items-center gap-2 text-sm text-gray-700">
-                              <input type="checkbox" checked={checked} onChange={() => handleCheckboxToggle(field.id, option)} />
-                              {option}
-                            </label>
-                          )
-                        })}
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
+              <CustomFields
+                customFields={event.custom_fields}
+                responses={form.customResponses}
+                onCustomResponse={handleCustomResponse}
+                onCheckboxToggle={handleCheckboxToggle}
+              />
             ) : null}
 
             <div className="rounded-2xl bg-white p-4 shadow-sm">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500">Jalur</span>
-                <span className="font-bold text-[#1B4332]">{isNiamRegistration ? 'NIAM' : 'Umum'}</span>
-              </div>
-              <div className="mt-2 flex items-center justify-between text-sm">
-                <span className="text-gray-500">Harga final</span>
-                <span className="font-extrabold text-[#C9A227]">{event.is_paid ? formatRupiah(finalPrice) : 'Gratis'}</span>
+              <SummaryRow label="Jalur" value={isNiamRegistration ? 'NIAM' : 'Umum'} />
+              <div className="mt-2">
+                <SummaryRow label="Harga final" value={event.is_paid ? formatRupiah(finalPrice) : 'Gratis'} />
               </div>
             </div>
 
@@ -428,17 +481,13 @@ export function RegisterForm({
             <p className="text-lg font-extrabold text-[#1B4332]">{event.is_paid ? 'Invoice Pembayaran' : 'Konfirmasi Pendaftaran'}</p>
 
             <div className="space-y-3 rounded-2xl bg-white p-4 shadow-sm">
-              {[
-                { label: 'Event', value: event.title },
-                { label: 'Jalur', value: isNiamRegistration ? 'NIAM' : 'Umum' },
-                { label: 'Nama', value: finalName },
-                ...(selectedClass ? [{ label: 'Kelas', value: selectedClass.name }] : []),
-              ].map(({ label, value }) => (
-                <div key={label} className="flex justify-between gap-4 text-sm">
-                  <span className="shrink-0 text-gray-400">{label}</span>
-                  <span className="text-right font-semibold text-[#1B4332]">{value}</span>
-                </div>
-              ))}
+              <SummaryRow label="Event" value={event.title} />
+              <SummaryRow label="Tipe Peserta" value={isNiamRegistration ? 'Anggota MPJ' : 'Peserta Umum'} />
+              <SummaryRow label="Nama" value={finalName} />
+              {!isNiamRegistration ? <SummaryRow label="WhatsApp" value={form.whatsapp} /> : null}
+              <SummaryRow label="Asal Pesantren / Instansi" value={finalInstitution} />
+              {isNiamRegistration ? <SummaryRow label="NIAM" value={normalizeNiam(form.niam)} /> : null}
+              {selectedClass ? <SummaryRow label="Kelas" value={selectedClass.name} /> : null}
 
               {event.is_paid ? (
                 <>
@@ -484,7 +533,7 @@ export function RegisterForm({
                       {form.proofFile ? form.proofFile.name : 'Tap untuk upload foto'}
                     </p>
                     <p className="mt-0.5 text-xs text-gray-400">JPG, PNG, max 2MB</p>
-                    <input type="file" accept="image/*" className="hidden" onChange={(event) => setForm((current) => ({ ...current, proofFile: event.target.files?.[0] ?? null }))} />
+                    <input type="file" accept="image/*" className="hidden" onChange={(eventValue) => setForm((current) => ({ ...current, proofFile: eventValue.target.files?.[0] ?? null }))} />
                   </label>
                 </div>
 
@@ -502,6 +551,157 @@ export function RegisterForm({
           </>
         )}
       </div>
+    </div>
+  )
+}
+
+function InstitutionCombobox({
+  formInstitution,
+  institutionId,
+  institutionOpen,
+  institutionQuery,
+  filteredInstitutions,
+  canUseCustomInstitution,
+  institutionRef,
+  onFocus,
+  onChange,
+  onSelect,
+  onUseCustom,
+}: {
+  formInstitution: string
+  institutionId: string | null
+  institutionOpen: boolean
+  institutionQuery: string
+  filteredInstitutions: InstitutionOption[]
+  canUseCustomInstitution: boolean
+  institutionRef: RefObject<HTMLDivElement | null>
+  onFocus: () => void
+  onChange: (value: string) => void
+  onSelect: (option: InstitutionOption) => void
+  onUseCustom: () => void
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-xs font-semibold text-gray-700">Asal Pesantren / Instansi</label>
+      <div ref={institutionRef} className="relative">
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Cari pesantren atau instansi..."
+            value={institutionOpen ? institutionQuery : formInstitution}
+            onFocus={onFocus}
+            onChange={(eventValue) => onChange(eventValue.target.value)}
+            className={`${inputClass} pl-11`}
+          />
+        </div>
+
+        {institutionOpen ? (
+          <div className="absolute left-0 right-0 top-full z-30 mt-1.5 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl">
+            <div className="max-h-64 overflow-y-auto">
+              {filteredInstitutions.length > 0 ? (
+                filteredInstitutions.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => onSelect(option)}
+                    className={`w-full px-3 py-2.5 text-left transition-colors hover:bg-[#1B4332]/5 ${
+                      option.id === institutionId ? 'bg-[#1B4332]/5' : ''
+                    }`}
+                  >
+                    <p className="truncate text-sm font-semibold text-[#1B4332]">{option.name}</p>
+                    {option.subtitle ? <p className="mt-0.5 truncate text-[11px] text-gray-400">{option.subtitle}</p> : null}
+                  </button>
+                ))
+              ) : (
+                <div className="p-3">
+                  <p className="text-sm text-gray-400">Data belum tersedia. Pastikan penulisan sudah benar.</p>
+                  {canUseCustomInstitution ? (
+                    <button
+                      type="button"
+                      onClick={onUseCustom}
+                      className="mt-3 w-full rounded-xl border border-[#1B4332]/10 bg-[#1B4332]/5 px-3 py-2 text-sm font-semibold text-[#1B4332]"
+                    >
+                      Gunakan sebagai instansi baru
+                    </button>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </div>
+      <p className="text-xs text-gray-400">Ketik nama pesantren atau instansi Anda.</p>
+    </div>
+  )
+}
+
+function CustomFields({
+  customFields,
+  responses,
+  onCustomResponse,
+  onCheckboxToggle,
+}: {
+  customFields: NonNullable<Event['custom_fields']>
+  responses: Record<string, string | string[]>
+  onCustomResponse: (id: string, value: string | string[]) => void
+  onCheckboxToggle: (id: string, option: string) => void
+}) {
+  return (
+    <div className="space-y-4">
+      <p className="text-sm font-extrabold text-[#1B4332]">Pertanyaan Tambahan</p>
+      {customFields.map((field) => (
+        <div key={field.id} className="space-y-2 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+          <label className="text-xs font-semibold text-gray-700">
+            {field.label} {field.is_required ? <span className="text-red-500">*</span> : null}
+          </label>
+
+          {field.type === 'short_text' ? (
+            <input className={inputClass} value={(responses[field.id] as string) || ''} onChange={(eventValue) => onCustomResponse(field.id, eventValue.target.value)} />
+          ) : null}
+          {field.type === 'long_text' ? (
+            <textarea className={`${inputClass} min-h-24 resize-none`} value={(responses[field.id] as string) || ''} onChange={(eventValue) => onCustomResponse(field.id, eventValue.target.value)} />
+          ) : null}
+          {field.type === 'dropdown' ? (
+            <select className={inputClass} value={(responses[field.id] as string) || ''} onChange={(eventValue) => onCustomResponse(field.id, eventValue.target.value)}>
+              <option value="" disabled>Pilih Opsi</option>
+              {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          ) : null}
+          {field.type === 'radio' ? (
+            <div className="space-y-2 pt-1">
+              {field.options.map((option) => (
+                <label key={option} className="flex items-center gap-2 text-sm text-gray-700">
+                  <input type="radio" name={`radio-${field.id}`} value={option} checked={responses[field.id] === option} onChange={(eventValue) => onCustomResponse(field.id, eventValue.target.value)} />
+                  {option}
+                </label>
+              ))}
+            </div>
+          ) : null}
+          {field.type === 'checkbox' ? (
+            <div className="space-y-2 pt-1">
+              {field.options.map((option) => {
+                const checked = ((responses[field.id] as string[]) || []).includes(option)
+                return (
+                  <label key={option} className="flex items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" checked={checked} onChange={() => onCheckboxToggle(field.id, option)} />
+                    {option}
+                  </label>
+                )
+              })}
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-4 text-sm">
+      <span className="shrink-0 text-gray-400">{label}</span>
+      <span className="line-clamp-2 text-right font-semibold text-[#1B4332]">{value}</span>
     </div>
   )
 }
