@@ -1,6 +1,6 @@
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import type { Metadata } from 'next'
-import { RegisterForm } from '@/components/RegisterForm'
+import { getEventById } from '@/lib/dummy'
 import { getEventFromDb } from '@/lib/server/events'
 
 export const dynamic = 'force-dynamic'
@@ -11,8 +11,8 @@ export const metadata: Metadata = {
 
 export default async function RegisterSlugPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const event = await getEventFromDb(slug).catch(() => null)
+  const event = (await getEventFromDb(slug).catch(() => null)) ?? getEventById(slug)
   if (!event || (event.status !== 'APPROVED' && event.status !== 'approved')) notFound()
 
-  return <RegisterForm event={event} />
+  redirect(`/events/${event.id}/register`)
 }

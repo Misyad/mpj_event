@@ -143,7 +143,7 @@ export async function EventDetailView({ identifier }: { identifier: string }) {
       {/* CTA Sticky */}
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-107.5 bg-white border-t border-gray-100 px-4 py-4">
         {isOpen ? (
-          <Link href={`/register/${event.slug || event.id}`}
+          <Link href={`/events/${event.id}/register`}
             className="block w-full bg-[#C9A227] text-white text-center py-3.5 rounded-full font-bold text-sm tracking-wide shadow-md">
             Daftar Sekarang →
           </Link>
