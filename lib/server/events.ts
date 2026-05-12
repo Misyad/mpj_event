@@ -112,9 +112,24 @@ type RegisterPayload = {
   institution?: string
   whatsapp?: string
   email?: string
+  final_amount?: number
   class_id?: string
   custom_responses?: Record<string, unknown>
   customAnswers?: Record<string, unknown>
+}
+
+export type RegistrationMember = {
+  id: string
+  niam: string
+  fullName: string
+  unit: string
+  photoUrl: string | null
+}
+
+export type RegistrationContext = {
+  userId?: string | null
+  fullName?: string | null
+  email?: string | null
 }
 
 type EventPayload = {
@@ -571,6 +586,19 @@ async function ensureColumn(connection: PoolConnection, tableName: string, colum
 }
 
 export async function ensureEventV4Schema(connection: PoolConnection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS crew_members (
+      id VARCHAR(36) NOT NULL,
+      niam VARCHAR(50) NOT NULL,
+      full_name VARCHAR(255) NOT NULL,
+      unit VARCHAR(255) NULL,
+      photo_path VARCHAR(500) NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      UNIQUE KEY crew_members_niam_unique (niam)
+    )
+  `)
+
   await ensureColumn(connection, 'mpj_event_events', 'slug', 'VARCHAR(160) NULL')
   await ensureColumn(connection, 'mpj_event_events', 'end_date', 'DATETIME NULL')
   await ensureColumn(connection, 'mpj_event_events', 'location_type', "VARCHAR(20) NOT NULL DEFAULT 'offline'")
@@ -684,6 +712,45 @@ export async function ensureEventV4Schema(connection: PoolConnection) {
       END
     WHERE ticket_code IS NULL OR ticket_code = '' OR status IS NULL OR status = 'registered'
   `)
+}
+
+function mapRegistrationMember(row: RowDataPacket): RegistrationMember {
+  return {
+    id: String(row.id),
+    niam: String(row.niam),
+    fullName: String(row.full_name),
+    unit: row.unit ? String(row.unit) : '',
+    photoUrl: row.photo_path ? String(row.photo_path) : null,
+  }
+}
+
+async function findRegistrationMemberByNiam(connection: PoolConnection, value: string) {
+  const niam = getString(value).toUpperCase()
+  if (!niam) return null
+
+  const [rows] = await connection.query<RowDataPacket[]>(
+    `
+      SELECT id, niam, full_name, unit, photo_path
+      FROM crew_members
+      WHERE UPPER(niam) = :niam
+      LIMIT 1
+    `,
+    { niam },
+  )
+
+  return rows[0] ? mapRegistrationMember(rows[0]) : null
+}
+
+export async function getRegistrationMemberByNiam(value: string) {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+    try {
+      await ensureEventV4Schema(connection)
+      return await findRegistrationMemberByNiam(connection, value)
+    } finally {
+      connection.release()
+    }
+  })
 }
 
 const EVENT_SELECT = `
@@ -1276,7 +1343,7 @@ async function createPaymentCoreRequest(
   return paymentRequest
 }
 
-export async function registerEventParticipant(eventIdentifier: string, payload: RegisterPayload) {
+export async function registerEventParticipant(eventIdentifier: string, payload: RegisterPayload, context: RegistrationContext = {}) {
   return withDb(async (db) => {
     const connection = await db.getConnection()
 
@@ -1308,18 +1375,17 @@ export async function registerEventParticipant(eventIdentifier: string, payload:
         throw new Error('Kuota event sudah penuh')
       }
 
-      const registrationPath = payload.registration_path === 'NIAM' ? 'NIAM' : 'UMUM'
+      const whatsapp = getString(payload.whatsapp)
+      const email = getString(context.email || payload.email)
+      const member = await findRegistrationMemberByNiam(connection, getString(payload.niam))
+      const registrationPath = member ? 'NIAM' : 'UMUM'
       if (registrationPath === 'UMUM' && !event.allowPublic) throw new Error('Event ini tidak membuka jalur umum')
 
-      const fullName = getString(payload.full_name || payload.name)
+      const fullName = member?.fullName || getString(context.fullName || payload.full_name || payload.name)
       if (!fullName) throw new Error('Nama lengkap wajib diisi')
 
-      const whatsapp = getString(payload.whatsapp)
-      const email = getString(payload.email)
-      const institution = getString(payload.institution_name || payload.institution)
-      const niam = getString(payload.niam)
-
-      if (registrationPath === 'NIAM' && !niam) throw new Error('NIAM wajib diisi')
+      const institution = member?.unit || getString(payload.institution_name || payload.institution)
+      const niam = member?.niam ?? ''
       if (registrationPath === 'UMUM' && !whatsapp) throw new Error('Nomor WhatsApp wajib diisi')
       if (registrationPath === 'UMUM' && !institution) throw new Error('Instansi wajib diisi')
 
@@ -1344,6 +1410,11 @@ export async function registerEventParticipant(eventIdentifier: string, payload:
       const participantId = randomUUID()
       const ticketCode = `MPJ-${event.id.slice(0, 8)}-${randomUUID()}`
       const baseAmount = event.isPaidEvent ? (registrationPath === 'NIAM' ? event.priceNiam ?? 0 : event.priceUmum ?? 0) : 0
+      const requestedAmount = Number(payload.final_amount ?? 0)
+      const paymentAmount =
+        event.isPaidEvent && requestedAmount >= baseAmount && requestedAmount <= baseAmount + 999
+          ? requestedAmount
+          : baseAmount
       const participantStatus = event.isPaidEvent ? 'registered' : 'confirmed'
       const paymentStatus = event.isPaidEvent ? 'Unpaid' : 'Free'
       const customAnswers = payload.customAnswers ?? payload.custom_responses ?? {}
@@ -1354,7 +1425,7 @@ export async function registerEventParticipant(eventIdentifier: string, payload:
           ? {
               niam,
               full_name: fullName,
-              unit: getString(payload.unit),
+              unit: member?.unit || getString(payload.unit),
             }
           : null
       const guest =
@@ -1376,7 +1447,7 @@ export async function registerEventParticipant(eventIdentifier: string, payload:
           ) VALUES (
             :participantId, :eventId, :registrationPath, :paymentStatus,
             :attendanceStatus, :ticketCode, :crewJson, :guestJson,
-            :fullName, :institution, :whatsapp, NULL, :niam, :email,
+            :fullName, :institution, :whatsapp, :userId, :niam, :email,
             :classId, :participantStatus, :ticketCode, :paymentId, CAST(:customAnswers AS JSON)
           )
         `,
@@ -1392,6 +1463,7 @@ export async function registerEventParticipant(eventIdentifier: string, payload:
           fullName,
           institution: institution || null,
           whatsapp: whatsapp || null,
+          userId: context.userId || null,
           niam: niam || null,
           email: email || null,
           classId,
@@ -1402,7 +1474,7 @@ export async function registerEventParticipant(eventIdentifier: string, payload:
       )
 
       const paymentRequest = event.isPaidEvent
-        ? await createPaymentCoreRequest(connection, participantId, baseAmount)
+        ? await createPaymentCoreRequest(connection, participantId, paymentAmount)
         : null
 
       if (paymentRequest) {

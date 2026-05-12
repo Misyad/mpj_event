@@ -524,6 +524,8 @@ export async function loginAdmin(request: NextRequest, payload: { role?: AuthRol
         role,
         regionalId,
         permissions,
+        email: user.email,
+        fullName: user.full_name,
         exp: Math.floor(expiresAt.getTime() / 1000),
       })
 
@@ -600,6 +602,8 @@ export async function refreshAdminSession(request: NextRequest) {
           role,
           regionalId: session.regional_id ? String(session.regional_id) : null,
           permissions,
+          email: String(session.email),
+          fullName: String(session.full_name),
           exp: expiresAt,
         })
 

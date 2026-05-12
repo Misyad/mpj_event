@@ -7,6 +7,8 @@ export type AccessTokenPayload = {
   regionalId: string | null
   permissions: string[]
   exp: number
+  email?: string
+  fullName?: string
 }
 
 const encoder = new TextEncoder()
