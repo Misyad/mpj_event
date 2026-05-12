@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 
 type ScanResult = { success: true; participant: Participant } | { success: false; message: string } | null
 
-const API_URL = ''
+const API_URL = '/api'
 
 export function ScanPage() {
   const [loggedIn, setLoggedIn] = useState(false)

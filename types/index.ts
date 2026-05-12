@@ -36,6 +36,15 @@ export interface CustomResponse {
   value: string | string[]
 }
 
+export interface EventClass {
+  id: string
+  event_id?: string
+  name: string
+  quota?: number | null
+  registeredCount?: number
+  order?: number
+}
+
 export interface Event {
   id: string
   title: string
@@ -78,6 +87,7 @@ export interface Event {
   registrationDeadline?: string
   speaker_id?: string
   custom_fields?: CustomField[]
+  classes?: EventClass[]
 }
 
 export interface BankAccount {
@@ -114,6 +124,7 @@ export interface Participant {
   qr_token: string
   ticketCode?: string
   paymentId?: string | null
+  classId?: string | null
   full_name?: string
   fullName?: string
   email?: string | null

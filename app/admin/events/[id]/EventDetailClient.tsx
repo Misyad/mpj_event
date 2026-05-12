@@ -1,13 +1,16 @@
 'use client'
 
-import { use, useState } from 'react'
-import { getEventById, getParticipantsByEvent, getPaymentsByEvent, getStaffByEvent } from '@/lib/dummy'
+import { use, useEffect, useState } from 'react'
+import Image from 'next/image'
+import { getStaffByEvent } from '@/lib/dummy'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ArrowLeft, Building2, Calendar, CheckCircle, CreditCard, Info, MapPin, QrCode, ScanLine, Users, XCircle } from 'lucide-react'
+import { ArrowLeft, Award, Building2, Calendar, CheckCircle, CreditCard, ExternalLink, Info, Loader2, MapPin, QrCode, ScanLine, Users } from 'lucide-react'
 import Link from 'next/link'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { normalizeEvent } from '@/lib/event-api'
+import type { Event, Participant, PaymentRecord } from '@/types'
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft', PENDING: 'Menunggu Approval', APPROVED: 'Disetujui',
@@ -33,20 +36,98 @@ function formatDate(d: string) {
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
 }
+function participantName(participant: Participant) {
+  return participant.fullName ?? participant.full_name ?? participant.crew?.full_name ?? participant.guest?.full_name ?? '-'
+}
+function participantInstitution(participant: Participant) {
+  return participant.institution ?? participant.institution_name ?? participant.crew?.unit ?? participant.guest?.institution_name ?? participant.email ?? participant.whatsapp ?? '-'
+}
+function isConfirmed(participant: Participant) {
+  const status = String(participant.status || participant.attendance_status).toLowerCase()
+  return status === 'confirmed' || status === 'attended'
+}
+function isAttended(participant: Participant) {
+  return String(participant.status || participant.attendance_status).toLowerCase() === 'attended'
+}
 
 export default function EventDetailClient({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
-  const event = getEventById(id)
   const staff = getStaffByEvent(id)
-  const participants = getParticipantsByEvent(id)
-  const payments = getPaymentsByEvent(id)
-  const [isPublic, setIsPublic] = useState(event?.is_open_for_public ?? false)
-  const [isPaid, setIsPaid] = useState(event?.is_paid ?? false)
+  const [event, setEvent] = useState<Event | null>(null)
+  const [participants, setParticipants] = useState<Participant[]>([])
+  const [payments, setPayments] = useState<PaymentRecord[]>([])
+  const [isPublic, setIsPublic] = useState(false)
+  const [isPaid, setIsPaid] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+
+    async function loadEvent() {
+      try {
+        setIsLoading(true)
+        setError('')
+        const response = await fetch(`/api/admin/events/${encodeURIComponent(id)}`, { cache: 'no-store' })
+        const payload = await response.json()
+        if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal memuat detail event')
+
+        const loadedEvent = normalizeEvent(payload.data)
+        if (!active) return
+        setEvent(loadedEvent)
+        setParticipants(payload.participants ?? [])
+        setPayments(payload.payments ?? [])
+        setIsPublic(loadedEvent.is_open_for_public)
+        setIsPaid(loadedEvent.is_paid)
+      } catch (loadError) {
+        if (active) setError(loadError instanceof Error ? loadError.message : 'Gagal memuat detail event')
+      } finally {
+        if (active) setIsLoading(false)
+      }
+    }
+
+    loadEvent()
+    return () => {
+      active = false
+    }
+  }, [id])
+
+  async function confirmParticipant(participantId: string) {
+    try {
+      setConfirmingId(participantId)
+      setError('')
+      const response = await fetch(`/api/admin/events/${encodeURIComponent(id)}/participants/${encodeURIComponent(participantId)}/confirm`, {
+        method: 'POST',
+      })
+      const payload = await response.json()
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal confirm peserta')
+
+      const updated = payload.data as Participant
+      setParticipants((current) => current.map((participant) => (participant.id === updated.id ? updated : participant)))
+      setPayments((current) => current.map((payment) => (
+        payment.participant_id === updated.id ? { ...payment, status: updated.payment_status, verified_at: new Date().toISOString() } : payment
+      )))
+    } catch (confirmError) {
+      setError(confirmError instanceof Error ? confirmError.message : 'Gagal confirm peserta')
+    } finally {
+      setConfirmingId(null)
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center p-8 text-sm font-semibold text-[#1B4332]">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        Memuat detail event...
+      </div>
+    )
+  }
 
   if (!event) {
     return (
       <div className="p-8 flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <p className="text-lg font-bold text-[#1B4332]">Event tidak ditemukan.</p>
+        <p className="text-lg font-bold text-[#1B4332]">{error || 'Event tidak ditemukan.'}</p>
         <Link href="/admin/events"><Button variant="outline" className="mt-4 rounded-xl">← Kembali</Button></Link>
       </div>
     )
@@ -55,9 +136,16 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
   const attendedCount = participants.filter(p => p.attendance_status === 'Attended').length
   const paidCount = payments.filter(p => p.status === 'Paid').length
   const totalRevenue = payments.filter(p => p.status === 'Paid').reduce((sum, p) => sum + p.amount, 0)
+  const eventCompleted = ['finished', 'completed'].includes(String(event.status).toLowerCase())
 
   return (
     <div className="p-4 md:p-8 space-y-5">
+      {error ? (
+        <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-medium text-red-700">
+          {error}
+        </div>
+      ) : null}
+
       {/* Header */}
       <div className="flex items-start gap-3">
         <Link href="/admin/events">
@@ -96,7 +184,9 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
         {/* Tab 1: Info & Acara */}
         <TabsContent value="info" className="mt-4">
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
-            <img src={event.poster_url} alt={event.title} className="w-full aspect-video object-cover rounded-xl" />
+            <div className="relative aspect-video w-full overflow-hidden rounded-xl">
+              <Image src={event.poster_url} alt={event.title} fill sizes="(max-width: 768px) 100vw, 720px" className="object-cover" />
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <InfoRow icon={<Calendar className="w-4 h-4 text-[#C9A227]" />} label="Tanggal" value={formatDate(event.start_date)} />
               <InfoRow icon={<MapPin className="w-4 h-4 text-[#C9A227]" />} label="Lokasi" value={event.location_name} />
@@ -167,17 +257,43 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
                   <TableHead className="font-bold text-[#1B4332]">Jalur</TableHead>
                   <TableHead className="font-bold text-[#1B4332]">Pembayaran</TableHead>
                   <TableHead className="font-bold text-[#1B4332]">Kehadiran</TableHead>
+                  <TableHead className="font-bold text-[#1B4332]">Aksi</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {participants.map(p => (
                     <TableRow key={p.id} className="hover:bg-green-50/40">
                       <TableCell>
-                        <p className="font-semibold text-[#1B4332] text-sm">{p.crew?.full_name ?? p.guest?.full_name}</p>
-                        <p className="text-xs text-gray-400">{p.crew?.unit ?? p.guest?.institution_name}</p>
+                        <p className="font-semibold text-[#1B4332] text-sm">{participantName(p)}</p>
+                        <p className="text-xs text-gray-400">{participantInstitution(p)}</p>
                       </TableCell>
                       <TableCell><span className={`text-xs font-semibold px-2 py-1 rounded-full ${p.registration_path === 'NIAM' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>{p.registration_path}</span></TableCell>
                       <TableCell><span className={`text-xs font-semibold px-2 py-1 rounded-full ${PAYMENT_COLORS[p.payment_status]}`}>{p.payment_status}</span></TableCell>
                       <TableCell><span className={`text-xs font-semibold px-2 py-1 rounded-full ${p.attendance_status === 'Attended' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>{p.attendance_status}</span></TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1.5">
+                          {!isConfirmed(p) && (
+                            <button
+                              type="button"
+                              onClick={() => confirmParticipant(p.id)}
+                              disabled={confirmingId === p.id}
+                              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
+                            >
+                              {confirmingId === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
+                              Confirm
+                            </button>
+                          )}
+                          <Link href={`/ticket/${encodeURIComponent(p.ticketCode || p.qr_token)}`} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-600 transition-colors hover:border-[#1B4332] hover:text-[#1B4332]">
+                            <ExternalLink className="h-3 w-3" />
+                            Tiket
+                          </Link>
+                          {isAttended(p) && eventCompleted ? (
+                            <Link href={`/certificate/${encodeURIComponent(p.ticketCode || p.qr_token)}`} className="inline-flex items-center gap-1 rounded-lg border border-[#C9A227]/50 px-2.5 py-1 text-xs font-semibold text-[#8a6d16] transition-colors hover:bg-amber-50">
+                              <Award className="h-3 w-3" />
+                              Sertifikat
+                            </Link>
+                          ) : null}
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -226,11 +342,16 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
                         <TableCell className="font-mono text-sm text-gray-700">{formatCurrency(pay.amount)}</TableCell>
                         <TableCell><span className={`text-xs font-semibold px-2 py-1 rounded-full ${PAYMENT_COLORS[pay.status]}`}>{pay.status}</span></TableCell>
                         <TableCell>
-                          {pay.status === 'Pending_Approval' && (
-                            <div className="flex gap-1.5">
-                              <button className="p-1.5 text-emerald-600 hover:bg-emerald-100 rounded-lg transition-colors"><CheckCircle className="w-4 h-4" /></button>
-                              <button className="p-1.5 text-red-500 hover:bg-red-100 rounded-lg transition-colors"><XCircle className="w-4 h-4" /></button>
-                            </div>
+                          {pay.status !== 'Paid' && (
+                            <button
+                              type="button"
+                              onClick={() => confirmParticipant(pay.participant_id)}
+                              disabled={confirmingId === pay.participant_id}
+                              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
+                            >
+                              {confirmingId === pay.participant_id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
+                              Confirm
+                            </button>
                           )}
                         </TableCell>
                       </TableRow>
@@ -262,7 +383,7 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
                   {participants.filter(p => p.attendance_status === 'Attended').map(p => (
                     <TableRow key={p.id} className="hover:bg-green-50/40">
                       <TableCell>
-                        <p className="font-semibold text-[#1B4332] text-sm">{p.crew?.full_name ?? p.guest?.full_name}</p>
+                        <p className="font-semibold text-[#1B4332] text-sm">{participantName(p)}</p>
                         <p className="text-xs text-gray-400 font-mono">{p.qr_token}</p>
                       </TableCell>
                       <TableCell><span className={`text-xs font-semibold px-2 py-1 rounded-full ${p.registration_path === 'NIAM' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>{p.registration_path}</span></TableCell>

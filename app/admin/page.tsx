@@ -9,10 +9,6 @@ function formatDate(dateStr: string) {
   })
 }
 
-function formatCurrency(n: number) {
-  return 'Rp ' + n.toLocaleString('id-ID')
-}
-
 export default function AdminDashboardPage() {
   const stats = dummyAdminStats
   const pendingEvents = dummyEvents.filter(e => e.status === 'PENDING').slice(0, 3)

@@ -6,7 +6,7 @@ import { QRTicket } from '@/components/QRTicket'
 import { normalizeEvent } from '@/lib/event-api'
 import type { Event, Participant } from '@/types'
 
-const API_URL = ''
+const API_URL = '/api'
 
 function TicketContent() {
   const params = useSearchParams()

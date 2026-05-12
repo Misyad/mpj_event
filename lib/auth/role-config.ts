@@ -33,8 +33,21 @@ export function getAuthRouteConfig(role: AuthRole) {
 }
 
 export function getRequiredRoleForPath(pathname: string): AuthRole | null {
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) return 'super-admin'
   if (pathname.startsWith('/super-admin')) return 'super-admin'
   if (pathname.startsWith('/regional')) return 'regional-admin'
   if (pathname === '/dashboard' || pathname.startsWith('/dashboard/')) return 'user'
   return null
+}
+
+export function getSafeRedirectPath(candidate: string | null | undefined, role: AuthRole) {
+  const config = getAuthRouteConfig(role)
+  const fallback = config?.dashboardPath ?? '/'
+  if (!candidate || !candidate.startsWith('/') || candidate.startsWith('//')) return fallback
+
+  const [pathname] = candidate.split('?')
+  const requiredRole = getRequiredRoleForPath(pathname)
+  if (!requiredRole || requiredRole !== role) return fallback
+
+  return candidate
 }

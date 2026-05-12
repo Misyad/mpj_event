@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import {
   CalendarDays,
@@ -230,7 +231,7 @@ export default function MasterEventPage() {
                 return (
                   <Card key={event.id} className="overflow-hidden rounded-2xl border-gray-100 bg-white py-0 shadow-sm">
                     <div className="relative h-48 w-full overflow-hidden">
-                      <img src={event.poster_url} alt={event.title} className="h-full w-full object-cover" />
+                      <Image src={event.poster_url} alt={event.title} fill sizes="(max-width: 1280px) 100vw, 50vw" className="object-cover" />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
                       <div className="absolute left-4 top-4 flex flex-wrap items-center gap-2">
                         <BadgeStatus status={event.status} />

@@ -17,6 +17,7 @@ interface FormData {
   guestName: string
   guestWhatsapp: string
   guestInstitution: string
+  selectedClassId: string
   customResponses: Record<string, string | string[]>
   proofFile: File | null
 }
@@ -40,7 +41,7 @@ export function RegisterForm({ event }: { event: Event }) {
   const [step, setStep] = useState<Step>(1)
   const [form, setForm] = useState<FormData>({
     path: null, niam: '', crewName: '', crewUnit: '',
-    guestName: '', guestWhatsapp: '', guestInstitution: '', 
+    guestName: '', guestWhatsapp: '', guestInstitution: '', selectedClassId: '',
     customResponses: {}, proofFile: null,
   })
   const [uniqueCode] = useState(generateUniqueCode)
@@ -49,6 +50,8 @@ export function RegisterForm({ event }: { event: Event }) {
 
   const price = form.path === 'NIAM' ? event.price_niam : event.price_public
   const totalAmount = event.is_paid ? price + uniqueCode : 0
+  const hasClasses = Boolean(event.classes?.length)
+  const selectedClass = event.classes?.find((eventClass) => eventClass.id === form.selectedClassId)
 
   function handleNIAMValidate() {
     if (form.niam.trim().length >= 3) {
@@ -83,6 +86,7 @@ export function RegisterForm({ event }: { event: Event }) {
           unit: form.crewUnit,
           institution_name: form.guestInstitution,
           whatsapp: form.guestWhatsapp,
+          class_id: form.selectedClassId,
           payment_proof_name: form.proofFile?.name,
           custom_responses: form.customResponses,
         }),
@@ -109,6 +113,10 @@ export function RegisterForm({ event }: { event: Event }) {
       }
     }
     return true
+  }
+
+  function canContinueFromDataStep() {
+    return validateCustomFields() && (!hasClasses || Boolean(form.selectedClassId))
   }
 
   const steps = ['Pilih Jalur', 'Data Diri', 'Pembayaran']
@@ -250,8 +258,8 @@ export function RegisterForm({ event }: { event: Event }) {
             </div>
             <button
               className={btnGold}
-              onClick={() => { if (form.crewName && validateCustomFields()) setStep(3); else if (!form.crewName) handleNIAMValidate() }}
-              disabled={(!form.niam.trim()) || (form.crewName ? !validateCustomFields() : false)}
+              onClick={() => { if (form.crewName && canContinueFromDataStep()) setStep(3); else if (!form.crewName) handleNIAMValidate() }}
+              disabled={(!form.niam.trim()) || (form.crewName ? !canContinueFromDataStep() : false)}
             >
               {form.crewName ? 'Lanjut ke Pembayaran →' : 'Validasi NIAM'}
             </button>
@@ -273,12 +281,48 @@ export function RegisterForm({ event }: { event: Event }) {
             {/* Custom Fields Component for UMUM & NIAM is placed below */}
             <button
               className={btnGold}
-              onClick={() => { if (form.guestName && form.guestWhatsapp && form.guestInstitution && validateCustomFields()) setStep(3) }}
-              disabled={!form.guestName || !form.guestWhatsapp || !form.guestInstitution || !validateCustomFields()}
+              onClick={() => { if (form.guestName && form.guestWhatsapp && form.guestInstitution && canContinueFromDataStep()) setStep(3) }}
+              disabled={!form.guestName || !form.guestWhatsapp || !form.guestInstitution || !canContinueFromDataStep()}
             >
               Lanjut ke Pembayaran →
             </button>
           </>
+        )}
+
+        {step === 2 && hasClasses && ((form.path === 'NIAM' && form.crewName) || form.path === 'UMUM') && (
+          <div className="space-y-3 pt-2">
+            <p className="text-sm font-extrabold text-[#1B4332]">Pilih Kelas <span className="text-red-500">*</span></p>
+            <div className="grid gap-3">
+              {event.classes?.map((eventClass) => {
+                const full = eventClass.quota !== null && eventClass.quota !== undefined && (eventClass.registeredCount ?? 0) >= eventClass.quota
+                return (
+                  <button
+                    key={eventClass.id}
+                    type="button"
+                    disabled={full}
+                    onClick={() => setForm((current) => ({ ...current, selectedClassId: eventClass.id }))}
+                    className={`w-full rounded-2xl border-2 bg-white p-4 text-left shadow-sm transition-all ${
+                      form.selectedClassId === eventClass.id
+                        ? 'border-[#1B4332]'
+                        : 'border-transparent hover:border-[#1B4332]/30'
+                    } ${full ? 'cursor-not-allowed opacity-50' : ''}`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-bold text-[#1B4332]">{eventClass.name}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {eventClass.quota ? `${eventClass.registeredCount ?? 0}/${eventClass.quota} peserta` : 'Kuota tidak dibatasi'}
+                        </p>
+                      </div>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${full ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}`}>
+                        {full ? 'Penuh' : 'Tersedia'}
+                      </span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         )}
 
         {/* CUSTOM FIELDS (Renders in Step 2 if crewName is loaded or UMUM is filled) */}
@@ -365,6 +409,7 @@ export function RegisterForm({ event }: { event: Event }) {
                 { label: 'Event', value: event.title },
                 { label: 'Jalur', value: form.path },
                 { label: 'Nama', value: form.path === 'NIAM' ? form.crewName : form.guestName },
+                ...(selectedClass ? [{ label: 'Kelas', value: selectedClass.name }] : []),
               ].map(({ label, value }) => (
                 <div key={label} className="flex justify-between gap-4 text-sm">
                   <span className="text-gray-400 shrink-0">{label}</span>

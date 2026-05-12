@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button'
 import { PosterUploader } from '@/components/PosterUploader'
 import { SpeakerCombobox } from '@/components/SpeakerCombobox'
-import { EventCategory, CustomField, CustomFieldType } from '@/types'
+import { EventCategory, CustomField, CustomFieldType, EventClass } from '@/types'
 
 type EventType = 'Sistem Kelas' | 'Non-Kelas'
 type PaymentMethod = 'manual' | 'gateway'
@@ -52,6 +52,7 @@ interface FormData {
   speakerId: string | null
   speakers: Speaker[]
   customFields: CustomField[]
+  classes: EventClass[]
 }
 
 const defaultForm: FormData = {
@@ -63,7 +64,7 @@ const defaultForm: FormData = {
   maxParticipants: '', registrationDeadline: '',
   paymentMethod: 'manual', bankName: '', bankNumber: '', bankAccountName: '',
   midtransServerKey: '', midtransClientKey: '', midtransSandbox: true,
-  speakerId: null, speakers: [], customFields: [],
+  speakerId: null, speakers: [], customFields: [], classes: [],
 }
 
 function SectionHeader({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
@@ -128,6 +129,18 @@ export default function NewEventPage() {
     updateCustomField(id, 'options', options)
   }
 
+  function addClass() {
+    update('classes', [...form.classes, { id: Date.now().toString(), name: '', quota: null, order: form.classes.length }])
+  }
+
+  function removeClass(id: string) {
+    update('classes', form.classes.filter((eventClass) => eventClass.id !== id))
+  }
+
+  function updateClass(id: string, field: keyof EventClass, value: EventClass[keyof EventClass]) {
+    update('classes', form.classes.map((eventClass) => eventClass.id === id ? { ...eventClass, [field]: value } : eventClass))
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitError('')
@@ -145,6 +158,36 @@ export default function NewEventPage() {
     setIsSubmitting(true)
 
     try {
+      const customFields = form.customFields
+        .map((field, index) => ({
+          ...field,
+          label: field.label.trim(),
+          options: field.options.map((option) => option.trim()).filter(Boolean),
+          order: index,
+        }))
+        .filter((field) => field.label)
+      const invalidChoiceField = customFields.find((field) => ['radio', 'dropdown', 'checkbox'].includes(field.type) && field.options.length === 0)
+      if (invalidChoiceField) {
+        throw new Error(`Opsi wajib diisi untuk pertanyaan "${invalidChoiceField.label}"`)
+      }
+      const classes = form.eventType === 'Sistem Kelas'
+        ? form.classes
+            .map((eventClass, index) => ({
+              ...eventClass,
+              name: eventClass.name.trim(),
+              quota: eventClass.quota === undefined || eventClass.quota === null ? null : Number(eventClass.quota),
+              order: index,
+            }))
+            .filter((eventClass) => eventClass.name)
+        : []
+      if (form.eventType === 'Sistem Kelas' && classes.length === 0) {
+        throw new Error('Minimal satu kelas wajib dibuat untuk event Sistem Kelas')
+      }
+      const invalidClass = classes.find((eventClass) => eventClass.quota !== null && (!Number.isInteger(eventClass.quota) || eventClass.quota < 1))
+      if (invalidClass) {
+        throw new Error(`Kuota kelas "${invalidClass.name}" harus berupa angka positif`)
+      }
+
       const startDate = new Date(`${form.date}T${form.time || '00:00'}`)
       const response = await fetch('/api/admin/events', {
         method: 'POST',
@@ -179,6 +222,8 @@ export default function NewEventPage() {
           isPublic: true,
           status_pendaftaran: 'open',
           registrationDeadline: form.registrationDeadline || null,
+          custom_fields: customFields,
+          classes,
         }),
       })
       const payload = await response.json()
@@ -275,6 +320,56 @@ export default function NewEventPage() {
             <Input type="time" value={form.time} onChange={e => update('time', e.target.value)} className="rounded-xl text-sm h-10" />
           </div>
         </div>
+
+        {form.eventType === 'Sistem Kelas' && (
+          <div className="space-y-3 rounded-xl border border-emerald-100 bg-emerald-50/40 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-[#1B4332]">Daftar Kelas</p>
+                <p className="text-xs text-gray-500 mt-0.5">Peserta wajib memilih salah satu kelas saat registrasi.</p>
+              </div>
+              <Button type="button" onClick={addClass} variant="outline" size="sm" className="rounded-xl bg-white">
+                <Plus className="w-4 h-4 mr-1" /> Tambah Kelas
+              </Button>
+            </div>
+
+            {form.classes.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-emerald-200 bg-white p-5 text-center text-sm text-gray-500">
+                Belum ada kelas. Tambahkan minimal satu kelas.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {form.classes.map((eventClass, index) => (
+                  <div key={eventClass.id} className="grid gap-3 rounded-xl border border-gray-100 bg-white p-3 sm:grid-cols-[1fr_140px_auto]">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-gray-500">Nama Kelas #{index + 1}</Label>
+                      <Input
+                        value={eventClass.name}
+                        onChange={e => updateClass(eventClass.id, 'name', e.target.value)}
+                        placeholder="Contoh: Kelas A - Desain"
+                        className="rounded-lg text-sm h-9"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-gray-500">Kuota</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={eventClass.quota ?? ''}
+                        onChange={e => updateClass(eventClass.id, 'quota', e.target.value ? Number(e.target.value) : null)}
+                        placeholder="Opsional"
+                        className="rounded-lg text-sm h-9"
+                      />
+                    </div>
+                    <button type="button" onClick={() => removeClass(eventClass.id)} className="self-end rounded-lg p-2 text-red-400 transition-colors hover:bg-red-50 hover:text-red-600">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Poster upload */}
         <div className="space-y-1.5">

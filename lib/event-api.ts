@@ -60,6 +60,7 @@ export function normalizeEvent(event: Partial<Event> & { id: string; title: stri
     registrationDeadline: event.registrationDeadline ?? event.registration_deadline,
     speaker_id: event.speaker_id,
     custom_fields: event.custom_fields,
+    classes: event.classes,
   }
 }
 

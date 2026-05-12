@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import { dummySpeakers } from '@/lib/dummy'
 import { Speaker, SpeakerCategory } from '@/types'
 import Link from 'next/link'
@@ -109,8 +110,8 @@ export default function NarasumberPage() {
             <div key={speaker.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4 hover:shadow-md transition-shadow">
               {/* Header */}
               <div className="flex items-start gap-3">
-                <img src={speaker.foto_url} alt={speaker.nama_lengkap}
-                  className="w-12 h-12 rounded-xl object-cover bg-gray-100 shrink-0" />
+                <Image src={speaker.foto_url} alt={speaker.nama_lengkap} width={48} height={48}
+                  className="h-12 w-12 rounded-xl object-cover bg-gray-100 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-[#1B4332] text-sm line-clamp-1">{speaker.nama_lengkap}</p>
                   <p className="text-xs text-gray-400 mt-0.5 truncate">{speaker.alamat}</p>

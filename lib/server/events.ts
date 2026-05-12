@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise'
-import type { Event, EventCategory, EventScope, LocationType, Participant, RegistrationStatus } from '@/types'
+import type { CustomField, Event, EventCategory, EventClass, EventScope, LocationType, Participant, PaymentRecord, RegistrationStatus } from '@/types'
 import { withDb } from '@/lib/server/db'
 
 const DEFAULT_BANK_ACCOUNT = {
@@ -62,6 +62,46 @@ type ParticipantRow = RowDataPacket & {
   custom_answers: string | Record<string, unknown> | null
 }
 
+type CustomFieldRow = RowDataPacket & {
+  id: string
+  event_id: string
+  label: string
+  type: CustomField['type']
+  required: 0 | 1 | null
+  is_required?: 0 | 1 | null
+  options: string | string[] | null
+  order_num?: number | null
+}
+
+type EventClassRow = RowDataPacket & {
+  id: string
+  event_id: string
+  name: string
+  quota: number | null
+  order_num?: number | null
+  registered_count?: number | null
+}
+
+type PaymentCoreStatus =
+  | 'pending'
+  | 'waiting_payment'
+  | 'paid_unverified'
+  | 'verified'
+  | 'failed'
+  | 'expired'
+  | 'rejected'
+
+type PaymentCoreRequest = {
+  paymentId: string
+  sourceType: 'event_registration'
+  sourceId: string
+  amount: number
+  amountSnapshot: number
+  paymentMethod: 'manual'
+  paymentChannel: 'bank_transfer'
+  status: PaymentCoreStatus
+}
+
 type RegisterPayload = {
   registration_path?: 'NIAM' | 'UMUM'
   full_name?: string
@@ -116,6 +156,9 @@ type EventPayload = {
   quota?: number | null
   registration_deadline?: string | null
   registrationDeadline?: string | null
+  custom_fields?: CustomField[]
+  customFields?: CustomField[]
+  classes?: EventClass[]
 }
 
 function toIsoString(value: Date | string | null) {
@@ -178,7 +221,7 @@ function toNullableInteger(value: unknown) {
   return parsed
 }
 
-function mapEvent(row: EventRow): Event {
+function mapEvent(row: EventRow, customFields: CustomField[] = [], classes: EventClass[] = []): Event {
   const dateStart = toIsoString(row.start_date) ?? new Date().toISOString()
   const dateEnd = toIsoString(row.end_date)
   const registrationDeadline = toIsoString(row.registration_deadline)
@@ -228,7 +271,8 @@ function mapEvent(row: EventRow): Event {
     status_pendaftaran: row.status_pendaftaran ?? (v4Status === 'registration_closed' ? 'closed' : 'open'),
     registration_deadline: registrationDeadline,
     registrationDeadline,
-    custom_fields: [],
+    custom_fields: customFields,
+    classes,
   }
 }
 
@@ -240,6 +284,198 @@ function parseJson<T>(value: unknown): T | undefined {
     return JSON.parse(String(value)) as T
   } catch {
     return undefined
+  }
+}
+
+function normalizeCustomField(row: CustomFieldRow): CustomField {
+  return {
+    id: row.id,
+    event_id: row.event_id,
+    label: row.label,
+    type: row.type,
+    options: parseJson<string[]>(row.options) ?? [],
+    is_required: Boolean(row.required ?? row.is_required),
+    order: Number(row.order_num ?? 0),
+  }
+}
+
+function normalizeEventClass(row: EventClassRow): EventClass {
+  return {
+    id: row.id,
+    event_id: row.event_id,
+    name: row.name,
+    quota: row.quota,
+    registeredCount: Number(row.registered_count ?? 0),
+    order: Number(row.order_num ?? 0),
+  }
+}
+
+async function getClassesByEventIds(connection: PoolConnection, eventIds: string[]) {
+  if (eventIds.length === 0) return new Map<string, EventClass[]>()
+
+  const [rows] = await connection.query<EventClassRow[]>(
+    `
+      SELECT
+        c.id,
+        c.event_id,
+        c.name,
+        c.quota,
+        c.order_num,
+        COUNT(p.id) AS registered_count
+      FROM mpj_event_classes c
+      LEFT JOIN mpj_event_participants p
+        ON p.class_id = c.id
+        AND p.event_id = c.event_id
+        AND LOWER(COALESCE(p.status, p.attendance_status, 'registered')) != 'cancelled'
+      WHERE c.event_id IN (:eventIds)
+      GROUP BY c.id, c.event_id, c.name, c.quota, c.order_num
+      ORDER BY c.order_num ASC, c.created_at ASC
+    `,
+    { eventIds },
+  )
+  const classesByEvent = new Map<string, EventClass[]>()
+
+  for (const row of rows) {
+    const classes = classesByEvent.get(row.event_id) ?? []
+    classes.push(normalizeEventClass(row))
+    classesByEvent.set(row.event_id, classes)
+  }
+
+  return classesByEvent
+}
+
+function normalizeEventClassPayload(eventClass: EventClass, order: number) {
+  const name = getString(eventClass.name)
+  if (!name) return null
+
+  return {
+    id: getString(eventClass.id) || randomUUID(),
+    name,
+    quota: toNullableInteger(eventClass.quota),
+    order,
+  }
+}
+
+async function replaceEventClasses(connection: PoolConnection, eventId: string, classes: EventClass[] | undefined) {
+  if (!classes) return
+
+  const normalizedClasses = classes
+    .map((eventClass, index) => normalizeEventClassPayload(eventClass, index))
+    .filter((eventClass): eventClass is NonNullable<ReturnType<typeof normalizeEventClassPayload>> => Boolean(eventClass))
+
+  await connection.query<ResultSetHeader>('DELETE FROM mpj_event_classes WHERE event_id = :eventId', { eventId })
+
+  for (const eventClass of normalizedClasses) {
+    await connection.query<ResultSetHeader>(
+      `
+        INSERT INTO mpj_event_classes (id, event_id, name, quota, order_num)
+        VALUES (:id, :eventId, :name, :quota, :order)
+      `,
+      {
+        id: eventClass.id,
+        eventId,
+        name: eventClass.name,
+        quota: eventClass.quota,
+        order: eventClass.order,
+      },
+    )
+  }
+}
+
+async function getCustomFieldsByEventIds(connection: PoolConnection, eventIds: string[]) {
+  if (eventIds.length === 0) return new Map<string, CustomField[]>()
+
+  const [rows] = await connection.query<CustomFieldRow[]>(
+    `
+      SELECT id, event_id, label, type, required, options, order_num
+      FROM mpj_event_custom_fields
+      WHERE event_id IN (:eventIds)
+      ORDER BY order_num ASC, created_at ASC
+    `,
+    { eventIds },
+  )
+  const fieldsByEvent = new Map<string, CustomField[]>()
+
+  for (const row of rows) {
+    const fields = fieldsByEvent.get(row.event_id) ?? []
+    fields.push(normalizeCustomField(row))
+    fieldsByEvent.set(row.event_id, fields)
+  }
+
+  return fieldsByEvent
+}
+
+function normalizeCustomFieldPayload(field: CustomField, order: number) {
+  const label = getString(field.label)
+  if (!label) return null
+
+  const type = field.type
+  const options = Array.isArray(field.options) ? field.options.map(getString).filter(Boolean) : []
+  if (['radio', 'dropdown', 'checkbox'].includes(type) && options.length === 0) {
+    throw new Error(`Opsi wajib diisi untuk pertanyaan "${label}"`)
+  }
+
+  return {
+    id: getString(field.id) || randomUUID(),
+    label,
+    type,
+    options,
+    required: field.is_required ? 1 : 0,
+    order,
+  }
+}
+
+async function replaceEventCustomFields(connection: PoolConnection, eventId: string, fields: CustomField[] | undefined) {
+  if (!fields) return
+
+  const normalizedFields = fields
+    .map((field, index) => normalizeCustomFieldPayload(field, index))
+    .filter((field): field is NonNullable<ReturnType<typeof normalizeCustomFieldPayload>> => Boolean(field))
+
+  await connection.query<ResultSetHeader>('DELETE FROM mpj_event_custom_fields WHERE event_id = :eventId', { eventId })
+
+  for (const field of normalizedFields) {
+    await connection.query<ResultSetHeader>(
+      `
+        INSERT INTO mpj_event_custom_fields (id, event_id, label, type, required, options, order_num)
+        VALUES (:id, :eventId, :label, :type, :required, CAST(:options AS JSON), :order)
+      `,
+      {
+        id: field.id,
+        eventId,
+        label: field.label,
+        type: field.type,
+        required: field.required,
+        options: JSON.stringify(field.options),
+        order: field.order,
+      },
+    )
+  }
+}
+
+async function validateCustomResponses(connection: PoolConnection, eventId: string, responses: Record<string, unknown>) {
+  const fields = (await getCustomFieldsByEventIds(connection, [eventId])).get(eventId) ?? []
+
+  for (const field of fields) {
+    const response = responses[field.id]
+    const empty = response === undefined || response === null || response === '' || (Array.isArray(response) && response.length === 0)
+
+    if (field.is_required && empty) {
+      throw new Error(`Pertanyaan "${field.label}" wajib diisi`)
+    }
+
+    if (empty) continue
+
+    if (field.type === 'checkbox') {
+      if (!Array.isArray(response) || response.some((value) => !field.options.includes(String(value)))) {
+        throw new Error(`Jawaban "${field.label}" tidak valid`)
+      }
+      continue
+    }
+
+    if (['radio', 'dropdown'].includes(field.type) && !field.options.includes(String(response))) {
+      throw new Error(`Jawaban "${field.label}" tidak valid`)
+    }
   }
 }
 
@@ -265,6 +501,7 @@ function mapParticipant(row: ParticipantRow): Participant {
     qr_token: ticketCode,
     ticketCode,
     paymentId: row.payment_id,
+    classId: row.class_id,
     full_name: row.full_name ?? crew?.full_name ?? guest?.full_name,
     fullName: row.full_name ?? crew?.full_name ?? guest?.full_name,
     email: row.email,
@@ -277,6 +514,43 @@ function mapParticipant(row: ParticipantRow): Participant {
     guest,
     customAnswers,
   }
+}
+
+async function resolveRegistrationClassId(connection: PoolConnection, eventId: string, classId: string) {
+  const [classRows] = await connection.query<EventClassRow[]>(
+    `
+      SELECT id, event_id, name, quota
+      FROM mpj_event_classes
+      WHERE event_id = :eventId
+      ORDER BY order_num ASC, created_at ASC
+      FOR UPDATE
+    `,
+    { eventId },
+  )
+
+  if (classRows.length === 0) return null
+  if (!classId) throw new Error('Kelas wajib dipilih')
+
+  const selectedClass = classRows.find((row) => row.id === classId)
+  if (!selectedClass) throw new Error('Kelas tidak valid untuk event ini')
+
+  if (selectedClass.quota !== null) {
+    const [countRows] = await connection.query<RowDataPacket[]>(
+      `
+        SELECT COUNT(*) AS total
+        FROM mpj_event_participants
+        WHERE event_id = :eventId
+          AND class_id = :classId
+          AND LOWER(COALESCE(status, attendance_status, 'registered')) != 'cancelled'
+      `,
+      { eventId, classId },
+    )
+    if (Number(countRows[0]?.total || 0) >= Number(selectedClass.quota)) {
+      throw new Error(`Kuota kelas "${selectedClass.name}" sudah penuh`)
+    }
+  }
+
+  return selectedClass.id
 }
 
 async function ensureColumn(connection: PoolConnection, tableName: string, columnName: string, definition: string) {
@@ -324,12 +598,14 @@ export async function ensureEventV4Schema(connection: PoolConnection) {
       event_id VARCHAR(36) NOT NULL,
       name VARCHAR(255) NOT NULL,
       quota INT NULL,
+      order_num INT NOT NULL DEFAULT 0,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
       KEY mpj_event_classes_event_id_idx (event_id)
     )
   `)
+  await ensureColumn(connection, 'mpj_event_classes', 'order_num', 'INT NOT NULL DEFAULT 0')
 
   await connection.query(`
     CREATE TABLE IF NOT EXISTS mpj_event_custom_fields (
@@ -339,10 +615,46 @@ export async function ensureEventV4Schema(connection: PoolConnection) {
       type VARCHAR(50) NOT NULL,
       required TINYINT(1) NOT NULL DEFAULT 0,
       options JSON NULL,
+      order_num INT NOT NULL DEFAULT 0,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (id),
       KEY mpj_event_custom_fields_event_id_idx (event_id)
+    )
+  `)
+  await ensureColumn(connection, 'mpj_event_custom_fields', 'required', 'TINYINT(1) NOT NULL DEFAULT 0')
+  await ensureColumn(connection, 'mpj_event_custom_fields', 'options', 'JSON NULL')
+  await ensureColumn(connection, 'mpj_event_custom_fields', 'order_num', 'INT NOT NULL DEFAULT 0')
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS mpj_payment_core_payments (
+      id VARCHAR(36) NOT NULL,
+      source_type VARCHAR(100) NOT NULL,
+      source_id VARCHAR(36) NOT NULL,
+      amount_snapshot INT UNSIGNED NOT NULL,
+      payment_method VARCHAR(50) NOT NULL DEFAULT 'manual',
+      payment_channel VARCHAR(50) NOT NULL DEFAULT 'bank_transfer',
+      external_ref VARCHAR(120) NULL,
+      status VARCHAR(50) NOT NULL DEFAULT 'waiting_payment',
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      paid_at DATETIME NULL,
+      verified_at DATETIME NULL,
+      PRIMARY KEY (id),
+      UNIQUE KEY mpj_payment_core_source_key (source_type, source_id),
+      KEY mpj_payment_core_status_idx (status)
+    )
+  `)
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS mpj_payment_core_audit_logs (
+      id VARCHAR(36) NOT NULL,
+      payment_id VARCHAR(36) NOT NULL,
+      action VARCHAR(100) NOT NULL,
+      metadata JSON NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY mpj_payment_core_audit_payment_idx (payment_id)
     )
   `)
 
@@ -412,7 +724,10 @@ export async function getEventsFromDb(options: { publicOnly?: boolean } = {}) {
     try {
       await ensureEventV4Schema(connection)
       const [rows] = await connection.query<EventRow[]>(`${EVENT_SELECT} ORDER BY start_date ASC`)
-      const events = rows.map(mapEvent)
+      const eventIds = rows.map((row) => row.id)
+      const fieldsByEvent = await getCustomFieldsByEventIds(connection, eventIds)
+      const classesByEvent = await getClassesByEventIds(connection, eventIds)
+      const events = rows.map((row) => mapEvent(row, fieldsByEvent.get(row.id) ?? [], classesByEvent.get(row.id) ?? []))
       return options.publicOnly ? events.filter((event) => event.isPublished && event.isPublic) : events
     } finally {
       connection.release()
@@ -434,7 +749,10 @@ export async function getEventFromDb(identifier: string, options: { publicOnly?:
         `,
         { identifier },
       )
-      const event = rows[0] ? mapEvent(rows[0]) : null
+      const eventIds = rows.map((row) => row.id)
+      const fieldsByEvent = await getCustomFieldsByEventIds(connection, eventIds)
+      const classesByEvent = await getClassesByEventIds(connection, eventIds)
+      const event = rows[0] ? mapEvent(rows[0], fieldsByEvent.get(rows[0].id) ?? [], classesByEvent.get(rows[0].id) ?? []) : null
       if (!event) return null
       if (options.publicOnly && !event.isPublished) return null
       return event
@@ -460,6 +778,274 @@ export async function getParticipantByTicketCode(ticketCode: string) {
         { ticketCode },
       )
       return rows[0] ? mapParticipant(rows[0]) : null
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function getCertificateByTicketCode(ticketCode: string) {
+  const participant = await getParticipantByTicketCode(ticketCode)
+  if (!participant) return null
+
+  const event = await getEventFromDb(participant.event_id)
+  if (!event) return null
+
+  const participantStatus = String(participant.status || participant.attendance_status).toLowerCase()
+  const eventStatus = String(event.status).toLowerCase()
+  const hasAttended = participantStatus === 'attended'
+  const eventCompleted = eventStatus === 'finished' || eventStatus === 'completed'
+  const certificateNumber = `MPJ-CERT-${event.id.slice(0, 8).toUpperCase()}-${participant.id.slice(0, 8).toUpperCase()}`
+
+  return {
+    participant,
+    event,
+    certificateNumber,
+    issuedAt: new Date().toISOString(),
+    eligible: hasAttended && eventCompleted,
+    reason: !hasAttended
+      ? 'Sertifikat belum tersedia karena peserta belum check-in.'
+      : !eventCompleted
+        ? 'Sertifikat tersedia setelah event selesai.'
+        : null,
+  }
+}
+
+export async function getParticipantsByEventFromDb(eventIdentifier: string) {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+
+    try {
+      await ensureEventV4Schema(connection)
+      const event = await getEventFromDb(eventIdentifier)
+      if (!event) return []
+
+      const [rows] = await connection.query<ParticipantRow[]>(
+        `
+          SELECT *
+          FROM mpj_event_participants
+          WHERE event_id = :eventId
+          ORDER BY created_at DESC
+        `,
+        { eventId: event.id },
+      )
+      return rows.map(mapParticipant)
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function getPaymentRecordsByEventFromDb(eventIdentifier: string): Promise<PaymentRecord[]> {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+
+    try {
+      await ensureEventV4Schema(connection)
+      const event = await getEventFromDb(eventIdentifier)
+      if (!event) return []
+
+      const [rows] = await connection.query<Array<RowDataPacket & {
+        id: string | null
+        participant_id: string
+        participant_name: string | null
+        registration_path: string
+        amount_snapshot: number | null
+        participant_payment_status: string
+        payment_status: string | null
+        submitted_at: Date | string | null
+        verified_at: Date | string | null
+      }>>(
+        `
+          SELECT
+            COALESCE(pc.id, p.payment_id, p.id) AS id,
+            p.id AS participant_id,
+            COALESCE(p.full_name, JSON_UNQUOTE(JSON_EXTRACT(p.crew_json, '$.full_name')), JSON_UNQUOTE(JSON_EXTRACT(p.guest_json, '$.full_name'))) AS participant_name,
+            p.registration_path,
+            pc.amount_snapshot,
+            p.payment_status AS participant_payment_status,
+            pc.status AS payment_status,
+            pc.created_at AS submitted_at,
+            pc.verified_at
+          FROM mpj_event_participants p
+          LEFT JOIN mpj_payment_core_payments pc
+            ON pc.source_type = 'event_registration' AND pc.source_id = p.id
+          WHERE p.event_id = :eventId
+            AND (p.payment_id IS NOT NULL OR p.payment_status <> 'Free')
+          ORDER BY COALESCE(pc.created_at, p.created_at) DESC
+        `,
+        { eventId: event.id },
+      )
+
+      return rows.map((row) => ({
+        id: String(row.id || row.participant_id),
+        event_id: event.id,
+        participant_id: row.participant_id,
+        participant_name: String(row.participant_name || '-'),
+        path: row.registration_path === 'NIAM' ? 'NIAM' : 'UMUM',
+        amount: Number(row.amount_snapshot || 0),
+        status: row.participant_payment_status as PaymentRecord['status'],
+        submitted_at: toIsoString(row.submitted_at) ?? null,
+        verified_at: toIsoString(row.verified_at) ?? null,
+      }))
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function getAdminParticipantsFromDb(options: { scope?: EventScope; regionId?: string | null } = {}) {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+
+    try {
+      await ensureEventV4Schema(connection)
+      const where: string[] = []
+      const values: Record<string, unknown> = {}
+
+      if (options.scope === 'regional') {
+        where.push('e.scope = :scope')
+        where.push('e.region_id = :regionId')
+        values.scope = 'regional'
+        values.regionId = options.regionId ?? ''
+      }
+
+      const [rows] = await connection.query<Array<ParticipantRow & {
+        event_title: string
+        event_slug: string | null
+        event_status: string
+        event_scope: EventScope | null
+        event_region_id: string | null
+        event_start_date: Date | string
+        event_location_name: string
+        payment_amount: number | null
+      }>>(
+        `
+          SELECT
+            p.*,
+            e.title AS event_title,
+            e.slug AS event_slug,
+            e.status AS event_status,
+            e.scope AS event_scope,
+            e.region_id AS event_region_id,
+            e.start_date AS event_start_date,
+            e.location_name AS event_location_name,
+            pc.amount_snapshot AS payment_amount
+          FROM mpj_event_participants p
+          INNER JOIN mpj_event_events e ON e.id = p.event_id
+          LEFT JOIN mpj_payment_core_payments pc
+            ON pc.source_type = 'event_registration' AND pc.source_id = p.id
+          ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+          ORDER BY p.created_at DESC
+        `,
+        values as never,
+      )
+
+      return rows.map((row) => {
+        const participant = mapParticipant(row)
+        return {
+          ...participant,
+          unique_amount: Number(row.payment_amount || 0),
+          event: {
+            id: participant.event_id,
+            title: row.event_title,
+            slug: row.event_slug ?? undefined,
+            status: row.event_status,
+            scope: row.event_scope ?? undefined,
+            regionId: row.event_region_id,
+            start_date: toIsoString(row.event_start_date) ?? '',
+            location_name: row.event_location_name,
+          },
+        }
+      })
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function confirmParticipantManually(eventIdentifier: string, participantId: string) {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+
+    try {
+      await ensureEventV4Schema(connection)
+      await connection.beginTransaction()
+
+      const [eventRows] = await connection.query<EventRow[]>(
+        `${EVENT_SELECT} WHERE id = :eventIdentifier OR slug = :eventIdentifier LIMIT 1`,
+        { eventIdentifier },
+      )
+      const event = eventRows[0]
+      if (!event) throw new Error('Event tidak ditemukan')
+
+      const [participantRows] = await connection.query<ParticipantRow[]>(
+        `
+          SELECT *
+          FROM mpj_event_participants
+          WHERE id = :participantId AND event_id = :eventId
+          LIMIT 1
+          FOR UPDATE
+        `,
+        { participantId, eventId: event.id },
+      )
+      const participant = participantRows[0]
+      if (!participant) throw new Error('Participant tidak ditemukan')
+      if (String(participant.status || '').toLowerCase() === 'attended') throw new Error('Peserta sudah check-in')
+
+      const [paymentRows] = await connection.query<RowDataPacket[]>(
+        `
+          SELECT id
+          FROM mpj_payment_core_payments
+          WHERE source_type = 'event_registration' AND source_id = :participantId
+          LIMIT 1
+          FOR UPDATE
+        `,
+        { participantId },
+      )
+      const paymentId = String(paymentRows[0]?.id || participant.payment_id || '')
+
+      if (paymentId) {
+        await connection.query<ResultSetHeader>(
+          `
+            UPDATE mpj_payment_core_payments
+            SET status = 'verified', verified_at = COALESCE(verified_at, NOW())
+            WHERE id = :paymentId
+          `,
+          { paymentId },
+        )
+        await appendPaymentCoreAudit(connection, paymentId, 'payment_verified_manual', {
+          sourceType: 'event_registration',
+          sourceId: participantId,
+        })
+      }
+
+      await connection.query<ResultSetHeader>(
+        `
+          UPDATE mpj_event_participants
+          SET status = 'confirmed',
+              attendance_status = 'Confirmed',
+              payment_status = :paymentStatus,
+              payment_id = COALESCE(:paymentId, payment_id)
+          WHERE id = :participantId
+        `,
+        {
+          participantId,
+          paymentId: paymentId || null,
+          paymentStatus: Number(event.is_paid) ? 'Paid' : 'Free',
+        },
+      )
+
+      const [updatedRows] = await connection.query<ParticipantRow[]>(
+        'SELECT * FROM mpj_event_participants WHERE id = :participantId LIMIT 1',
+        { participantId },
+      )
+
+      await connection.commit()
+      return mapParticipant(updatedRows[0])
+    } catch (error) {
+      await connection.rollback()
+      throw error
     } finally {
       connection.release()
     }
@@ -527,6 +1113,8 @@ export async function createEventInDb(payload: EventPayload) {
           registrationDeadline: toNullableDate(payload.registrationDeadline ?? payload.registration_deadline),
         },
       )
+      await replaceEventCustomFields(connection, id, payload.custom_fields ?? payload.customFields)
+      await replaceEventClasses(connection, id, payload.classes)
 
       const event = await getEventFromDb(id)
       if (!event) throw new Error('Gagal membuat event')
@@ -611,6 +1199,8 @@ export async function updateEventInDb(identifier: string, payload: EventPayload)
         `UPDATE mpj_event_events SET ${assignments.join(', ')} WHERE id = :id`,
         values as never,
       )
+      await replaceEventCustomFields(connection, existing.id, payload.custom_fields ?? payload.customFields)
+      await replaceEventClasses(connection, existing.id, payload.classes)
 
       return getEventFromDb(existing.id)
     } finally {
@@ -619,13 +1209,71 @@ export async function updateEventInDb(identifier: string, payload: EventPayload)
   })
 }
 
-async function createPaymentCoreRequest(participantId: string, amount: number) {
-  return {
+async function appendPaymentCoreAudit(
+  connection: PoolConnection,
+  paymentId: string,
+  action: string,
+  metadata: Record<string, unknown>,
+) {
+  await connection.query<ResultSetHeader>(
+    `
+      INSERT INTO mpj_payment_core_audit_logs (id, payment_id, action, metadata)
+      VALUES (:id, :paymentId, :action, CAST(:metadata AS JSON))
+    `,
+    {
+      id: randomUUID(),
+      paymentId,
+      action,
+      metadata: JSON.stringify(metadata),
+    },
+  )
+}
+
+async function createPaymentCoreRequest(
+  connection: PoolConnection,
+  participantId: string,
+  amount: number,
+): Promise<PaymentCoreRequest> {
+  const paymentId = randomUUID()
+  const paymentRequest: PaymentCoreRequest = {
+    paymentId,
     sourceType: 'event_registration',
     sourceId: participantId,
     amount,
-    status: 'payment_core_not_configured',
+    amountSnapshot: amount,
+    paymentMethod: 'manual',
+    paymentChannel: 'bank_transfer',
+    status: 'waiting_payment',
   }
+
+  await connection.query<ResultSetHeader>(
+    `
+      INSERT INTO mpj_payment_core_payments (
+        id, source_type, source_id, amount_snapshot, payment_method,
+        payment_channel, status
+      ) VALUES (
+        :paymentId, :sourceType, :sourceId, :amount, :paymentMethod,
+        :paymentChannel, :status
+      )
+    `,
+    {
+      paymentId,
+      sourceType: paymentRequest.sourceType,
+      sourceId: participantId,
+      amount,
+      paymentMethod: paymentRequest.paymentMethod,
+      paymentChannel: paymentRequest.paymentChannel,
+      status: paymentRequest.status,
+    },
+  )
+
+  await appendPaymentCoreAudit(connection, paymentId, 'payment_created', {
+    sourceType: paymentRequest.sourceType,
+    sourceId: participantId,
+    amount,
+  })
+
+  return paymentRequest
 }
 
 export async function registerEventParticipant(eventIdentifier: string, payload: RegisterPayload) {
@@ -698,8 +1346,9 @@ export async function registerEventParticipant(eventIdentifier: string, payload:
       const baseAmount = event.isPaidEvent ? (registrationPath === 'NIAM' ? event.priceNiam ?? 0 : event.priceUmum ?? 0) : 0
       const participantStatus = event.isPaidEvent ? 'registered' : 'confirmed'
       const paymentStatus = event.isPaidEvent ? 'Unpaid' : 'Free'
-      const paymentRequest = event.isPaidEvent ? await createPaymentCoreRequest(participantId, baseAmount) : null
       const customAnswers = payload.customAnswers ?? payload.custom_responses ?? {}
+      await validateCustomResponses(connection, event.id, customAnswers)
+      const classId = await resolveRegistrationClassId(connection, event.id, getString(payload.class_id))
       const crew =
         registrationPath === 'NIAM'
           ? {
@@ -745,12 +1394,23 @@ export async function registerEventParticipant(eventIdentifier: string, payload:
           whatsapp: whatsapp || null,
           niam: niam || null,
           email: email || null,
-          classId: getString(payload.class_id) || null,
+          classId,
           participantStatus,
           paymentId: null,
           customAnswers: JSON.stringify(customAnswers),
         },
       )
+
+      const paymentRequest = event.isPaidEvent
+        ? await createPaymentCoreRequest(connection, participantId, baseAmount)
+        : null
+
+      if (paymentRequest) {
+        await connection.query<ResultSetHeader>(
+          'UPDATE mpj_event_participants SET payment_id = :paymentId WHERE id = :participantId',
+          { participantId, paymentId: paymentRequest.paymentId },
+        )
+      }
 
       await connection.query<ResultSetHeader>(
         'UPDATE mpj_event_events SET current_participants = current_participants + 1 WHERE id = :eventId',
@@ -844,17 +1504,54 @@ export async function confirmParticipantFromPayment(payload: {
     throw new Error('Payment source type tidak valid untuk modul event')
   }
 
-  const participantId = getString(payload.sourceId)
-  if (!participantId) throw new Error('sourceId participant wajib diisi')
+  const sourceId = getString(payload.sourceId)
+  const paymentId = getString(payload.paymentId)
+  if (!sourceId && !paymentId) throw new Error('sourceId atau paymentId wajib diisi')
 
   return withDb(async (db) => {
     const connection = await db.getConnection()
 
     try {
       await ensureEventV4Schema(connection)
+      await connection.beginTransaction()
 
       const verified = !payload.status || ['verified', 'paid', 'success', 'confirmed'].includes(payload.status.toLowerCase())
       if (!verified) throw new Error('Status payment belum verified')
+
+      const [paymentRows] = await connection.query<RowDataPacket[]>(
+        `
+          SELECT id, source_id
+          FROM mpj_payment_core_payments
+          WHERE (:paymentId = '' OR id = :paymentId)
+            AND (:sourceId = '' OR source_id = :sourceId)
+            AND source_type = 'event_registration'
+          LIMIT 1
+          FOR UPDATE
+        `,
+        { paymentId, sourceId },
+      )
+      const paymentRow = paymentRows[0]
+      if (paymentId && !paymentRow) throw new Error('Payment Core record tidak ditemukan')
+
+      const participantId = sourceId || String(paymentRow?.source_id || '')
+      if (!participantId) throw new Error('Payment Core record tidak ditemukan')
+
+      if (paymentRow?.id) {
+        await connection.query<ResultSetHeader>(
+          `
+            UPDATE mpj_payment_core_payments
+            SET status = 'verified', verified_at = COALESCE(verified_at, NOW())
+            WHERE id = :paymentId
+          `,
+          { paymentId: paymentRow.id },
+        )
+
+        await appendPaymentCoreAudit(connection, String(paymentRow.id), 'payment_verified', {
+          sourceType: payload.sourceType,
+          sourceId: participantId,
+          status: payload.status ?? 'verified',
+        })
+      }
 
       await connection.query<ResultSetHeader>(
         `
@@ -862,7 +1559,7 @@ export async function confirmParticipantFromPayment(payload: {
           SET status = 'confirmed', attendance_status = 'Confirmed', payment_status = 'Paid', payment_id = COALESCE(:paymentId, payment_id)
           WHERE id = :participantId
         `,
-        { participantId, paymentId: getString(payload.paymentId) || null },
+        { participantId, paymentId: paymentRow?.id ?? (paymentId || null) },
       )
 
       const [rows] = await connection.query<ParticipantRow[]>(
@@ -871,7 +1568,11 @@ export async function confirmParticipantFromPayment(payload: {
       )
       if (!rows[0]) throw new Error('Participant tidak ditemukan')
 
+      await connection.commit()
       return mapParticipant(rows[0])
+    } catch (error) {
+      await connection.rollback()
+      throw error
     } finally {
       connection.release()
     }

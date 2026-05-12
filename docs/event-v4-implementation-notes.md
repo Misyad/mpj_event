@@ -12,26 +12,35 @@
   - `/:slug`
   - `/register/:slug`
   - `/ticket/:code`
+  - `/certificate/:code`
   - `/scan`
-- Registration creates an event participant and returns a Payment Core request contract for paid events:
+- Registration creates an event participant and creates an internal Payment Core record for paid events:
   - `sourceType = event_registration`
   - `sourceId = participantId`
+  - `paymentId = mpj_payment_core_payments.id`
 - Free event participants become `confirmed` immediately.
 - Paid event participants remain `registered` until payment verification.
-- Payment verified listener is available at `POST /api/events/payment-verified`.
+- Payment verified listener is available at `POST /api/events/payment-verified` and marks the Payment Core record as `verified`.
 - QR scan is valid only for `confirmed` participants.
 - Repeated scan returns a warning path instead of silently re-checking in.
+- Certificate page is available after event completion for participants with `attended` status.
 - Admin create/update event now writes through the local V4-compatible event API.
 - Price updates are blocked after the event is published/approved.
+- Admin Event APIs now enforce Super Admin vs Admin Regional access using `scope` and `region_id`.
+- Admin create/update event can persist custom registration fields to `mpj_event_custom_fields`.
+- Public registration loads event custom fields and backend validation rejects missing required responses or invalid choice values.
+- Admin create event can persist class options to `mpj_event_classes` for Sistem Kelas events.
+- Public registration requires class selection when classes exist and backend validation rejects invalid or full classes.
+- Admin event detail can read backend participants/payment records and manually confirm participants.
+- Admin global participant page reads backend participant/event data and keeps filters client-side.
+- Regional participant page reads backend participant/event data scoped to the regional admin session.
+- Regional dashboard reads backend event and participant summaries scoped to the regional admin session.
+- Regional event page has backend-scoped event data with client-side search, status/category filters, stats, and public/register actions.
+- Auth redirect hardening validates `next` by role and redirects authenticated users away from login pages.
 
 ## Remaining Integration Work
 
-- Wire the real Payment Core service endpoint when its API contract is finalized.
-- Replace the temporary `payment_core_not_configured` response with a real Payment Core create-payment call.
-- Build the admin custom field editor persistence UI.
-- Build event class selection and class quota UI.
-- Add role enforcement for Admin Pusat vs Admin Regional using `scope` and `region_id`.
-- Add certificate generation after event completion.
+- Wire an external Payment Core provider endpoint if the project later moves payment orchestration outside this app.
 
 ## Key Endpoints
 
@@ -43,4 +52,8 @@
 - `POST /api/tickets/check-in`
 - `GET /api/admin/events`
 - `POST /api/admin/events`
+- `GET /api/admin/events/:idOrSlug`
 - `PATCH /api/admin/events/:idOrSlug`
+- `POST /api/admin/events/:idOrSlug/participants/:participantId/confirm`
+- `GET /api/admin/participants`
+- `GET /api/regional/participants`

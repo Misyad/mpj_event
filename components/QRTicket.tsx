@@ -3,7 +3,7 @@
 import { QRCodeSVG } from 'qrcode.react'
 import Link from 'next/link'
 import { Event, Participant } from '@/types'
-import { Calendar, CheckCircle, MapPin, XCircle } from 'lucide-react'
+import { Award, Calendar, CheckCircle, MapPin, XCircle } from 'lucide-react'
 
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('id-ID', {
@@ -15,6 +15,8 @@ export function QRTicket({ participant, event }: { participant: Participant; eve
   const status = participant.status || participant.attendance_status
   const isValid = status === 'confirmed' || status === 'Confirmed'
   const isUsed = status === 'attended' || status === 'Attended'
+  const eventCompleted = ['finished', 'FINISHED', 'completed', 'COMPLETED'].includes(event.status)
+  const certificateReady = isUsed && eventCompleted
   const name = participant.registration_path === 'NIAM'
     ? participant.crew?.full_name
     : participant.guest?.full_name
@@ -95,6 +97,16 @@ export function QRTicket({ participant, event }: { participant: Participant; eve
             <p className="text-xs text-center text-blue-600 bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5 leading-relaxed">
               💙 E-ID Card NIAM kamu juga berlaku sebagai tiket masuk di lokasi
             </p>
+          )}
+
+          {certificateReady && (
+            <Link
+              href={`/certificate/${encodeURIComponent(participant.ticketCode || participant.qr_token)}`}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1B4332] px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-[#14532d]"
+            >
+              <Award className="h-4 w-4" />
+              Lihat Sertifikat
+            </Link>
           )}
         </div>
       </div>

@@ -1,11 +1,40 @@
 'use client'
 
-import { useState, useMemo } from 'react'
-import { dummyParticipants, dummyEvents } from '@/lib/dummy'
-import { AttendanceStatus, PaymentStatus, RegistrationPath } from '@/types'
-import { Search, Filter, CheckCircle2, Clock, XCircle, Wallet, Ticket, UserCheck } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
+import Link from 'next/link'
+import { AttendanceStatus, EventStatus, PaymentStatus, RegistrationPath } from '@/types'
+import { ExternalLink, Search, CheckCircle2, Clock, Loader2, XCircle, Wallet, Ticket, UserCheck } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+
+type AdminParticipant = {
+  id: string
+  event_id: string
+  registration_path: RegistrationPath
+  payment_status: PaymentStatus
+  unique_amount: number
+  attendance_status: AttendanceStatus
+  status?: AttendanceStatus
+  qr_token: string
+  ticketCode?: string
+  full_name?: string
+  fullName?: string
+  institution_name?: string
+  institution?: string
+  whatsapp?: string
+  email?: string | null
+  crew?: { full_name: string; unit: string; niam: string }
+  guest?: { full_name: string; institution_name: string; whatsapp: string; id?: string }
+  event: {
+    id: string
+    title: string
+    slug?: string
+    status: EventStatus
+    start_date: string
+    location_name: string
+  }
+}
 
 // Badge helpers
 function PaymentBadge({ status }: { status: PaymentStatus }) {
@@ -44,24 +73,62 @@ function PathBadge({ path }: { path: RegistrationPath }) {
     : <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">Umum</span>
 }
 
+function sameStatus(value: string | undefined, filter: string) {
+  return String(value || '').toLowerCase() === filter.toLowerCase()
+}
+
 export default function MasterPesertaPage() {
+  const [participants, setParticipants] = useState<AdminParticipant[]>([])
+  const [isLoading, setIsLoading]       = useState(true)
+  const [error, setError]               = useState('')
   const [search, setSearch]             = useState('')
   const [pathFilter, setPathFilter]     = useState<string>('ALL')
   const [payFilter, setPayFilter]       = useState<string>('ALL')
   const [attendFilter, setAttendFilter] = useState<string>('ALL')
   const [eventFilter, setEventFilter]   = useState<string>('ALL')
 
+  useEffect(() => {
+    let active = true
+
+    async function loadParticipants() {
+      try {
+        setIsLoading(true)
+        setError('')
+        const response = await fetch('/api/admin/participants', { cache: 'no-store' })
+        const payload = await response.json()
+        if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal memuat data peserta')
+        if (active) setParticipants(payload.data ?? [])
+      } catch (loadError) {
+        if (active) setError(loadError instanceof Error ? loadError.message : 'Gagal memuat data peserta')
+      } finally {
+        if (active) setIsLoading(false)
+      }
+    }
+
+    loadParticipants()
+    return () => {
+      active = false
+    }
+  }, [])
+
   // Enrich participants with event data
-  const enriched = useMemo(() => dummyParticipants.map(p => ({
+  const enriched = useMemo(() => participants.map(p => ({
     ...p,
-    event: dummyEvents.find(e => e.id === p.event_id),
-    name: p.registration_path === 'NIAM' ? p.crew?.full_name : p.guest?.full_name,
-    institution: p.registration_path === 'NIAM' ? p.crew?.unit : p.guest?.institution_name,
-    whatsapp: p.registration_path === 'UMUM' ? p.guest?.whatsapp : p.crew?.niam,
+    name: p.fullName ?? p.full_name ?? (p.registration_path === 'NIAM' ? p.crew?.full_name : p.guest?.full_name),
+    institution: p.institution ?? p.institution_name ?? (p.registration_path === 'NIAM' ? p.crew?.unit : p.guest?.institution_name),
+    whatsapp: p.whatsapp ?? (p.registration_path === 'UMUM' ? p.guest?.whatsapp : p.crew?.niam),
     avatar: p.registration_path === 'NIAM'
       ? `https://avatar.iran.liara.run/public/boy?username=${p.crew?.niam}`
-      : `https://avatar.iran.liara.run/public/girl?username=${p.guest?.id}`,
-  })), [])
+      : `https://avatar.iran.liara.run/public/girl?username=${p.guest?.id ?? p.id}`,
+  })), [participants])
+
+  const eventOptions = useMemo(() => {
+    const byId = new Map<string, AdminParticipant['event']>()
+    enriched.forEach((participant) => {
+      if (participant.event) byId.set(participant.event.id, participant.event)
+    })
+    return Array.from(byId.values()).sort((a, b) => a.title.localeCompare(b.title))
+  }, [enriched])
 
   const filtered = useMemo(() => enriched.filter(p => {
     const q = search.toLowerCase()
@@ -72,7 +139,7 @@ export default function MasterPesertaPage() {
       p.whatsapp?.toLowerCase().includes(q)
     const matchPath    = pathFilter    === 'ALL' || p.registration_path    === pathFilter
     const matchPay     = payFilter     === 'ALL' || p.payment_status       === payFilter
-    const matchAttend  = attendFilter  === 'ALL' || p.attendance_status    === attendFilter
+    const matchAttend  = attendFilter  === 'ALL' || sameStatus(p.attendance_status, attendFilter)
     const matchEvent   = eventFilter   === 'ALL' || p.event_id             === eventFilter
     return matchSearch && matchPath && matchPay && matchAttend && matchEvent
   }), [enriched, search, pathFilter, payFilter, attendFilter, eventFilter])
@@ -82,7 +149,7 @@ export default function MasterPesertaPage() {
     total:    enriched.length,
     niam:     enriched.filter(p => p.registration_path === 'NIAM').length,
     umum:     enriched.filter(p => p.registration_path === 'UMUM').length,
-    hadir:    enriched.filter(p => p.attendance_status === 'Attended').length,
+    hadir:    enriched.filter(p => sameStatus(p.attendance_status, 'Attended')).length,
     lunas:    enriched.filter(p => p.payment_status === 'Paid').length,
     pending:  enriched.filter(p => p.payment_status === 'Pending_Approval').length,
   }), [enriched])
@@ -144,7 +211,7 @@ export default function MasterPesertaPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">Semua Event</SelectItem>
-            {dummyEvents.map(e => (
+            {eventOptions.map(e => (
               <SelectItem key={e.id} value={e.id}>{e.title.slice(0, 35)}...</SelectItem>
             ))}
           </SelectContent>
@@ -193,8 +260,21 @@ export default function MasterPesertaPage() {
         {hasFilter && <span className="text-[#1B4332] font-semibold"> (difilter)</span>}
       </p>
 
+      {error ? (
+        <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-medium text-red-700">
+          {error}
+        </div>
+      ) : null}
+
       {/* Table */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        {isLoading ? (
+          <div className="flex items-center justify-center gap-2 py-16 text-sm font-semibold text-[#1B4332]">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Memuat data peserta...
+          </div>
+        ) : (
+        <>
         {/* Desktop Table */}
         <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm">
@@ -206,12 +286,13 @@ export default function MasterPesertaPage() {
                 <th className="text-left text-xs font-bold text-gray-400 uppercase tracking-wider px-4 py-3">Bayar</th>
                 <th className="text-left text-xs font-bold text-gray-400 uppercase tracking-wider px-4 py-3">Kehadiran</th>
                 <th className="text-left text-xs font-bold text-gray-400 uppercase tracking-wider px-4 py-3">Nominal</th>
+                <th className="text-left text-xs font-bold text-gray-400 uppercase tracking-wider px-4 py-3">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-12 text-gray-400 text-sm">
+                  <td colSpan={7} className="text-center py-12 text-gray-400 text-sm">
                     Tidak ada peserta ditemukan
                   </td>
                 </tr>
@@ -219,8 +300,8 @@ export default function MasterPesertaPage() {
                 <tr key={p.id} className="hover:bg-gray-50/60 transition-colors">
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-3">
-                      <img src={p.avatar} alt={p.name}
-                        className="w-8 h-8 rounded-full bg-gray-100 object-cover shrink-0" />
+                      <Image src={p.avatar} alt={p.name ?? 'Peserta'} width={32} height={32}
+                        className="h-8 w-8 rounded-full bg-gray-100 object-cover shrink-0" />
                       <div>
                         <p className="font-semibold text-gray-800 text-sm leading-tight">{p.name ?? '-'}</p>
                         <p className="text-[10px] text-gray-400 mt-0.5 truncate max-w-[160px]">{p.institution ?? '-'}</p>
@@ -240,6 +321,17 @@ export default function MasterPesertaPage() {
                       {p.unique_amount === 0 ? '—' : `Rp ${p.unique_amount.toLocaleString('id-ID')}`}
                     </p>
                   </td>
+                  <td className="px-4 py-3.5">
+                    <div className="flex flex-wrap gap-1.5">
+                      <Link href={`/admin/events/${p.event_id}`} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-600 transition-colors hover:border-[#1B4332] hover:text-[#1B4332]">
+                        <ExternalLink className="h-3 w-3" />
+                        Event
+                      </Link>
+                      <Link href={`/ticket/${encodeURIComponent(p.ticketCode || p.qr_token)}`} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-600 transition-colors hover:border-[#1B4332] hover:text-[#1B4332]">
+                        Tiket
+                      </Link>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -253,14 +345,14 @@ export default function MasterPesertaPage() {
           ) : filtered.map(p => (
             <div key={p.id} className="p-4 space-y-3">
               <div className="flex items-center gap-3">
-                <img src={p.avatar} alt={p.name} className="w-10 h-10 rounded-xl bg-gray-100 object-cover shrink-0" />
+                <Image src={p.avatar} alt={p.name ?? 'Peserta'} width={40} height={40} className="h-10 w-10 rounded-xl bg-gray-100 object-cover shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-gray-800 text-sm truncate">{p.name ?? '-'}</p>
                   <p className="text-[10px] text-gray-400 truncate">{p.institution ?? '-'}</p>
                 </div>
                 <PathBadge path={p.registration_path} />
               </div>
-              <p className="text-xs text-gray-500 font-medium line-clamp-1">📅 {p.event?.title ?? '-'}</p>
+              <p className="text-xs text-gray-500 font-medium line-clamp-1">Event: {p.event?.title ?? '-'}</p>
               <div className="flex items-center gap-2 flex-wrap">
                 <PaymentBadge status={p.payment_status} />
                 <AttendanceBadge status={p.attendance_status} />
@@ -270,9 +362,15 @@ export default function MasterPesertaPage() {
                   </span>
                 )}
               </div>
+              <div className="flex gap-2">
+                <Link href={`/admin/events/${p.event_id}`} className="text-xs font-semibold text-[#1B4332] hover:underline">Detail event</Link>
+                <Link href={`/ticket/${encodeURIComponent(p.ticketCode || p.qr_token)}`} className="text-xs font-semibold text-[#1B4332] hover:underline">Tiket</Link>
+              </div>
             </div>
           ))}
         </div>
+        </>
+        )}
       </div>
     </div>
   )

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Image from 'next/image'
 import { ChevronDown, Search, X } from 'lucide-react'
 import { dummySpeakers } from '@/lib/dummy'
 import { Speaker } from '@/types'
@@ -53,8 +54,8 @@ export function SpeakerCombobox({ value, onChange, placeholder = 'Cari narasumbe
       >
         {selected ? (
           <>
-            <img src={selected.foto_url} alt={selected.nama_lengkap}
-              className="w-6 h-6 rounded-full object-cover shrink-0" />
+            <Image src={selected.foto_url} alt={selected.nama_lengkap} width={24} height={24}
+              className="h-6 w-6 rounded-full object-cover shrink-0" />
             <span className="flex-1 font-medium text-[#1B4332] truncate">{selected.nama_lengkap}</span>
             <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full shrink-0">{selected.kategori}</span>
             <button type="button" onClick={e => { e.stopPropagation(); clearSpeaker() }}
@@ -101,7 +102,7 @@ export function SpeakerCombobox({ value, onChange, placeholder = 'Cari narasumbe
                   s.id === value ? 'bg-[#1B4332]/5' : ''
                 }`}
               >
-                <img src={s.foto_url} alt={s.nama_lengkap} className="w-8 h-8 rounded-full object-cover shrink-0" />
+                <Image src={s.foto_url} alt={s.nama_lengkap} width={32} height={32} className="h-8 w-8 rounded-full object-cover shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-[#1B4332] truncate">{s.nama_lengkap}</p>
                   <p className="text-[10px] text-gray-400 truncate">{s.keahlian.slice(0, 2).join(' · ')}</p>

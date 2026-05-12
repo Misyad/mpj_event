@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useState } from 'react'
+import Image from 'next/image'
 import { ImageIcon, Upload, X } from 'lucide-react'
 
 interface PosterUploaderProps {
@@ -8,14 +9,14 @@ interface PosterUploaderProps {
   currentUrl?: string
 }
 
+const MAX_SIZE_KB = 100
+const ALLOWED = ['image/jpeg', 'image/webp', 'image/png']
+
 export function PosterUploader({ onFileSelect, currentUrl }: PosterUploaderProps) {
   const [preview, setPreview] = useState<string | null>(currentUrl ?? null)
   const [isDragging, setIsDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
-
-  const MAX_SIZE_KB = 100
-  const ALLOWED = ['image/jpeg', 'image/webp', 'image/png']
 
   const processFile = useCallback((file: File) => {
     setError(null)
@@ -60,8 +61,8 @@ export function PosterUploader({ onFileSelect, currentUrl }: PosterUploaderProps
       {preview ? (
         <div className="relative rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
           {/* 4:5 ratio preview */}
-          <div className="aspect-[4/5] max-h-64 overflow-hidden">
-            <img src={preview} alt="Poster preview" className="w-full h-full object-cover" />
+          <div className="relative aspect-[4/5] max-h-64 overflow-hidden">
+            <Image src={preview} alt="Poster preview" fill sizes="256px" className="object-cover" />
           </div>
           <button
             type="button"

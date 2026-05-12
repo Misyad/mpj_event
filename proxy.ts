@@ -15,7 +15,7 @@ export async function proxy(request: NextRequest) {
   if (!token || token.role !== requiredRole) {
     const loginUrl = request.nextUrl.clone()
     loginUrl.pathname = config.loginPath
-    loginUrl.searchParams.set('next', pathname)
+    loginUrl.searchParams.set('next', `${pathname}${request.nextUrl.search}`)
     return NextResponse.redirect(loginUrl)
   }
 
@@ -23,5 +23,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/super-admin/:path*', '/regional/:path*', '/dashboard/:path*'],
+  matcher: ['/admin/:path*', '/super-admin/:path*', '/regional/:path*', '/dashboard/:path*'],
 }
