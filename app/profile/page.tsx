@@ -1,14 +1,12 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { ArrowLeft, CalendarDays, ChevronRight, FileBadge2, PencilLine, UserRound } from 'lucide-react'
 import { AUTH_ROLES } from '@/lib/auth/roles'
 import { getCurrentAdminSession } from '@/lib/server/rbac'
 
-function fallback(value: string | null | undefined) {
-  return value?.trim() ? value : '-'
-}
-
 export default async function ProfilePage() {
   const session = await getCurrentAdminSession(AUTH_ROLES.user)
+  if (!session) redirect('/auth/user-login?next=%2Fprofile')
 
   const menuItems = [
     {
@@ -28,15 +26,8 @@ export default async function ProfilePage() {
     },
   ]
 
-  // Mock stats for UI display
-  const stats = {
-    totalEvents: 0,
-    certificates: 0,
-  }
-
   return (
     <div className="flex flex-col pb-8">
-      {/* Header */}
       <header className="sticky top-0 z-10 flex h-16 items-center gap-4 bg-[#f4f7f5]/90 px-4 backdrop-blur-md">
         <Link
           href="/"
@@ -48,16 +39,19 @@ export default async function ProfilePage() {
       </header>
 
       <div className="px-4 py-4 space-y-6">
-        {/* Profile Info */}
         <section className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-4 min-w-0">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#1B4332] text-white shrink-0 shadow-inner">
               <UserRound className="h-6 w-6" />
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="truncate text-base font-extrabold text-[#1B4332]">{fallback(session?.fullName)}</h2>
-              <p className="truncate text-xs font-medium text-gray-500 mt-0.5">{fallback(session?.whatsapp)}</p>
-              <p className="truncate text-xs font-medium text-gray-500">{fallback(session?.email)}</p>
+              <h2 className="truncate text-base font-extrabold text-[#1B4332]">{session.fullName || 'Akun MPJ Event'}</h2>
+              {session.whatsapp ? (
+                <p className="truncate text-xs font-medium text-gray-500 mt-0.5">{session.whatsapp}</p>
+              ) : null}
+              {session.email ? (
+                <p className="truncate text-xs font-medium text-gray-500">{session.email}</p>
+              ) : null}
             </div>
           </div>
           <Link
@@ -70,31 +64,24 @@ export default async function ProfilePage() {
 
         <hr className="border-t border-black/5" />
 
-        {/* History Stats */}
         <section>
           <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-sm font-extrabold text-[#1B4332]">Riwayat Event</h3>
+            <h3 className="text-sm font-extrabold text-[#1B4332]">Akun Anda</h3>
             <Link href="/profile/events" className="text-xs font-bold text-[#1B4332] hover:text-[#2d6a4f] transition">
-              Lihat Semua
+              Buka Riwayat
             </Link>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 rounded-3xl bg-white p-5 border border-black/5 shadow-sm">
-            <div className="text-center relative">
-              <p className="text-2xl font-black text-[#1B4332]">{stats.totalEvents}</p>
-              <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">Total Event</p>
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 h-8 w-px bg-black/5" />
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-black text-[#1B4332]">{stats.certificates}</p>
-              <p className="mt-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">Sertifikat</p>
-            </div>
+          <div className="rounded-3xl border border-black/5 bg-white p-5 shadow-sm">
+            <p className="text-sm font-bold text-[#1B4332]">Profil user sudah siap untuk dipakai di frontend.</p>
+            <p className="mt-2 text-sm leading-relaxed text-gray-500">
+              Riwayat event, sertifikat, dan sinkronisasi profil akan muncul otomatis setelah layanan data user tersedia.
+            </p>
           </div>
         </section>
 
         <hr className="border-t border-black/5" />
 
-        {/* Menu Items */}
         <section className="space-y-3">
           {menuItems.map((item) => {
             const Icon = item.icon

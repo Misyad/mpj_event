@@ -1,11 +1,13 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { ArrowLeft, CalendarDays } from 'lucide-react'
 import { AUTH_ROLES } from '@/lib/auth/roles'
 import { getCurrentAdminSession } from '@/lib/server/rbac'
 import { UserEmptyState } from '@/components/user/UserEmptyState'
 
 export default async function UserEventsPage() {
-  await getCurrentAdminSession(AUTH_ROLES.user)
+  const session = await getCurrentAdminSession(AUTH_ROLES.user)
+  if (!session) redirect('/auth/user-login?next=%2Fprofile%2Fevents')
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -24,8 +26,8 @@ export default async function UserEventsPage() {
 
       <UserEmptyState
         icon={<CalendarDays className="h-7 w-7" />}
-        title="Belum ada event yang diikuti"
-        description="Jelajahi berbagai event menarik di MPJ Event dan jadilah bagian dari perubahan."
+        title="Belum ada riwayat event"
+        description="Event yang Anda ikuti akan muncul di sini."
       />
     </div>
   )

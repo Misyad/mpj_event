@@ -1,11 +1,13 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { ArrowLeft, FileBadge2 } from 'lucide-react'
 import { AUTH_ROLES } from '@/lib/auth/roles'
 import { getCurrentAdminSession } from '@/lib/server/rbac'
 import { UserEmptyState } from '@/components/user/UserEmptyState'
 
 export default async function UserCertificatesPage() {
-  await getCurrentAdminSession(AUTH_ROLES.user)
+  const session = await getCurrentAdminSession(AUTH_ROLES.user)
+  if (!session) redirect('/auth/user-login?next=%2Fprofile%2Fcertificates')
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -25,7 +27,7 @@ export default async function UserCertificatesPage() {
       <UserEmptyState
         icon={<FileBadge2 className="h-7 w-7" />}
         title="Belum ada sertifikat"
-        description="Selesaikan event yang Anda ikuti untuk mendapatkan sertifikat resmi dari MPJ Indonesia."
+        description="Sertifikat event akan muncul setelah tersedia."
       />
     </div>
   )
