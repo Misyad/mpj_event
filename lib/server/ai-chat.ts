@@ -194,13 +194,16 @@ ${operationalContext}
 }
 
 export async function createAiTextStream(request: NextRequest, messages: AiChatMessage[], context: AiChatContext = {}) {
-  const apiKey = process.env.OPENAI_API_KEY
+  const apiKey = process.env.OPENAI_API_KEY || (process.env.OPENAI_BASE_URL ? 'ollama' : '')
   if (!apiKey) {
-    throw new Error('OPENAI_API_KEY belum dikonfigurasi di server')
+    throw new Error('OPENAI_API_KEY atau OPENAI_BASE_URL belum dikonfigurasi di server')
   }
 
   const operationalContext = buildOperationalContext(await getAiContext(request, messages))
-  const client = new OpenAI({ apiKey })
+  const client = new OpenAI({
+    apiKey,
+    baseURL: process.env.OPENAI_BASE_URL,
+  })
   const model = process.env.OPENAI_MODEL || 'gpt-5.4-mini'
   const encoder = new TextEncoder()
 

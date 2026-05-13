@@ -17,6 +17,9 @@ services:
       DB_NAME: ${DB_NAME:-app_db}
       MPJ_EVENT_API_URL: ${MPJ_EVENT_API_URL:-http://mpj-event-api:4000}
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-mpj-event-admin-token}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://host.docker.internal:11434/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-ollama}
+      OPENAI_MODEL: ${OPENAI_MODEL:-llama3.2:3b}
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
