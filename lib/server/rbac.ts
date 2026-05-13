@@ -900,17 +900,48 @@ export async function updateRegionalAdmin(request: NextRequest, userId: string, 
     const connection = await db.getConnection()
     try {
       await ensureRbacSchema(connection)
-      if (payload.fullName) {
-        await connection.query('UPDATE users SET full_name = :fullName WHERE id = :userId', { fullName: payload.fullName.trim(), userId })
+      const fullName = payload.fullName?.trim()
+      const regionalId = payload.regionalId?.trim()
+      const status = payload.status?.trim()
+      const allowedStatuses = new Set(['active', 'suspended', 'inactive'])
+
+      const [adminRows] = await connection.query<RowDataPacket[]>(
+        `
+          SELECT u.id
+          FROM users u
+          JOIN user_roles ur ON ur.user_id = u.id
+          JOIN roles r ON r.id = ur.role_id
+          WHERE u.id = :userId AND r.code = :roleCode
+          LIMIT 1
+        `,
+        { userId, roleCode: AUTH_ROLES.regionalAdmin },
+      )
+      if (!adminRows[0]) throw new Error('Admin regional tidak ditemukan')
+
+      if (fullName) {
+        await connection.query('UPDATE users SET full_name = :fullName WHERE id = :userId', { fullName, userId })
       }
-      if (payload.status) {
-        await connection.query('UPDATE users SET status = :status WHERE id = :userId', { status: payload.status, userId })
+      if (status) {
+        if (!allowedStatuses.has(status)) throw new Error('Status admin tidak valid')
+        await connection.query('UPDATE users SET status = :status WHERE id = :userId', { status, userId })
       }
-      if (payload.regionalId) {
-        await connection.query('DELETE FROM admin_regional_access WHERE user_id = :userId', { userId })
-        await connection.query('INSERT INTO admin_regional_access (user_id, regional_id) VALUES (:userId, :regionalId)', {
+      if (regionalId) {
+        const [regionalRows] = await connection.query<RowDataPacket[]>('SELECT id FROM regionals WHERE id = :regionalId LIMIT 1', { regionalId })
+        if (!regionalRows[0]) throw new Error('Regional tidak ditemukan')
+        await connection.query(
+          `
+            INSERT INTO admin_regional_access (user_id, regional_id)
+            VALUES (:userId, :regionalId)
+            ON DUPLICATE KEY UPDATE regional_id = VALUES(regional_id)
+          `,
+          {
+            userId,
+            regionalId,
+          },
+        )
+        await connection.query('DELETE FROM admin_regional_access WHERE user_id = :userId AND regional_id <> :regionalId', {
           userId,
-          regionalId: payload.regionalId,
+          regionalId,
         })
       }
       await writeActivityLog(connection, {
@@ -921,7 +952,46 @@ export async function updateRegionalAdmin(request: NextRequest, userId: string, 
         metadata: payload,
         request,
       })
-      return { id: userId }
+
+      const [updatedRows] = await connection.query<AdminRow[]>(
+        `
+          SELECT
+            u.id,
+            u.full_name,
+            u.email,
+            u.status,
+            u.last_login_at,
+            ara.regional_id,
+            rg.name AS regional_name,
+            COUNT(DISTINCT s.id) AS active_sessions,
+            GROUP_CONCAT(DISTINCT p.code ORDER BY p.code SEPARATOR ',') AS permissions
+          FROM users u
+          JOIN user_roles ur ON ur.user_id = u.id
+          JOIN roles r ON r.id = ur.role_id
+          LEFT JOIN admin_regional_access ara ON ara.user_id = u.id
+          LEFT JOIN regionals rg ON rg.id = ara.regional_id
+          LEFT JOIN admin_sessions s ON s.user_id = u.id AND s.revoked_at IS NULL AND s.expires_at > NOW()
+          LEFT JOIN role_permissions rp ON rp.role_id = r.id
+          LEFT JOIN permissions p ON p.id = rp.permission_id
+          WHERE u.id = :userId AND r.code = :roleCode
+          GROUP BY u.id, u.full_name, u.email, u.status, u.last_login_at, ara.regional_id, rg.name
+          LIMIT 1
+        `,
+        { userId, roleCode: AUTH_ROLES.regionalAdmin },
+      )
+      const updated = updatedRows[0]
+      return {
+        id: updated.id,
+        fullName: updated.full_name,
+        email: updated.email,
+        status: updated.status,
+        lastLoginAt: updated.last_login_at instanceof Date ? updated.last_login_at.toISOString() : updated.last_login_at,
+        regionalId: updated.regional_id,
+        regionalName: updated.regional_name,
+        activeSessions: Number(updated.active_sessions || 0),
+        permissions: updated.permissions ? updated.permissions.split(',') : [],
+        totalPeserta: 0,
+      }
     } finally {
       connection.release()
     }

@@ -268,7 +268,7 @@ export function AdminRegionalTable({ admins, regionals }: { admins: AdminRegiona
               </SelectContent>
             </Select>
             <div className="flex gap-2">
-              <Button className="h-10 rounded-xl bg-[#1B4332] text-white">Simpan</Button>
+              <Button type="submit" className="h-10 rounded-xl bg-[#1B4332] text-white">Simpan</Button>
               <Button type="button" variant="outline" className="h-10 rounded-xl" onClick={() => setEditingId(null)}>Batal</Button>
             </div>
           </form>
