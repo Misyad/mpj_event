@@ -9,6 +9,7 @@ export type AccessTokenPayload = {
   exp: number
   email?: string
   fullName?: string
+  whatsapp?: string
 }
 
 const encoder = new TextEncoder()
