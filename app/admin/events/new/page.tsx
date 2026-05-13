@@ -74,6 +74,8 @@ const defaultForm: FormData = {
   speakerId: null, speakers: [], customFields: [], classes: [],
 }
 
+const DEFAULT_POSTER_URL = 'https://picsum.photos/seed/mpj-event-new/800/450'
+
 function SectionHeader({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
   return (
     <div className="flex items-start gap-3 mb-5">
@@ -86,6 +88,23 @@ function SectionHeader({ icon, title, desc }: { icon: React.ReactNode; title: st
       </div>
     </div>
   )
+}
+
+async function uploadPoster(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const response = await fetch('/api/admin/uploads/poster', {
+    method: 'POST',
+    body: formData,
+  })
+  const payload = await response.json()
+
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.error || 'Gagal mengupload poster')
+  }
+
+  return String(payload.url)
 }
 
 export default function NewEventPage() {
@@ -224,6 +243,7 @@ export default function NewEventPage() {
         throw new Error(`Kuota kelas "${invalidClass.name}" harus berupa angka positif`)
       }
 
+      const posterUrl = form.posterFile ? await uploadPoster(form.posterFile) : DEFAULT_POSTER_URL
       const startDate = new Date(`${form.date}T${form.time || '00:00'}`)
       const response = await fetch('/api/admin/events', {
         method: 'POST',
@@ -232,8 +252,8 @@ export default function NewEventPage() {
           title: form.name,
           slug: form.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''),
           category: form.category,
-          poster_url: form.posterPreview || 'https://picsum.photos/seed/mpj-event-new/800/450',
-          posterUrl: form.posterPreview || 'https://picsum.photos/seed/mpj-event-new/800/450',
+          poster_url: posterUrl,
+          posterUrl,
           description: form.description,
           location_gmaps: form.locationLink,
           locationMapsUrl: form.locationLink,
@@ -424,6 +444,10 @@ export default function NewEventPage() {
             onFileSelect={(file, previewUrl) => {
               update('posterFile', file)
               update('posterPreview', previewUrl)
+            }}
+            onClear={() => {
+              update('posterFile', null)
+              update('posterPreview', '')
             }}
           />
         </div>
