@@ -17,9 +17,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { dummyParticipants, dummySpeakers } from '@/lib/dummy'
 import { normalizeEvent } from '@/lib/event-api'
-import type { Event, EventCategory, EventStatus } from '@/types'
+import type { Event, EventCategory, EventStatus, Speaker } from '@/types'
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft',
@@ -56,12 +55,12 @@ function formatCurrency(value: number) {
   }).format(value)
 }
 
-function getEventQuota(event: Event, participantCount: number) {
-  return event.max_participants ?? Math.max(participantCount, 1)
+function getEventQuota(event: Event) {
+  return event.max_participants ?? event.quota ?? Math.max(event.registeredCount ?? event.current_participants ?? 0, 1)
 }
 
-function getEventSpeakers(event: Event) {
-  return dummySpeakers.filter((speaker) => speaker.id === event.speaker_id)
+function getEventSpeakers(event: Event, speakers: Speaker[]) {
+  return speakers.filter((speaker) => speaker.id === event.speaker_id)
 }
 
 function getCrewNeeds(event: Event) {
@@ -72,6 +71,7 @@ function getCrewNeeds(event: Event) {
 
 export default function MasterEventPage() {
   const [events, setEvents] = useState<Event[]>([])
+  const [speakers, setSpeakers] = useState<Speaker[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
@@ -85,15 +85,25 @@ export default function MasterEventPage() {
       try {
         setIsLoading(true)
         setError('')
-        const response = await fetch('/api/admin/events', { cache: 'no-store' })
-        const payload = await response.json()
+        const [eventsResponse, speakersResponse] = await Promise.all([
+          fetch('/api/admin/events', { cache: 'no-store' }),
+          fetch('/api/admin/speakers', { cache: 'no-store' }),
+        ])
+        const [eventsPayload, speakersPayload] = await Promise.all([
+          eventsResponse.json(),
+          speakersResponse.json(),
+        ])
 
-        if (!response.ok || !payload.ok) {
-          throw new Error(payload.error || 'Gagal memuat data event')
+        if (!eventsResponse.ok || !eventsPayload.ok) {
+          throw new Error(eventsPayload.error || 'Gagal memuat data event')
+        }
+        if (!speakersResponse.ok || !speakersPayload.ok) {
+          throw new Error(speakersPayload.error || 'Gagal memuat data narasumber')
         }
 
         if (active) {
-          setEvents(payload.data.map(normalizeEvent))
+          setEvents(eventsPayload.data.map(normalizeEvent))
+          setSpeakers(speakersPayload.data)
         }
       } catch (loadError) {
         if (active) {
@@ -222,10 +232,10 @@ export default function MasterEventPage() {
           ) : (
             <div className="grid gap-4 xl:grid-cols-2">
               {filteredEvents.map((event) => {
-                const participantCount = dummyParticipants.filter((participant) => participant.event_id === event.id).length
-                const quota = getEventQuota(event, participantCount)
+                const participantCount = event.registeredCount ?? event.current_participants ?? 0
+                const quota = getEventQuota(event)
                 const quotaPercent = Math.min(100, Math.round((participantCount / Math.max(quota, 1)) * 100))
-                const speakers = getEventSpeakers(event)
+                const eventSpeakers = getEventSpeakers(event, speakers)
                 const readOnly = event.status === 'FINISHED' || event.status === 'COMPLETED'
 
                 return (
@@ -269,7 +279,7 @@ export default function MasterEventPage() {
 
                       <div className="grid gap-3 sm:grid-cols-2">
                         <SummaryBox label="Pricing" value={event.is_paid ? `${formatCurrency(event.price_niam)} / ${formatCurrency(event.price_public)}` : 'Gratis'} />
-                        <SummaryBox label="Narasumber" value={speakers.length > 0 ? speakers.map((speaker) => speaker.nama_lengkap).join(', ') : 'Belum dipilih'} />
+                        <SummaryBox label="Narasumber" value={eventSpeakers.length > 0 ? eventSpeakers.map((speaker) => speaker.nama_lengkap).join(', ') : 'Belum dipilih'} />
                       </div>
 
                       <div className="rounded-2xl border border-gray-100 p-3">

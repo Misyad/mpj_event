@@ -235,7 +235,12 @@ export async function ensureRbacSchema(connection: PoolConnection) {
 }
 
 async function upsertRole(connection: PoolConnection, code: string, name: string, description: string) {
-  const id = code === AUTH_ROLES.superAdmin ? 'role-super-admin' : 'role-regional-admin'
+  const roleIds: Record<AuthRole, string> = {
+    [AUTH_ROLES.superAdmin]: 'role-super-admin',
+    [AUTH_ROLES.regionalAdmin]: 'role-regional-admin',
+    [AUTH_ROLES.user]: 'role-user',
+  }
+  const id = roleIds[code as AuthRole] ?? `role-${code}`
   await connection.query(
     `
       INSERT INTO roles (id, code, name, description, is_system)
@@ -260,6 +265,7 @@ async function seedRbacDefaults(connection: PoolConnection) {
 
   const superRoleId = await upsertRole(connection, AUTH_ROLES.superAdmin, 'Super Admin', 'Full access seluruh sistem')
   const regionalRoleId = await upsertRole(connection, AUTH_ROLES.regionalAdmin, 'Admin Regional', 'Admin dengan akses scoped regional')
+  const userRoleId = await upsertRole(connection, AUTH_ROLES.user, 'User Publik', 'Akses peserta publik')
 
   for (const permission of ADMIN_PERMISSIONS) {
     const moduleName = permission === '*' ? 'system' : permission.split('.')[0]
@@ -280,6 +286,7 @@ async function seedRbacDefaults(connection: PoolConnection) {
 
   await assignPermissions(connection, superRoleId, ['*'])
   await assignPermissions(connection, regionalRoleId, ADMIN_REGIONAL_DEFAULT_PERMISSIONS)
+  await assignPermissions(connection, userRoleId, [])
 
   await upsertSeedUser(connection, {
     id: 'user-super-admin',
@@ -295,6 +302,13 @@ async function seedRbacDefaults(connection: PoolConnection) {
     password: 'Admin123!',
     roleId: regionalRoleId,
     regionalId: 'regional-jatim',
+  })
+  await upsertSeedUser(connection, {
+    id: 'user-public-demo',
+    fullName: 'User Peserta MPJ',
+    email: 'user@mpj.local',
+    password: 'Admin123!',
+    roleId: userRoleId,
   })
 }
 
