@@ -29,6 +29,7 @@ export default async function RegisterPage({ params }: { params: Promise<{ id: s
         userId: session?.userId ?? null,
         fullName: session?.fullName ?? null,
         email: session?.email ?? null,
+        whatsapp: session?.whatsapp ?? null,
       }}
     />
   )

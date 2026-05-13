@@ -4,6 +4,7 @@ import { Calendar } from 'lucide-react'
 import { dummyEvents } from '@/lib/dummy'
 import { getEventsFromDb } from '@/lib/server/events'
 import { LoginEntryDialog } from '@/components/auth/LoginEntryDialog'
+import { BrandMark } from '@/components/BrandMark'
 
 const VISIBLE: EventStatus[] = ['APPROVED', 'FINISHED', 'COMPLETED']
 
@@ -30,9 +31,7 @@ export default async function Home() {
       {/* Header */}
       <header className="bg-white px-4 py-4 flex items-center justify-between border-b border-gray-100">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-[#1B4332] flex items-center justify-center">
-            <Calendar className="w-4 h-4 text-[#C9A227]" />
-          </div>
+          <BrandMark className="h-5 w-5" />
           <span className="font-extrabold text-[#1B4332] text-lg tracking-tight">MPJ Event</span>
         </div>
         <LoginEntryDialog />

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { Calendar, ChevronRight, CreditCard, Database, KeyRound, LayoutDashboard, Menu, QrCode, UserCheck, Users2, UsersRound, X } from 'lucide-react'
 import { LogoutButton } from '@/components/auth/LogoutButton'
+import { BrandMark } from '@/components/BrandMark'
 import { cn } from '@/lib/utils'
 
 const navItems = [
@@ -54,9 +55,7 @@ export default function AdminPusatLayout({ children }: { children: React.ReactNo
     <div className="min-h-screen bg-[#f0f4f1] flex">
       <aside className="hidden md:flex flex-col w-64 bg-[#1B4332] min-h-screen fixed left-0 top-0 z-30 border-r border-white/5">
         <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
-          <div className="w-9 h-9 rounded-xl bg-[#C9A227] flex items-center justify-center shadow">
-            <Calendar className="w-4.5 h-4.5 text-[#1B4332]" />
-          </div>
+          <BrandMark className="h-5 w-5" />
           <div>
             <p className="font-extrabold text-white text-sm tracking-tight leading-tight">MPJ Event</p>
             <p className="text-white/40 text-[10px] font-medium tracking-wide uppercase">Admin Pusat</p>
@@ -86,9 +85,7 @@ export default function AdminPusatLayout({ children }: { children: React.ReactNo
 
       <div className="md:hidden fixed top-0 left-0 right-0 h-14 bg-[#1B4332] flex items-center justify-between px-4 z-30 border-b border-white/10 shadow-md">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-[#C9A227] flex items-center justify-center">
-            <Calendar className="w-3.5 h-3.5 text-[#1B4332]" />
-          </div>
+          <BrandMark className="h-4 w-4" />
           <div>
             <p className="font-extrabold text-white text-sm leading-none">MPJ Event</p>
             <p className="text-white/40 text-[9px] uppercase tracking-wide">Admin Pusat</p>
@@ -109,9 +106,7 @@ export default function AdminPusatLayout({ children }: { children: React.ReactNo
           <aside className="relative w-72 max-w-[85vw] bg-[#1B4332] flex flex-col h-full z-50 shadow-2xl" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
               <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-lg bg-[#C9A227] flex items-center justify-center">
-                  <Calendar className="w-3.5 h-3.5 text-[#1B4332]" />
-                </div>
+                <BrandMark className="h-4 w-4" />
                 <p className="font-extrabold text-white text-sm">MPJ Admin Pusat</p>
               </div>
               <button type="button" onClick={() => setOpen(false)} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-colors">
