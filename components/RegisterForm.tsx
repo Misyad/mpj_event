@@ -12,7 +12,6 @@ import {
   Search,
   Upload,
   UserRound,
-  XCircle,
 } from 'lucide-react'
 import {
   getInstitutionOptions,
@@ -102,7 +101,6 @@ export function RegisterForm({
   })
   const [uniqueCode] = useState(generateUniqueCode)
   const [member, setMember] = useState<MemberLookup | null>(null)
-  const [memberChecked, setMemberChecked] = useState(false)
   const [isCheckingMember, setIsCheckingMember] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -155,7 +153,6 @@ export function RegisterForm({
     const value = form.niam.trim()
     if (!value) {
       setMember(null)
-      setMemberChecked(false)
       return
     }
 
@@ -168,7 +165,6 @@ export function RegisterForm({
 
       const nextMember = payload.valid ? payload.data : null
       setMember(nextMember)
-      setMemberChecked(true)
 
       if (nextMember) {
         const matchedInstitution = institutionOptions.find(
@@ -183,7 +179,6 @@ export function RegisterForm({
       }
     } catch (error) {
       setMember(null)
-      setMemberChecked(false)
     } finally {
       setIsCheckingMember(false)
     }
@@ -393,7 +388,7 @@ export function RegisterForm({
             <div className="rounded-2xl bg-white p-4 shadow-sm">
               <p className="text-lg font-extrabold text-[#1B4332]">ID Anggota MPJ</p>
               <p className="mt-1 text-xs leading-relaxed text-gray-500">
-                Isi NIAM jika punya. Jika valid, data anggota dan harga khusus akan dipakai otomatis.
+                Isi jika Anda anggota MPJ. Kosongkan jika belum memiliki NIAM.
               </p>
               <div className="mt-4 flex gap-2">
                 <input
@@ -403,7 +398,6 @@ export function RegisterForm({
                   onChange={(eventValue) => {
                     setForm((current) => ({ ...current, niam: eventValue.target.value }))
                     setMember(null)
-                    setMemberChecked(false)
                   }}
                   className={inputClass}
                 />
@@ -421,16 +415,10 @@ export function RegisterForm({
                 <div className="mt-3 flex items-start gap-3 rounded-2xl bg-[#e8f0ec] p-4">
                   <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-[#1B4332]" />
                   <div>
-                    <p className="text-sm font-bold text-[#1B4332]">{member.fullName}</p>
+                    <p className="text-sm font-bold text-[#1B4332]">Data anggota terdeteksi</p>
+                    <p className="mt-1 text-sm font-semibold text-[#1B4332]">{member.fullName}</p>
                     <p className="text-xs text-gray-500">{member.niam} - {member.unit || 'Unit belum tercatat'}</p>
-                  </div>
-                </div>
-              ) : memberChecked ? (
-                <div className="mt-3 flex items-start gap-3 rounded-2xl bg-amber-50 p-4">
-                  <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-                  <div>
-                    <p className="text-sm font-bold text-amber-700">NIAM tidak ditemukan</p>
-                    <p className="text-xs text-amber-700/75">Kamu tetap bisa daftar dengan data manual dan harga umum.</p>
+                    <p className="mt-1 text-xs text-[#1B4332]/75">Benefit anggota akan diterapkan otomatis.</p>
                   </div>
                 </div>
               ) : null}
@@ -528,9 +516,6 @@ export function RegisterForm({
 
             <div className="rounded-2xl bg-white p-4 shadow-sm">
               <SummaryRow label="Jalur" value={isNiamRegistration ? 'NIAM' : 'Umum'} />
-              <div className="mt-2">
-                <SummaryRow label="Harga final" value={event.is_paid ? formatRupiah(finalPrice) : 'Gratis'} />
-              </div>
             </div>
 
             <button type="button" className={btnGold} disabled={!canContinueToPayment} onClick={() => setStep(2)}>
