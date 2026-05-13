@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { checkInTicket } from '@/lib/server/events'
+import { requireAdminPermission } from '@/lib/server/rbac'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
   try {
+    await requireAdminPermission(request, 'participants.verify')
     const payload = await request.json()
     const ticketCode = String(payload.ticketCode || payload.qr_token || payload.token || '').trim()
 
