@@ -57,6 +57,8 @@ type SubmittedPayment = {
   paymentId: string | null
 }
 
+type RegisterErrorState = '' | 'submit-unavailable'
+
 function generateUniqueCode() {
   return Math.floor(Math.random() * 900) + 100
 }
@@ -106,6 +108,7 @@ export function RegisterForm({
   const [submitted, setSubmitted] = useState(false)
   const [submittedPayment, setSubmittedPayment] = useState<SubmittedPayment | null>(null)
   const [submitError, setSubmitError] = useState('')
+  const [errorState, setErrorState] = useState<RegisterErrorState>('')
   const [institutionOpen, setInstitutionOpen] = useState(false)
   const [institutionQuery, setInstitutionQuery] = useState('')
 
@@ -180,8 +183,7 @@ export function RegisterForm({
       }
     } catch (error) {
       setMember(null)
-      setMemberChecked(true)
-      setSubmitError(error instanceof Error ? error.message : 'Validasi NIAM gagal')
+      setMemberChecked(false)
     } finally {
       setIsCheckingMember(false)
     }
@@ -219,6 +221,7 @@ export function RegisterForm({
 
   async function submitRegistration() {
     setSubmitError('')
+    setErrorState('')
     setIsSubmitting(true)
 
     try {
@@ -241,7 +244,14 @@ export function RegisterForm({
       })
       const payload = await response.json()
 
-      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Pendaftaran gagal')
+      if (!response.ok || !payload.ok) {
+        const message = String(payload.error || '')
+        if (message.toLowerCase().includes('econnrefused') || message.toLowerCase().includes('connect ')) {
+          setErrorState('submit-unavailable')
+          return
+        }
+        throw new Error(payload.error || 'Pendaftaran gagal')
+      }
 
       setSubmittedPayment({
         provider: payload.paymentProvider ?? null,
@@ -254,7 +264,12 @@ export function RegisterForm({
         setTimeout(() => router.push(`/ticket?token=${encodeURIComponent(token)}`), 800)
       }
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : 'Pendaftaran gagal')
+      const message = error instanceof Error ? error.message : 'Pendaftaran gagal'
+      if (message.toLowerCase().includes('econnrefused') || message.toLowerCase().includes('connect ')) {
+        setErrorState('submit-unavailable')
+      } else {
+        setSubmitError(message)
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -342,8 +357,17 @@ export function RegisterForm({
       </div>
 
       <div className="flex-1 space-y-4 px-4 py-6">
+        {errorState === 'submit-unavailable' ? (
+          <div className="rounded-2xl border border-white/80 bg-white p-4 shadow-sm">
+            <p className="text-sm font-bold text-[#1B4332]">Pendaftaran belum bisa diproses</p>
+            <p className="mt-1 text-sm leading-relaxed text-gray-500">
+              Sistem sedang belum dapat menyimpan pendaftaran. Silakan coba kembali nanti.
+            </p>
+          </div>
+        ) : null}
+
         {submitError ? (
-          <div className="flex items-start gap-2 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-700">
+          <div className="flex items-start gap-2 rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
             {submitError}
           </div>

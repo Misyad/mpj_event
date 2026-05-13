@@ -71,8 +71,8 @@ export default async function Home() {
             <div className="w-16 h-16 rounded-full bg-[#e8f0ec] flex items-center justify-center mb-4">
               <Calendar className="w-7 h-7 text-[#1B4332]" />
             </div>
-            <p className="font-bold text-[#1B4332] text-lg">Belum ada event</p>
-            <p className="text-sm text-gray-400 mt-1">Pantau terus untuk update terbaru</p>
+            <p className="font-bold text-[#1B4332] text-lg">Belum ada event tersedia</p>
+            <p className="text-sm text-gray-400 mt-1">Event terbaru MPJ akan tampil di sini.</p>
           </div>
         )}
       </main>

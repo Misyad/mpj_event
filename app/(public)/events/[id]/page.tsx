@@ -1,11 +1,11 @@
 import type { Metadata } from 'next'
-import { EventDetailView, getEventForDetail } from '@/app/(public)/events/event-detail'
+import { EventDetailView, EventNotFoundState, getEventForDetail } from '@/app/(public)/events/event-detail'
 
 export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params
-  const event = await getEventForDetail(id)
+  const { event } = await getEventForDetail(id)
   if (!event) return { title: 'Event tidak ditemukan' }
   return {
     title: `${event.title} - MPJ Apps`,
@@ -20,5 +20,9 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function EventDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  return <EventDetailView identifier={id} />
+  try {
+    return <EventDetailView identifier={id} />
+  } catch {
+    return <EventNotFoundState />
+  }
 }

@@ -6,10 +6,19 @@ import { getEventFromDb } from '@/lib/server/events'
 import { BadgeStatus } from '@/components/BadgeStatus'
 import { QuotaBadge } from '@/components/QuotaBadge'
 import { CountdownTimer } from '@/components/CountdownTimer'
-import { Calendar, MapPin, ArrowLeft, Wallet } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Calendar, MapPin, RefreshCw, Wallet } from 'lucide-react'
 
 export async function getEventForDetail(identifier: string) {
-  return (await getEventFromDb(identifier).catch(() => null)) ?? getEventById(identifier)
+  let dbUnavailable = false
+  const event = await getEventFromDb(identifier).catch(() => {
+    dbUnavailable = true
+    return null
+  })
+
+  return {
+    event: event ?? getEventById(identifier) ?? null,
+    dbUnavailable,
+  }
 }
 
 function formatDate(dateStr: string) {
@@ -23,7 +32,37 @@ function formatTime(dateStr: string) {
 }
 
 export async function EventDetailView({ identifier }: { identifier: string }) {
-  const event = await getEventForDetail(identifier)
+  const { event, dbUnavailable } = await getEventForDetail(identifier)
+  if (!event && dbUnavailable) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#f0f4f0] px-4 py-8">
+        <div className="w-full max-w-sm rounded-[2rem] border border-white/80 bg-white p-6 text-center shadow-sm">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#e8f0ec] text-[#1B4332]">
+            <AlertCircle className="h-7 w-7" />
+          </div>
+          <h1 className="mt-5 text-xl font-extrabold text-[#1B4332]">Detail event belum bisa dimuat</h1>
+          <p className="mt-2 text-sm leading-relaxed text-gray-500">
+            Sistem sedang belum dapat memeriksa data event. Silakan coba kembali nanti.
+          </p>
+          <div className="mt-6 flex flex-col gap-3">
+            <Link
+              href={`/events/${encodeURIComponent(identifier)}`}
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-full bg-[#1B4332] px-5 text-sm font-bold text-white transition hover:bg-[#14532d]"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Coba Lagi
+            </Link>
+            <Link
+              href="/"
+              className="inline-flex h-12 items-center justify-center rounded-full border border-[#1B4332]/15 bg-white px-5 text-sm font-bold text-[#1B4332] transition hover:bg-[#f4f7f5]"
+            >
+              Kembali ke Beranda
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
   if (!event) notFound()
 
   const isOpen = event.status === 'APPROVED' || event.status === 'approved'
@@ -135,6 +174,30 @@ export async function EventDetailView({ identifier }: { identifier: string }) {
             Pendaftaran Ditutup
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+export function EventNotFoundState() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[#f0f4f0] px-4 py-8">
+      <div className="w-full max-w-sm rounded-[2rem] border border-white/80 bg-white p-6 text-center shadow-sm">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#e8f0ec] text-[#1B4332]">
+          <AlertCircle className="h-7 w-7" />
+        </div>
+        <h1 className="mt-5 text-xl font-extrabold text-[#1B4332]">Event tidak ditemukan</h1>
+        <p className="mt-2 text-sm leading-relaxed text-gray-500">
+          Event mungkin belum dipublikasikan atau tautan tidak sesuai.
+        </p>
+        <div className="mt-6">
+          <Link
+            href="/"
+            className="inline-flex h-12 w-full items-center justify-center rounded-full bg-[#1B4332] px-5 text-sm font-bold text-white transition hover:bg-[#14532d]"
+          >
+            Kembali ke Beranda
+          </Link>
+        </div>
       </div>
     </div>
   )
