@@ -1177,6 +1177,11 @@ export async function confirmParticipantManually(eventIdentifier: string, partic
         { participantId },
       )
 
+      if (paymentId) {
+        const { syncPaymentFinanceTransaction } = await import('@/lib/server/finance')
+        await syncPaymentFinanceTransaction(connection, paymentId)
+      }
+
       await connection.commit()
       return mapParticipant(updatedRows[0])
     } catch (error) {
@@ -1767,6 +1772,9 @@ export async function confirmParticipantFromPayment(payload: {
           sourceId: participantId,
           status: payload.status ?? 'verified',
         })
+
+        const { syncPaymentFinanceTransaction } = await import('@/lib/server/finance')
+        await syncPaymentFinanceTransaction(connection, String(paymentRow.id))
       }
 
       await connection.query<ResultSetHeader>(
@@ -1864,6 +1872,8 @@ export async function applyPaymenkuPaymentUpdate(payload: PaymenkuWebhookPayload
           `,
           { participantId: paymentRow.source_id, paymentId: paymentRow.id },
         )
+        const { syncPaymentFinanceTransaction } = await import('@/lib/server/finance')
+        await syncPaymentFinanceTransaction(connection, String(paymentRow.id))
       }
 
       const [rows] = await connection.query<ParticipantRow[]>(

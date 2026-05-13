@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { normalizeEvent } from '@/lib/event-api'
+import { EventFinancePanel } from '@/components/finance/EventFinancePanel'
 import type { Event, Participant, PaymentRecord } from '@/types'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -134,8 +135,6 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
   }
 
   const attendedCount = participants.filter(p => p.attendance_status === 'Attended').length
-  const paidCount = payments.filter(p => p.status === 'Paid').length
-  const totalRevenue = payments.filter(p => p.status === 'Paid').reduce((sum, p) => sum + p.amount, 0)
   const eventCompleted = ['finished', 'completed'].includes(String(event.status).toLowerCase())
 
   return (
@@ -304,63 +303,7 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
 
         {/* Tab 4: Keuangan */}
         <TabsContent value="keuangan" className="mt-4">
-          <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
-              <div className="bg-white rounded-2xl border border-gray-100 p-4 text-center">
-                <p className="text-2xl font-extrabold text-emerald-600">{paidCount}</p>
-                <p className="text-xs text-gray-400 mt-1">Sudah Bayar</p>
-              </div>
-              <div className="bg-white rounded-2xl border border-gray-100 p-4 text-center">
-                <p className="text-2xl font-extrabold text-amber-600">{payments.filter(p => p.status === 'Pending_Approval').length}</p>
-                <p className="text-xs text-gray-400 mt-1">Menunggu Verif</p>
-              </div>
-              <div className="bg-white rounded-2xl border border-gray-100 p-4 text-center">
-                <p className="text-lg font-extrabold text-[#1B4332]">{formatCurrency(totalRevenue)}</p>
-                <p className="text-xs text-gray-400 mt-1">Total Pendapatan</p>
-              </div>
-            </div>
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              <div className="px-5 py-4 border-b border-gray-100">
-                <p className="font-bold text-[#1B4332] text-sm">Log Pembayaran</p>
-              </div>
-              {payments.length === 0 ? (
-                <div className="py-12 text-center text-gray-400 text-sm">Belum ada data pembayaran.</div>
-              ) : (
-                <Table>
-                  <TableHeader><TableRow className="bg-gray-50">
-                    <TableHead className="font-bold text-[#1B4332]">Peserta</TableHead>
-                    <TableHead className="font-bold text-[#1B4332]">Jalur</TableHead>
-                    <TableHead className="font-bold text-[#1B4332]">Nominal</TableHead>
-                    <TableHead className="font-bold text-[#1B4332]">Status</TableHead>
-                    <TableHead className="font-bold text-[#1B4332]">Aksi</TableHead>
-                  </TableRow></TableHeader>
-                  <TableBody>
-                    {payments.map(pay => (
-                      <TableRow key={pay.id} className="hover:bg-green-50/40">
-                        <TableCell className="font-semibold text-[#1B4332] text-sm">{pay.participant_name}</TableCell>
-                        <TableCell><span className={`text-xs font-semibold px-2 py-1 rounded-full ${pay.path === 'NIAM' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>{pay.path}</span></TableCell>
-                        <TableCell className="font-mono text-sm text-gray-700">{formatCurrency(pay.amount)}</TableCell>
-                        <TableCell><span className={`text-xs font-semibold px-2 py-1 rounded-full ${PAYMENT_COLORS[pay.status]}`}>{pay.status}</span></TableCell>
-                        <TableCell>
-                          {pay.status !== 'Paid' && (
-                            <button
-                              type="button"
-                              onClick={() => confirmParticipant(pay.participant_id)}
-                              disabled={confirmingId === pay.participant_id}
-                              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
-                            >
-                              {confirmingId === pay.participant_id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
-                              Confirm
-                            </button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </div>
-          </div>
+          <EventFinancePanel eventId={event.id} />
         </TabsContent>
 
         {/* Tab 5: Absensi */}

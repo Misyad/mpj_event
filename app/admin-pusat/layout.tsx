@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
-import { Calendar, ChevronRight, CreditCard, Database, KeyRound, LayoutDashboard, Menu, QrCode, UserCheck, Users2, UsersRound, X } from 'lucide-react'
+import { Calendar, ChevronRight, CreditCard, Database, KeyRound, LayoutDashboard, Menu, QrCode, ReceiptText, UserCheck, Users2, UsersRound, WalletCards, X } from 'lucide-react'
 import { LogoutButton } from '@/components/auth/LogoutButton'
 import { BrandMark } from '@/components/BrandMark'
 import { cn } from '@/lib/utils'
@@ -16,7 +16,15 @@ const navItems = [
   { href: '/admin-pusat/master-data', label: 'Master Data', icon: Database, exact: false },
   { href: '/admin-pusat/roles', label: 'Role Admin', icon: UsersRound, exact: false },
   { href: '/admin-pusat/permissions', label: 'Permissions', icon: KeyRound, exact: false },
-  { href: '/admin-pusat/payment-gateways', label: 'Payment Gateway', icon: CreditCard, exact: false },
+]
+
+const financeItems = [
+  { href: '/admin-pusat/finance/payment-gateway', label: 'Payment Gateway', icon: CreditCard, exact: false },
+  { href: '/admin-pusat/finance/payments', label: 'Monitoring Payment', icon: ReceiptText, exact: false },
+  { href: '/admin-pusat/finance/recap', label: 'Rekap Keuangan Event', icon: WalletCards, exact: false },
+]
+
+const footerItems = [
   { href: '/scan', label: 'Scan Absensi', icon: QrCode, exact: false },
 ]
 
@@ -65,6 +73,14 @@ export default function AdminPusatLayout({ children }: { children: React.ReactNo
         <nav className="flex-1 px-3 py-4 space-y-0.5">
           <p className="text-[10px] font-bold text-white/25 uppercase tracking-widest px-3 mb-2">Menu Utama</p>
           {navItems.map(({ href, label, icon, exact }) => (
+            <NavItem key={href} href={href} label={label} icon={icon} active={isActive(href, exact)} />
+          ))}
+          <p className="text-[10px] font-bold text-white/25 uppercase tracking-widest px-3 mb-2 mt-4">Keuangan</p>
+          {financeItems.map(({ href, label, icon, exact }) => (
+            <NavItem key={href} href={href} label={label} icon={icon} active={isActive(href, exact)} />
+          ))}
+          <p className="text-[10px] font-bold text-white/25 uppercase tracking-widest px-3 mb-2 mt-4">Operasional</p>
+          {footerItems.map(({ href, label, icon, exact }) => (
             <NavItem key={href} href={href} label={label} icon={icon} active={isActive(href, exact)} />
           ))}
         </nav>
@@ -117,6 +133,14 @@ export default function AdminPusatLayout({ children }: { children: React.ReactNo
             <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
               <p className="text-[10px] font-bold text-white/25 uppercase tracking-widest px-3 mb-2">Menu Utama</p>
               {navItems.map(({ href, label, icon, exact }) => (
+                <NavItem key={href} href={href} label={label} icon={icon} active={isActive(href, exact)} onClick={() => setOpen(false)} />
+              ))}
+              <p className="text-[10px] font-bold text-white/25 uppercase tracking-widest px-3 mb-2 mt-4">Keuangan</p>
+              {financeItems.map(({ href, label, icon, exact }) => (
+                <NavItem key={href} href={href} label={label} icon={icon} active={isActive(href, exact)} onClick={() => setOpen(false)} />
+              ))}
+              <p className="text-[10px] font-bold text-white/25 uppercase tracking-widest px-3 mb-2 mt-4">Operasional</p>
+              {footerItems.map(({ href, label, icon, exact }) => (
                 <NavItem key={href} href={href} label={label} icon={icon} active={isActive(href, exact)} onClick={() => setOpen(false)} />
               ))}
             </nav>

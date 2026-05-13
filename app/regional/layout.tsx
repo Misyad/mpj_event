@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-import { BarChart3, CalendarDays, CreditCard, LayoutDashboard, UserCheck } from 'lucide-react'
+import { BarChart3, CalendarDays, LayoutDashboard, ReceiptText, UserCheck, WalletCards } from 'lucide-react'
 import { BrandMark } from '@/components/BrandMark'
 import { LogoutButton } from '@/components/auth/LogoutButton'
 import { AUTH_ROLES } from '@/lib/auth/roles'
@@ -11,14 +11,19 @@ const menuItems: Array<{ href: string; label: string; icon: typeof LayoutDashboa
   { href: '/regional/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/regional/events', label: 'Event Regional', icon: CalendarDays, permission: 'events.read' },
   { href: '/regional/participants', label: 'Peserta', icon: UserCheck, permission: 'participants.read' },
-  { href: '/regional/payment-gateway', label: 'Payment Gateway', icon: CreditCard, permission: 'events.create' },
   { href: '/regional/dashboard', label: 'Analytics', icon: BarChart3, permission: 'analytics.read' },
+]
+
+const financeItems: Array<{ href: string; label: string; icon: typeof LayoutDashboard; permission?: AdminPermission }> = [
+  { href: '/regional/finance/payments', label: 'Monitoring Payment', icon: ReceiptText, permission: 'events.read' },
+  { href: '/regional/finance/recap', label: 'Rekap Keuangan Event', icon: WalletCards, permission: 'events.read' },
 ]
 
 export default async function RegionalLayout({ children }: { children: ReactNode }) {
   const session = await getCurrentAdminSession(AUTH_ROLES.regionalAdmin)
   const permissions = session?.permissions ?? []
   const visibleItems = menuItems.filter((item) => !item.permission || hasPermission(permissions, item.permission))
+  const visibleFinanceItems = financeItems.filter((item) => !item.permission || hasPermission(permissions, item.permission))
 
   return (
     <div className="min-h-screen bg-[#eef3ef] text-[#0f2f25]">
@@ -32,6 +37,16 @@ export default async function RegionalLayout({ children }: { children: ReactNode
         </div>
         <nav className="space-y-1 p-3">
           {visibleItems.map((item) => {
+            const Icon = item.icon
+            return (
+              <Link key={item.label} href={item.href} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-white/75 transition hover:bg-white/10 hover:text-white">
+                <Icon className="h-4 w-4" />
+                {item.label}
+              </Link>
+            )
+          })}
+          <p className="px-3 pt-4 text-[10px] font-bold uppercase tracking-widest text-white/30">Keuangan</p>
+          {visibleFinanceItems.map((item) => {
             const Icon = item.icon
             return (
               <Link key={item.label} href={item.href} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-white/75 transition hover:bg-white/10 hover:text-white">
