@@ -177,7 +177,7 @@ export function RegisterForm({
           institutionId: current.institutionId || matchedInstitution?.id || null,
         }))
       }
-    } catch (error) {
+    } catch {
       setMember(null)
     } finally {
       setIsCheckingMember(false)

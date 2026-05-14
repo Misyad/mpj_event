@@ -112,9 +112,15 @@ export function FinanceRecapClient({ title, description }: { title: string; desc
           ))}
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:w-[360px] lg:grid-cols-2">
-          <Input type="date" value={dateStart} onChange={(event) => setDateStart(event.target.value)} className="h-10 rounded-xl bg-white" />
-          <Input type="date" value={dateEnd} onChange={(event) => setDateEnd(event.target.value)} className="h-10 rounded-xl bg-white" />
+        <div className="grid gap-3 sm:grid-cols-2 lg:w-[420px] lg:grid-cols-2">
+          <div className="space-y-1.5">
+            <p className="text-xs font-semibold text-gray-500">Tanggal mulai</p>
+            <Input type="date" value={dateStart} onChange={(event) => setDateStart(event.target.value)} className="h-10 rounded-xl bg-white" />
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-xs font-semibold text-gray-500">Tanggal akhir</p>
+            <Input type="date" value={dateEnd} onChange={(event) => setDateEnd(event.target.value)} className="h-10 rounded-xl bg-white" />
+          </div>
         </div>
 
         <div className="rounded-2xl border border-gray-100 bg-white shadow-sm">
@@ -123,33 +129,64 @@ export function FinanceRecapClient({ title, description }: { title: string; desc
           ) : rows.length === 0 ? (
             <div className="p-10 text-center text-sm font-semibold text-gray-500">Belum ada transaksi keuangan.</div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-gray-50">
-                  <TableHead>Event</TableHead>
-                  <TableHead>Scope</TableHead>
-                  <TableHead>Pemasukan</TableHead>
-                  <TableHead>Pengeluaran</TableHead>
-                  <TableHead>Saldo</TableHead>
-                  <TableHead>Transaksi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <>
+              <div className="hidden overflow-x-auto md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-50">
+                      <TableHead>Event</TableHead>
+                      <TableHead>Scope</TableHead>
+                      <TableHead className="text-right">Pemasukan</TableHead>
+                      <TableHead className="text-right">Pengeluaran</TableHead>
+                      <TableHead className="text-right">Saldo</TableHead>
+                      <TableHead className="text-right">Transaksi</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map((row) => (
+                      <TableRow key={row.eventId}>
+                        <TableCell className="font-semibold text-[#1B4332]">{row.eventTitle}</TableCell>
+                        <TableCell>{row.scope}{row.regionId ? ` / ${row.regionId}` : ''}</TableCell>
+                        <TableCell className="text-right font-mono text-emerald-700">{formatCurrency(row.totalIncome)}</TableCell>
+                        <TableCell className="text-right font-mono text-red-600">{formatCurrency(row.totalExpense)}</TableCell>
+                        <TableCell className="text-right font-mono font-bold">{formatCurrency(row.balance)}</TableCell>
+                        <TableCell className="text-right">{row.transactionCount}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <div className="space-y-3 p-3 md:hidden">
                 {rows.map((row) => (
-                  <TableRow key={row.eventId}>
-                    <TableCell className="font-semibold text-[#1B4332]">{row.eventTitle}</TableCell>
-                    <TableCell>{row.scope}{row.regionId ? ` / ${row.regionId}` : ''}</TableCell>
-                    <TableCell className="font-mono text-emerald-700">{formatCurrency(row.totalIncome)}</TableCell>
-                    <TableCell className="font-mono text-red-600">{formatCurrency(row.totalExpense)}</TableCell>
-                    <TableCell className="font-mono font-bold">{formatCurrency(row.balance)}</TableCell>
-                    <TableCell>{row.transactionCount}</TableCell>
-                  </TableRow>
+                  <div key={row.eventId} className="rounded-xl border border-gray-100 p-4">
+                    <div className="mb-3 flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-bold text-[#1B4332]">{row.eventTitle}</p>
+                        <p className="text-xs text-gray-500">{row.scope}{row.regionId ? ` / ${row.regionId}` : ''}</p>
+                      </div>
+                      <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-600">{row.transactionCount} trx</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <AmountBox label="Masuk" value={formatCurrency(row.totalIncome)} className="text-emerald-700" />
+                      <AmountBox label="Keluar" value={formatCurrency(row.totalExpense)} className="text-red-600" />
+                      <AmountBox label="Saldo" value={formatCurrency(row.balance)} className="text-[#1B4332]" />
+                    </div>
+                  </div>
                 ))}
-              </TableBody>
-            </Table>
+              </div>
+            </>
           )}
         </div>
       </div>
     </main>
+  )
+}
+
+function AmountBox({ label, value, className }: { label: string; value: string; className: string }) {
+  return (
+    <div className="rounded-lg bg-gray-50 p-2">
+      <p className="text-[10px] font-semibold text-gray-400">{label}</p>
+      <p className={`mt-1 break-words font-mono font-bold ${className}`}>{value}</p>
+    </div>
   )
 }

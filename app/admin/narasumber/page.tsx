@@ -3,10 +3,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { ExternalLink, Phone, Plus, Search } from 'lucide-react'
+import { ExternalLink, Pencil, Phone, Plus, Search, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import type { Speaker, SpeakerCategory } from '@/types'
 
 const CATEGORY_COLORS: Record<SpeakerCategory, string> = {
@@ -20,6 +23,37 @@ const CATEGORY_COLORS: Record<SpeakerCategory, string> = {
 
 const CATEGORIES: SpeakerCategory[] = ['Tech', 'Bisnis', 'Desain', 'Jurnalistik', 'Keagamaan', 'Lainnya']
 
+type SpeakerForm = {
+  nama_lengkap: string
+  alamat: string
+  kategori: SpeakerCategory
+  no_telp: string
+  portfolio_url: string
+  foto_url: string
+  bio: string
+  keahlian: string
+}
+
+function toSpeakerForm(speaker: Speaker): SpeakerForm {
+  return {
+    nama_lengkap: speaker.nama_lengkap,
+    alamat: speaker.alamat,
+    kategori: speaker.kategori,
+    no_telp: speaker.no_telp,
+    portfolio_url: speaker.portfolio_url,
+    foto_url: speaker.foto_url,
+    bio: speaker.bio,
+    keahlian: speaker.keahlian.join(', '),
+  }
+}
+
+function toSpeakerPayload(form: SpeakerForm) {
+  return {
+    ...form,
+    keahlian: form.keahlian.split(',').map((item) => item.trim()).filter(Boolean),
+  }
+}
+
 export default function NarasumberPage() {
   const [search, setSearch] = useState('')
   const [kategoriFilter, setKategoriFilter] = useState<string>('ALL')
@@ -27,6 +61,10 @@ export default function NarasumberPage() {
   const [speakers, setSpeakers] = useState<Speaker[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+  const [editingSpeaker, setEditingSpeaker] = useState<Speaker | null>(null)
+  const [editForm, setEditForm] = useState<SpeakerForm | null>(null)
+  const [deletingSpeaker, setDeletingSpeaker] = useState<Speaker | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -71,8 +109,51 @@ export default function NarasumberPage() {
     })
   }, [kategoriFilter, keahlianFilter, search, speakers])
 
-  function sendWhatsApp(speaker: Speaker) {
-    setSpeakers((prev) => prev.map((item) => (item.id === speaker.id ? { ...item, whatsapp_notif_sent: true } : item)))
+  const completeContactCount = speakers.filter((speaker) => speaker.no_telp && speaker.portfolio_url).length
+  const activeCategoryCount = new Set(speakers.map((speaker) => speaker.kategori)).size
+
+  function startEdit(speaker: Speaker) {
+    setEditingSpeaker(speaker)
+    setEditForm(toSpeakerForm(speaker))
+  }
+
+  async function saveEdit() {
+    if (!editingSpeaker || !editForm) return
+    try {
+      setIsSaving(true)
+      setError('')
+      const response = await fetch(`/api/admin/speakers/${editingSpeaker.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(toSpeakerPayload(editForm)),
+      })
+      const payload = await response.json()
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal menyimpan narasumber')
+      setSpeakers((current) => current.map((speaker) => (speaker.id === editingSpeaker.id ? payload.data : speaker)))
+      setEditingSpeaker(null)
+      setEditForm(null)
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Gagal menyimpan narasumber')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function deleteSpeaker() {
+    if (!deletingSpeaker) return
+    try {
+      setIsSaving(true)
+      setError('')
+      const response = await fetch(`/api/admin/speakers/${deletingSpeaker.id}`, { method: 'DELETE' })
+      const payload = await response.json()
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal menghapus narasumber')
+      setSpeakers((current) => current.filter((speaker) => speaker.id !== deletingSpeaker.id))
+      setDeletingSpeaker(null)
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Gagal menghapus narasumber')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return (
@@ -98,8 +179,8 @@ export default function NarasumberPage() {
       <div className="grid grid-cols-3 gap-3">
         {[
           { label: 'Total', value: speakers.length, color: 'text-[#1B4332]' },
-          { label: 'Notif Terkirim', value: speakers.filter((speaker) => speaker.whatsapp_notif_sent).length, color: 'text-emerald-600' },
-          { label: 'Belum Notif', value: speakers.filter((speaker) => !speaker.whatsapp_notif_sent).length, color: 'text-amber-600' },
+          { label: 'Kategori Aktif', value: activeCategoryCount, color: 'text-emerald-600' },
+          { label: 'Kontak Lengkap', value: completeContactCount, color: 'text-amber-600' },
         ].map((stat) => (
           <div key={stat.label} className="bg-white rounded-2xl border border-gray-100 p-4 text-center shadow-sm">
             <p className={`text-2xl font-extrabold ${stat.color}`}>{stat.value}</p>
@@ -206,21 +287,107 @@ export default function NarasumberPage() {
                 ) : null}
                 <button
                   type="button"
-                  onClick={() => sendWhatsApp(speaker)}
-                  className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors ${
-                    speaker.whatsapp_notif_sent
-                      ? 'bg-emerald-100 text-emerald-700 cursor-default'
-                      : 'bg-green-500 text-white hover:bg-green-600'
-                  }`}
-                  disabled={speaker.whatsapp_notif_sent}
+                  onClick={() => startEdit(speaker)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-600 transition-colors hover:border-[#1B4332] hover:text-[#1B4332]"
                 >
-                  {speaker.whatsapp_notif_sent ? 'Terkirim' : 'Kirim WA'}
+                  <Pencil className="h-3 w-3" />
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDeletingSpeaker(speaker)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-red-100 px-2.5 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Delete
                 </button>
               </div>
             </div>
           ))}
         </div>
       )}
+
+      <Dialog open={Boolean(editingSpeaker)} onOpenChange={(open) => {
+        if (!open) {
+          setEditingSpeaker(null)
+          setEditForm(null)
+        }
+      }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Narasumber</DialogTitle>
+            <DialogDescription>Perbarui data pembicara yang dipakai di event.</DialogDescription>
+          </DialogHeader>
+          {editForm ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>Nama Lengkap</Label>
+                <Input value={editForm.nama_lengkap} onChange={(event) => setEditForm((current) => current ? { ...current, nama_lengkap: event.target.value } : current)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Kategori</Label>
+                <Select value={editForm.kategori} onValueChange={(value) => setEditForm((current) => current ? { ...current, kategori: value as SpeakerCategory } : current)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Kategori" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CATEGORIES.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Alamat</Label>
+                <Input value={editForm.alamat} onChange={(event) => setEditForm((current) => current ? { ...current, alamat: event.target.value } : current)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>No. Telepon</Label>
+                <Input value={editForm.no_telp} onChange={(event) => setEditForm((current) => current ? { ...current, no_telp: event.target.value } : current)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Portfolio URL</Label>
+                <Input value={editForm.portfolio_url} onChange={(event) => setEditForm((current) => current ? { ...current, portfolio_url: event.target.value } : current)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Foto URL</Label>
+                <Input value={editForm.foto_url} onChange={(event) => setEditForm((current) => current ? { ...current, foto_url: event.target.value } : current)} />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>Keahlian</Label>
+                <Input value={editForm.keahlian} onChange={(event) => setEditForm((current) => current ? { ...current, keahlian: event.target.value } : current)} placeholder="Pisahkan dengan koma" />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>Bio</Label>
+                <Textarea value={editForm.bio} onChange={(event) => setEditForm((current) => current ? { ...current, bio: event.target.value } : current)} />
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditingSpeaker(null)} disabled={isSaving}>Batal</Button>
+            <Button type="button" className="bg-[#1B4332] text-white" onClick={saveEdit} disabled={isSaving}>
+              {isSaving ? 'Menyimpan...' : 'Simpan'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(deletingSpeaker)} onOpenChange={(open) => {
+        if (!open) setDeletingSpeaker(null)
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Hapus Narasumber?</DialogTitle>
+            <DialogDescription>
+              Data {deletingSpeaker?.nama_lengkap ?? 'narasumber'} akan dihapus dari daftar narasumber.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDeletingSpeaker(null)} disabled={isSaving}>Batal</Button>
+            <Button type="button" className="bg-red-600 text-white hover:bg-red-700" onClick={deleteSpeaker} disabled={isSaving}>
+              {isSaving ? 'Menghapus...' : 'Hapus'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

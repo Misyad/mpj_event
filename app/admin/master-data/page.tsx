@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Building2, Radio, Search, Users } from 'lucide-react'
+import { Building2, Database, Radio, Search, Users } from 'lucide-react'
 
 export default function MasterDataPage() {
   const [search, setSearch] = useState('')
@@ -41,7 +41,18 @@ export default function MasterDataPage() {
       {/* Header */}
       <div>
         <h1 className="text-xl md:text-2xl font-extrabold text-[#1B4332]">Master Data</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Data organisasi: Pesantren, Media, dan Kru MPJ</p>
+        <p className="text-sm text-gray-500 mt-0.5">Penampungan Master Data MPJ Apps: Pesantren, Media, dan Kru MPJ</p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-4">
+        <SummaryCard icon={<Database className="h-4 w-4" />} label="Sumber Data" value="Penampungan" tone="text-[#1B4332]" />
+        <SummaryCard icon={<Building2 className="h-4 w-4" />} label="Pesantren" value={String(dummyPesantren.length)} tone="text-emerald-700" />
+        <SummaryCard icon={<Radio className="h-4 w-4" />} label="Media" value={String(dummyMedia.length)} tone="text-blue-700" />
+        <SummaryCard icon={<Users className="h-4 w-4" />} label="Kru" value={String(dummyCrew.length)} tone="text-purple-700" />
+      </div>
+
+      <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        Data ini masih menjadi penampungan internal. Struktur UI dipertahankan agar nanti bisa diganti ke API MPJ Apps tanpa merombak halaman.
       </div>
 
       {/* Filters */}
@@ -223,6 +234,18 @@ export default function MasterDataPage() {
           </div>
         </TabsContent>
       </Tabs>
+    </div>
+  )
+}
+
+function SummaryCard({ icon, label, value, tone }: { icon: React.ReactNode; label: string; value: string; tone: string }) {
+  return (
+    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+      <div className={`mb-3 inline-flex h-8 w-8 items-center justify-center rounded-xl bg-gray-50 ${tone}`}>
+        {icon}
+      </div>
+      <p className="text-xs font-semibold text-gray-400">{label}</p>
+      <p className={`mt-1 text-lg font-extrabold ${tone}`}>{value}</p>
     </div>
   )
 }

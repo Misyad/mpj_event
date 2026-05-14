@@ -48,7 +48,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="min-h-screen bg-[#f0f4f1] flex">
 
       {/* ─── Sidebar Desktop ─────────────────────────────── */}
-      <aside className="hidden md:flex flex-col w-64 bg-[#1B4332] min-h-screen fixed left-0 top-0 z-30 border-r border-white/5">
+      <aside className="hidden md:flex flex-col w-64 bg-[#1B4332] h-screen fixed left-0 top-0 z-30 border-r border-white/5">
         {/* Logo */}
         <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
           <BrandMark className="h-5 w-5" />
@@ -59,7 +59,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-0.5">
+        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-0.5">
           <p className="text-[10px] font-bold text-white/25 uppercase tracking-widest px-3 mb-2">Menu Utama</p>
           {navItems.map(({ href, label, icon, exact }) => (
             <NavItem key={href} href={href} label={label} icon={icon} active={isActive(href, exact)} />
@@ -67,7 +67,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </nav>
 
         {/* User Footer */}
-        <div className="px-4 py-4 border-t border-white/10">
+        <div className="shrink-0 px-4 py-4 border-t border-white/10">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-8 h-8 rounded-full bg-[#C9A227]/20 border border-[#C9A227]/30 flex items-center justify-center">
               <span className="text-[#C9A227] text-xs font-bold">AD</span>
@@ -126,7 +126,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </nav>
 
             {/* Footer */}
-            <div className="px-4 py-4 border-t border-white/10">
+            <div className="shrink-0 px-4 py-4 border-t border-white/10">
               <div className="flex items-center gap-3 mb-3">
                 <div className="w-8 h-8 rounded-full bg-[#C9A227]/20 border border-[#C9A227]/30 flex items-center justify-center">
                   <span className="text-[#C9A227] text-xs font-bold">AD</span>

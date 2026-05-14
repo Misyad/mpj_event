@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { EventDetailView, EventNotFoundState, getEventForDetail } from '@/app/(public)/events/event-detail'
+import { EventDetailView, getEventForDetail } from '@/app/(public)/events/event-detail'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,9 +21,5 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function EventSlugPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  try {
-    return <EventDetailView identifier={slug} />
-  } catch {
-    return <EventNotFoundState />
-  }
+  return <EventDetailView identifier={slug} />
 }

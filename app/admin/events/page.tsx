@@ -5,18 +5,24 @@ import Image from 'next/image'
 import Link from 'next/link'
 import {
   CalendarDays,
+  CheckCircle2,
   Eye,
+  History,
   MapPin,
   Pencil,
   Plus,
   Search,
+  XCircle,
 } from 'lucide-react'
 import { BadgeStatus } from '@/components/BadgeStatus'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
 import { normalizeEvent } from '@/lib/event-api'
 import type { Event, EventCategory, EventStatus, Speaker } from '@/types'
 
@@ -24,18 +30,33 @@ const STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft',
   PENDING: 'Menunggu',
   APPROVED: 'Published',
+  REJECTED: 'Ditolak',
   LIVE: 'Ongoing',
   FINISHED: 'Selesai',
   COMPLETED: 'Completed',
   draft: 'Draft',
   pending: 'Menunggu',
   approved: 'Published',
+  rejected: 'Ditolak',
   registration_closed: 'Pendaftaran Ditutup',
   finished: 'Selesai',
 }
 
 const CATEGORY_OPTIONS: EventCategory[] = ['Pelatihan', 'Seremonial', 'Rapat']
-const STATUS_OPTIONS: EventStatus[] = ['DRAFT', 'PENDING', 'APPROVED', 'LIVE', 'FINISHED', 'COMPLETED']
+const STATUS_OPTIONS: EventStatus[] = ['DRAFT', 'PENDING', 'APPROVED', 'REJECTED', 'LIVE', 'FINISHED', 'COMPLETED']
+
+type ApprovalLog = {
+  action: string
+  metadata?: {
+    previousStatus?: string
+    nextStatus?: string
+    reason?: string | null
+    title?: string
+  } | null
+  actorName?: string | null
+  actorEmail?: string | null
+  createdAt: string
+}
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat('id-ID', {
@@ -77,6 +98,10 @@ export default function MasterEventPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<EventStatus | 'ALL'>('ALL')
   const [categoryFilter, setCategoryFilter] = useState<EventCategory | 'ALL'>('ALL')
+  const [approvalLogs, setApprovalLogs] = useState<Record<string, ApprovalLog[]>>({})
+  const [approvalTarget, setApprovalTarget] = useState<{ event: Event; status: 'APPROVED' | 'REJECTED' } | null>(null)
+  const [approvalReason, setApprovalReason] = useState('')
+  const [isApproving, setIsApproving] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -102,8 +127,18 @@ export default function MasterEventPage() {
         }
 
         if (active) {
-          setEvents(eventsPayload.data.map(normalizeEvent))
+          const normalizedEvents: Event[] = eventsPayload.data.map(normalizeEvent)
+          setEvents(normalizedEvents)
           setSpeakers(speakersPayload.data)
+          const logEntries = await Promise.all(
+            normalizedEvents.map(async (event) => {
+              const response = await fetch(`/api/admin/events/${event.id}/approval-logs`, { cache: 'no-store' })
+              if (!response.ok) return [event.id, []] as const
+              const payload = await response.json()
+              return [event.id, payload.ok ? payload.data ?? [] : []] as const
+            }),
+          )
+          if (active) setApprovalLogs(Object.fromEntries(logEntries))
         }
       } catch (loadError) {
         if (active) {
@@ -135,7 +170,7 @@ export default function MasterEventPage() {
     })
   }, [categoryFilter, events, search, statusFilter])
 
-  async function updateEventStatus(eventId: string, status: EventStatus) {
+  async function updateEventStatus(eventId: string, status: EventStatus, reason = '') {
     const previous = events
     setEvents((current) => current.map((event) => (event.id === eventId ? { ...event, status } : event)))
 
@@ -143,7 +178,7 @@ export default function MasterEventPage() {
       const response = await fetch(`/api/admin/events/${eventId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, approvalReason: reason }),
       })
       const payload = await response.json()
 
@@ -152,9 +187,33 @@ export default function MasterEventPage() {
       }
 
       setEvents((current) => current.map((event) => (event.id === eventId ? normalizeEvent(payload.data) : event)))
+      if (String(status).toUpperCase() === 'APPROVED' || String(status).toUpperCase() === 'REJECTED') {
+        const logsResponse = await fetch(`/api/admin/events/${eventId}/approval-logs`, { cache: 'no-store' })
+        const logsPayload = await logsResponse.json()
+        if (logsResponse.ok && logsPayload.ok) {
+          setApprovalLogs((current) => ({ ...current, [eventId]: logsPayload.data ?? [] }))
+        }
+      }
     } catch (updateError) {
       setEvents(previous)
       setError(updateError instanceof Error ? updateError.message : 'Gagal mengubah status event')
+    }
+  }
+
+  async function confirmApproval() {
+    if (!approvalTarget) return
+    if (approvalTarget.status === 'REJECTED' && !approvalReason.trim()) {
+      setError('Alasan penolakan approval wajib diisi')
+      return
+    }
+    try {
+      setIsApproving(true)
+      setError('')
+      await updateEventStatus(approvalTarget.event.id, approvalTarget.status, approvalReason)
+      setApprovalTarget(null)
+      setApprovalReason('')
+    } finally {
+      setIsApproving(false)
     }
   }
 
@@ -186,6 +245,12 @@ export default function MasterEventPage() {
               {error}
             </div>
           ) : null}
+
+          <div className="grid gap-3 lg:grid-cols-3">
+            <ApprovalStep title="1. Review" description="Cek data event, harga, kuota, narasumber, dan kebutuhan crew sebelum keputusan." />
+            <ApprovalStep title="2. Approve" description="Status menjadi Published, event siap tampil di publik dan pendaftaran aktif bila jalurnya dibuka." />
+            <ApprovalStep title="3. Tolak" description="Status menjadi Ditolak, event tidak publish dan alasan tersimpan di riwayat approval." />
+          </div>
 
           <div className="grid gap-3 lg:grid-cols-[1fr_180px_180px]">
             <div className="relative">
@@ -237,6 +302,7 @@ export default function MasterEventPage() {
                 const quotaPercent = Math.min(100, Math.round((participantCount / Math.max(quota, 1)) * 100))
                 const eventSpeakers = getEventSpeakers(event, speakers)
                 const readOnly = event.status === 'FINISHED' || event.status === 'COMPLETED'
+                const latestApprovalLog = approvalLogs[event.id]?.[0]
 
                 return (
                   <Card key={event.id} className="overflow-hidden rounded-2xl border-gray-100 bg-white py-0 shadow-sm">
@@ -277,6 +343,26 @@ export default function MasterEventPage() {
                         ) : null}
                       </div>
 
+                      <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-wide text-amber-700">Approval Pusat</p>
+                            <p className="mt-1 text-sm font-semibold text-[#1B4332]">
+                              {event.status === 'APPROVED' ? 'Disetujui dan siap publikasi' : event.status === 'REJECTED' ? 'Ditolak, menunggu revisi' : event.status === 'PENDING' ? 'Menunggu keputusan pusat' : 'Belum masuk approval aktif'}
+                            </p>
+                          </div>
+                          <History className="h-4 w-4 shrink-0 text-amber-700" />
+                        </div>
+                        {latestApprovalLog ? (
+                          <p className="mt-2 text-xs text-gray-600">
+                            Terakhir: {latestApprovalLog.actorName ?? latestApprovalLog.actorEmail ?? 'Admin'} - {new Date(latestApprovalLog.createdAt).toLocaleString('id-ID')}
+                            {latestApprovalLog.metadata?.reason ? ` - ${latestApprovalLog.metadata.reason}` : ''}
+                          </p>
+                        ) : (
+                          <p className="mt-2 text-xs text-gray-500">Belum ada riwayat approval.</p>
+                        )}
+                      </div>
+
                       <div className="grid gap-3 sm:grid-cols-2">
                         <SummaryBox label="Pricing" value={event.is_paid ? `${formatCurrency(event.price_niam)} / ${formatCurrency(event.price_public)}` : 'Gratis'} />
                         <SummaryBox label="Narasumber" value={eventSpeakers.length > 0 ? eventSpeakers.map((speaker) => speaker.nama_lengkap).join(', ') : 'Belum dipilih'} />
@@ -302,7 +388,17 @@ export default function MasterEventPage() {
                         </Link>
                         <Select
                           value={event.status}
-                          onValueChange={(value) => updateEventStatus(event.id, value as EventStatus)}
+                          onValueChange={(value) => {
+                            if (value === 'REJECTED') {
+                              setApprovalTarget({ event, status: 'REJECTED' })
+                              return
+                            }
+                            if (value === 'APPROVED' && event.status === 'PENDING') {
+                              setApprovalTarget({ event, status: 'APPROVED' })
+                              return
+                            }
+                            updateEventStatus(event.id, value as EventStatus)
+                          }}
                           disabled={readOnly}
                         >
                           <SelectTrigger className="h-8 rounded-xl sm:w-[180px]">
@@ -314,6 +410,18 @@ export default function MasterEventPage() {
                             ))}
                           </SelectContent>
                         </Select>
+                        {event.status === 'PENDING' ? (
+                          <>
+                            <Button type="button" className="w-full rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto" onClick={() => setApprovalTarget({ event, status: 'APPROVED' })}>
+                              <CheckCircle2 className="h-4 w-4" />
+                              Approve
+                            </Button>
+                            <Button type="button" variant="outline" className="w-full rounded-xl border-red-100 text-red-600 hover:bg-red-50 sm:w-auto" onClick={() => setApprovalTarget({ event, status: 'REJECTED' })}>
+                              <XCircle className="h-4 w-4" />
+                              Tolak
+                            </Button>
+                          </>
+                        ) : null}
                       </div>
                     </CardContent>
                   </Card>
@@ -324,6 +432,48 @@ export default function MasterEventPage() {
         </TabsContent>
 
       </Tabs>
+
+      <Dialog open={Boolean(approvalTarget)} onOpenChange={(open) => {
+        if (!open) {
+          setApprovalTarget(null)
+          setApprovalReason('')
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{approvalTarget?.status === 'APPROVED' ? 'Approve Event?' : 'Tolak Approval Event?'}</DialogTitle>
+            <DialogDescription>
+              {approvalTarget?.status === 'APPROVED'
+                ? 'Event akan menjadi Published dan dapat tampil di publik sesuai pengaturan event.'
+                : 'Event akan berstatus Ditolak dan alasan penolakan tersimpan di riwayat approval.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <p className="text-sm font-bold text-[#1B4332]">{approvalTarget?.event.title}</p>
+            {approvalTarget?.status === 'REJECTED' ? (
+              <div className="space-y-1.5">
+                <Label>Alasan Penolakan</Label>
+                <Textarea value={approvalReason} onChange={(event) => setApprovalReason(event.target.value)} placeholder="Tuliskan revisi yang perlu dilakukan..." />
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setApprovalTarget(null)} disabled={isApproving}>Batal</Button>
+            <Button type="button" className={approvalTarget?.status === 'APPROVED' ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-red-600 text-white hover:bg-red-700'} onClick={confirmApproval} disabled={isApproving}>
+              {isApproving ? 'Memproses...' : approvalTarget?.status === 'APPROVED' ? 'Approve' : 'Tolak'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function ApprovalStep({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+      <p className="text-sm font-extrabold text-[#1B4332]">{title}</p>
+      <p className="mt-1 text-xs leading-relaxed text-gray-500">{description}</p>
     </div>
   )
 }

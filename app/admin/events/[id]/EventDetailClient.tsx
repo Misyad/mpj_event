@@ -4,27 +4,30 @@ import { use, useEffect, useState } from 'react'
 import Image from 'next/image'
 import { getStaffByEvent } from '@/lib/dummy'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ArrowLeft, Award, Building2, Calendar, CheckCircle, CreditCard, ExternalLink, Info, Loader2, MapPin, QrCode, ScanLine, Users } from 'lucide-react'
+import { ArrowLeft, Award, Building2, Calendar, CheckCircle, CheckCircle2, CreditCard, ExternalLink, History, Info, Loader2, MapPin, QrCode, ScanLine, Users, XCircle } from 'lucide-react'
 import Link from 'next/link'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Textarea } from '@/components/ui/textarea'
 import { normalizeEvent } from '@/lib/event-api'
 import { EventFinancePanel } from '@/components/finance/EventFinancePanel'
-import type { Event, Participant, PaymentRecord } from '@/types'
+import type { Event, Participant } from '@/types'
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft', PENDING: 'Menunggu Approval', APPROVED: 'Disetujui',
-  LIVE: 'Live', FINISHED: 'Selesai', COMPLETED: 'Completed',
+  REJECTED: 'Ditolak', LIVE: 'Live', FINISHED: 'Selesai', COMPLETED: 'Completed',
   draft: 'Draft', pending: 'Menunggu Approval', approved: 'Disetujui',
-  registration_closed: 'Pendaftaran Ditutup', finished: 'Selesai',
+  rejected: 'Ditolak', registration_closed: 'Pendaftaran Ditutup', finished: 'Selesai',
 }
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-600', PENDING: 'bg-amber-100 text-amber-700',
-  APPROVED: 'bg-blue-100 text-blue-700', LIVE: 'bg-green-100 text-green-700',
+  APPROVED: 'bg-blue-100 text-blue-700', REJECTED: 'bg-red-100 text-red-700', LIVE: 'bg-green-100 text-green-700',
   FINISHED: 'bg-purple-100 text-purple-700', COMPLETED: 'bg-emerald-100 text-emerald-700',
   draft: 'bg-gray-100 text-gray-600', pending: 'bg-amber-100 text-amber-700',
-  approved: 'bg-blue-100 text-blue-700', registration_closed: 'bg-red-100 text-red-600',
+  approved: 'bg-blue-100 text-blue-700', rejected: 'bg-red-100 text-red-700', registration_closed: 'bg-red-100 text-red-600',
   finished: 'bg-purple-100 text-purple-700',
 }
 const PAYMENT_COLORS: Record<string, string> = {
@@ -33,6 +36,9 @@ const PAYMENT_COLORS: Record<string, string> = {
 }
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+function formatDateTime(d: string) {
+  return new Date(d).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
 }
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
@@ -51,17 +57,33 @@ function isAttended(participant: Participant) {
   return String(participant.status || participant.attendance_status).toLowerCase() === 'attended'
 }
 
+type ApprovalLog = {
+  action: string
+  metadata?: {
+    previousStatus?: string
+    nextStatus?: string
+    reason?: string | null
+    title?: string
+  } | null
+  actorName?: string | null
+  actorEmail?: string | null
+  createdAt: string
+}
+
 export default function EventDetailClient({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const staff = getStaffByEvent(id)
   const [event, setEvent] = useState<Event | null>(null)
   const [participants, setParticipants] = useState<Participant[]>([])
-  const [payments, setPayments] = useState<PaymentRecord[]>([])
   const [isPublic, setIsPublic] = useState(false)
   const [isPaid, setIsPaid] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
+  const [approvalLogs, setApprovalLogs] = useState<ApprovalLog[]>([])
+  const [approvalTarget, setApprovalTarget] = useState<'APPROVED' | 'REJECTED' | null>(null)
+  const [approvalReason, setApprovalReason] = useState('')
+  const [isApproving, setIsApproving] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -70,15 +92,18 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
       try {
         setIsLoading(true)
         setError('')
-        const response = await fetch(`/api/admin/events/${encodeURIComponent(id)}`, { cache: 'no-store' })
-        const payload = await response.json()
+        const [response, logsResponse] = await Promise.all([
+          fetch(`/api/admin/events/${encodeURIComponent(id)}`, { cache: 'no-store' }),
+          fetch(`/api/admin/events/${encodeURIComponent(id)}/approval-logs`, { cache: 'no-store' }),
+        ])
+        const [payload, logsPayload] = await Promise.all([response.json(), logsResponse.json()])
         if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal memuat detail event')
 
         const loadedEvent = normalizeEvent(payload.data)
         if (!active) return
         setEvent(loadedEvent)
         setParticipants(payload.participants ?? [])
-        setPayments(payload.payments ?? [])
+        setApprovalLogs(logsResponse.ok && logsPayload.ok ? logsPayload.data ?? [] : [])
         setIsPublic(loadedEvent.is_open_for_public)
         setIsPaid(loadedEvent.is_paid)
       } catch (loadError) {
@@ -106,13 +131,41 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
 
       const updated = payload.data as Participant
       setParticipants((current) => current.map((participant) => (participant.id === updated.id ? updated : participant)))
-      setPayments((current) => current.map((payment) => (
-        payment.participant_id === updated.id ? { ...payment, status: updated.payment_status, verified_at: new Date().toISOString() } : payment
-      )))
     } catch (confirmError) {
       setError(confirmError instanceof Error ? confirmError.message : 'Gagal confirm peserta')
     } finally {
       setConfirmingId(null)
+    }
+  }
+
+  async function updateEventStatus(status: 'APPROVED' | 'REJECTED') {
+    if (!event) return
+    if (status === 'REJECTED' && !approvalReason.trim()) {
+      setError('Alasan penolakan approval wajib diisi')
+      return
+    }
+
+    try {
+      setIsApproving(true)
+      setError('')
+      const response = await fetch(`/api/admin/events/${encodeURIComponent(event.id)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status, approvalReason }),
+      })
+      const payload = await response.json()
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal mengubah status event')
+
+      setEvent(normalizeEvent(payload.data))
+      const logsResponse = await fetch(`/api/admin/events/${encodeURIComponent(event.id)}/approval-logs`, { cache: 'no-store' })
+      const logsPayload = await logsResponse.json()
+      if (logsResponse.ok && logsPayload.ok) setApprovalLogs(logsPayload.data ?? [])
+      setApprovalTarget(null)
+      setApprovalReason('')
+    } catch (approvalError) {
+      setError(approvalError instanceof Error ? approvalError.message : 'Gagal mengubah status event')
+    } finally {
+      setIsApproving(false)
     }
   }
 
@@ -343,6 +396,24 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
         <TabsContent value="status" className="mt-4">
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-5">
             <p className="font-bold text-[#1B4332] text-sm">Pengaturan Event</p>
+            <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-amber-700">Alur Approval Pusat</p>
+              <p className="mt-1 text-sm text-gray-600">
+                Approve mengubah event menjadi Disetujui dan siap tampil publik. Tolak membuat event berstatus Ditolak dan menyimpan alasan revisi di riwayat.
+              </p>
+              {event.status === 'PENDING' ? (
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <Button type="button" className="rounded-xl bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => setApprovalTarget('APPROVED')}>
+                    <CheckCircle2 className="h-4 w-4" />
+                    Approve Event
+                  </Button>
+                  <Button type="button" variant="outline" className="rounded-xl border-red-100 text-red-600 hover:bg-red-50" onClick={() => setApprovalTarget('REJECTED')}>
+                    <XCircle className="h-4 w-4" />
+                    Tolak Approval
+                  </Button>
+                </div>
+              ) : null}
+            </div>
             <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
               <div>
                 <p className="text-sm font-semibold text-[#1B4332]">Buka Jalur Umum</p>
@@ -360,17 +431,73 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
             <div className="border-t pt-4 space-y-2">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Ubah Status Event</p>
               <div className="flex flex-wrap gap-2">
-                {['DRAFT', 'PENDING', 'APPROVED', 'FINISHED', 'COMPLETED'].map(s => (
-                  <button key={s} className={`text-xs font-semibold px-3 py-1.5 rounded-xl border-2 transition-colors ${event.status === s ? 'border-[#1B4332] bg-[#1B4332] text-white' : 'border-gray-200 text-gray-600 hover:border-[#1B4332] hover:text-[#1B4332]'}`}>
+                {['DRAFT', 'PENDING', 'APPROVED', 'REJECTED', 'FINISHED', 'COMPLETED'].map(s => (
+                  <button key={s} type="button" disabled className={`text-xs font-semibold px-3 py-1.5 rounded-xl border-2 transition-colors ${event.status === s ? 'border-[#1B4332] bg-[#1B4332] text-white' : 'border-gray-200 text-gray-600'}`}>
                     {STATUS_LABELS[s]}
                   </button>
                 ))}
               </div>
             </div>
-            <Button className="w-full bg-[#1B4332] hover:bg-[#14532d] text-white rounded-xl">Simpan Perubahan</Button>
+            <div className="border-t pt-4">
+              <div className="mb-3 flex items-center gap-2">
+                <History className="h-4 w-4 text-[#C9A227]" />
+                <p className="font-bold text-[#1B4332] text-sm">Riwayat Approval</p>
+              </div>
+              {approvalLogs.length === 0 ? (
+                <div className="rounded-xl bg-gray-50 p-4 text-sm font-medium text-gray-500">Belum ada riwayat approval.</div>
+              ) : (
+                <div className="divide-y divide-gray-100 rounded-xl border border-gray-100">
+                  {approvalLogs.map((log, index) => (
+                    <div key={`${log.action}-${log.createdAt}-${index}`} className="p-4">
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-sm font-bold text-[#1B4332]">{log.metadata?.nextStatus === 'REJECTED' ? 'Approval ditolak' : 'Approval disetujui'}</p>
+                          <p className="text-xs text-gray-500">{log.actorName ?? log.actorEmail ?? 'Admin'} - {log.metadata?.previousStatus ?? '-'} ke {log.metadata?.nextStatus ?? '-'}</p>
+                        </div>
+                        <p className="text-xs font-semibold text-gray-400">{formatDateTime(log.createdAt)}</p>
+                      </div>
+                      {log.metadata?.reason ? <p className="mt-2 text-sm text-gray-600">{log.metadata.reason}</p> : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={Boolean(approvalTarget)} onOpenChange={(open) => {
+        if (!open) {
+          setApprovalTarget(null)
+          setApprovalReason('')
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{approvalTarget === 'APPROVED' ? 'Approve Event?' : 'Tolak Approval Event?'}</DialogTitle>
+            <DialogDescription>
+              {approvalTarget === 'APPROVED'
+                ? 'Event akan menjadi Disetujui dan siap tampil di publik sesuai pengaturan event.'
+                : 'Event akan berstatus Ditolak dan alasan penolakan tersimpan di riwayat approval.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <p className="text-sm font-bold text-[#1B4332]">{event.title}</p>
+            {approvalTarget === 'REJECTED' ? (
+              <div className="space-y-1.5">
+                <Label>Alasan Penolakan</Label>
+                <Textarea value={approvalReason} onChange={(changeEvent) => setApprovalReason(changeEvent.target.value)} placeholder="Tuliskan revisi yang perlu dilakukan..." />
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setApprovalTarget(null)} disabled={isApproving}>Batal</Button>
+            <Button type="button" className={approvalTarget === 'APPROVED' ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-red-600 text-white hover:bg-red-700'} onClick={() => approvalTarget && updateEventStatus(approvalTarget)} disabled={isApproving}>
+              {isApproving ? 'Memproses...' : approvalTarget === 'APPROVED' ? 'Approve' : 'Tolak'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

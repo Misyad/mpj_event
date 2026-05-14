@@ -95,6 +95,7 @@ export function EventFinancePanel({ eventId }: { eventId: string }) {
   }, [categoryFilter, dateEnd, dateStart, eventId, typeFilter])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadFinance()
   }, [loadFinance])
 

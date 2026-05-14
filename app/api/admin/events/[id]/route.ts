@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { AUTH_ROLES } from '@/lib/auth/roles'
 import { getEventFromDb, getParticipantsByEventFromDb, getPaymentRecordsByEventFromDb, updateEventInDb } from '@/lib/server/events'
-import { requireAdminPermission, requireRegionalScope } from '@/lib/server/rbac'
+import { recordAdminActivity, requireAdminPermission, requireRegionalScope } from '@/lib/server/rbac'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -22,6 +22,10 @@ async function scopedUpdate(request: NextRequest, id: string) {
   if (!existing) return NextResponse.json({ ok: false, error: 'Event tidak ditemukan' }, { status: 404 })
 
   const payload = await request.json()
+  const requestedStatus = payload.status ? String(payload.status).toUpperCase() : ''
+  if (requestedStatus === 'REJECTED' && !String(payload.approvalReason || payload.reason || '').trim()) {
+    throw new Error('Alasan penolakan approval wajib diisi')
+  }
   if (session.role === AUTH_ROLES.regionalAdmin && (existing.scope !== 'regional' || existing.regionId !== session.regionalId)) {
     throw new Error('Regional scope tidak valid')
   }
@@ -38,6 +42,22 @@ async function scopedUpdate(request: NextRequest, id: string) {
 
   const event = await updateEventInDb(id, eventPayload)
   if (!event) return NextResponse.json({ ok: false, error: 'Event tidak ditemukan' }, { status: 404 })
+
+  const previousStatus = String(existing.status).toUpperCase()
+  const nextStatus = String(event.status).toUpperCase()
+  if (previousStatus !== nextStatus && (nextStatus === 'APPROVED' || nextStatus === 'REJECTED')) {
+    await recordAdminActivity(request, {
+      action: nextStatus === 'APPROVED' ? 'event.approval_approved' : 'event.approval_rejected',
+      entityType: 'event',
+      entityId: event.id,
+      metadata: {
+        title: event.title,
+        previousStatus,
+        nextStatus,
+        reason: String(payload.approvalReason || payload.reason || '').trim() || null,
+      },
+    })
+  }
   return NextResponse.json({ ok: true, data: event })
 }
 

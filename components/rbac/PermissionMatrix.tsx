@@ -53,8 +53,19 @@ export function PermissionMatrix({ permissions, roles }: { permissions: Permissi
           {message}
         </div>
       ) : null}
+      <div className="grid gap-3 md:grid-cols-3">
+        {roleState.map((role) => (
+          <div key={role.id} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+            <p className="text-sm font-extrabold text-[#1B4332]">{role.name}</p>
+            <p className="mt-1 min-h-10 text-xs leading-relaxed text-gray-500">{role.description || 'Akses modular sesuai permission yang dicentang.'}</p>
+            <p className="mt-3 text-xs font-semibold text-gray-400">
+              {role.permissions.includes('*') ? 'Full access terkunci' : `${role.permissions.length} permission aktif`}
+            </p>
+          </div>
+        ))}
+      </div>
       <div className="overflow-x-auto rounded-2xl border border-gray-100 bg-white shadow-sm">
-        <table className="w-full min-w-[760px] text-sm">
+        <table className="w-full min-w-[920px] text-sm">
           <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-400">
             <tr>
               <th className="px-4 py-3">Permission</th>

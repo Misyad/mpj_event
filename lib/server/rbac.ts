@@ -400,6 +400,15 @@ async function auditLogin(connection: PoolConnection, payload: {
   )
 }
 
+function parseJsonColumn(value: unknown) {
+  if (typeof value !== 'string') return value
+  try {
+    return JSON.parse(value)
+  } catch {
+    return value
+  }
+}
+
 export async function writeActivityLog(
   connection: PoolConnection,
   payload: {
@@ -807,11 +816,11 @@ export async function listRolesWithPermissions() {
           FROM roles r
           LEFT JOIN role_permissions rp ON rp.role_id = r.id
           LEFT JOIN permissions p ON p.id = rp.permission_id
-          WHERE r.code IN (:superAdmin, :regionalAdmin)
+          WHERE r.code IN (:superAdmin, :regionalAdmin, :userRole)
           GROUP BY r.id, r.code, r.name, r.description
           ORDER BY r.code ASC
         `,
-        { superAdmin: AUTH_ROLES.superAdmin, regionalAdmin: AUTH_ROLES.regionalAdmin },
+        { superAdmin: AUTH_ROLES.superAdmin, regionalAdmin: AUTH_ROLES.regionalAdmin, userRole: AUTH_ROLES.user },
       )
       return roles.map((role) => ({
         id: role.id as string,
@@ -1066,9 +1075,87 @@ export async function getAdminActivity(userId: string) {
         action: row.action as string,
         entityType: row.entity_type as string | null,
         entityId: row.entity_id as string | null,
-        metadata: row.metadata,
+        metadata: parseJsonColumn(row.metadata),
         createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
       }))
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export type EntityActivityLog = {
+  action: string
+  entityType: string | null
+  entityId: string | null
+  metadata: unknown
+  actorName: string | null
+  actorEmail: string | null
+  createdAt: string
+}
+
+export async function recordAdminActivity(
+  request: NextRequest,
+  payload: {
+    action: string
+    entityType?: string | null
+    entityId?: string | null
+    metadata?: Record<string, unknown>
+  },
+) {
+  const actor = await requireAdminPermission(request, 'events.update')
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+    try {
+      await ensureRbacSchema(connection)
+      await writeActivityLog(connection, {
+        userId: actor.userId,
+        action: payload.action,
+        entityType: payload.entityType,
+        entityId: payload.entityId,
+        metadata: payload.metadata,
+        request,
+      })
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function getEntityActivityLogs(entityType: string, entityId: string, actions: string[] = []) {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+    try {
+      await ensureRbacSchema(connection)
+      const [rows] = await connection.query<RowDataPacket[]>(
+        `
+          SELECT
+            aal.action,
+            aal.entity_type,
+            aal.entity_id,
+            aal.metadata,
+            aal.created_at,
+            u.full_name AS actor_name,
+            u.email AS actor_email
+          FROM admin_activity_logs aal
+          LEFT JOIN users u ON u.id = aal.user_id
+          WHERE aal.entity_type = :entityType
+            AND aal.entity_id = :entityId
+            AND (:actionCount = 0 OR aal.action IN (:actions))
+          ORDER BY aal.created_at DESC
+          LIMIT 50
+        `,
+        { entityType, entityId, actionCount: actions.length, actions },
+      )
+      return rows.map((row) => ({
+        action: row.action as string,
+        entityType: row.entity_type as string | null,
+        entityId: row.entity_id as string | null,
+        metadata: parseJsonColumn(row.metadata),
+        actorName: row.actor_name as string | null,
+        actorEmail: row.actor_email as string | null,
+        createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+      })) satisfies EntityActivityLog[]
     } finally {
       connection.release()
     }

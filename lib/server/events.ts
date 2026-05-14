@@ -1341,6 +1341,7 @@ export async function updateEventInDb(identifier: string, payload: EventPayload)
         const status = payload.status
         setField('status', 'status', status)
         if (status === 'approved' || status === 'APPROVED') setField('is_published', 'publishedFromStatus', 1)
+        if (status === 'rejected' || status === 'REJECTED') setField('is_published', 'rejectedIsNotPublished', 0)
         if (status === 'registration_closed') setField('status_pendaftaran', 'registrationStatusFromStatus', 'closed')
         if (status === 'finished' || status === 'FINISHED') setField('status_pendaftaran', 'registrationStatusFinished', 'closed')
       }
