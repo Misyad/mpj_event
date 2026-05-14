@@ -206,6 +206,17 @@ function tryBuildFastAnswer(messages: AiChatMessage[], context: AiContext) {
     return buildTicketStatusAnswer(context)
   }
 
+  if (/\b(alur|cara|bagaimana|gimana|jelaskan|proses|status)\b/.test(normalized) && /\b(pembayaran|bayar|payment)\b/.test(normalized)) {
+    return [
+      'Alur pembayaran event:',
+      '1. Peserta memilih event dan mengisi form pendaftaran.',
+      '2. Jika event berbayar, peserta mengikuti instruksi pembayaran yang tampil di aplikasi.',
+      '3. Setelah pembayaran dilakukan, status pembayaran menunggu konfirmasi/verifikasi admin.',
+      '4. Admin regional atau petugas terkait memeriksa pembayaran dari dashboard.',
+      '5. Jika pembayaran sudah valid, status peserta diperbarui dan tiket/QR dapat digunakan sesuai aturan event.',
+    ].join('\n')
+  }
+
   if (/\b(event|acara)\b/.test(normalized) && /\b(aktif|ada|tersedia|published|publik|berjalan|sedang)\b/.test(normalized)) {
     const activeEvents = context.events.filter(isActivePublicEvent).slice(0, 8)
     if (activeEvents.length === 0) return 'Saat ini belum ada event publik aktif yang bisa saya pastikan dari data aplikasi.'
