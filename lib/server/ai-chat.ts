@@ -150,6 +150,14 @@ async function getAiContext(request: NextRequest, messages: AiChatMessage[]): Pr
 
 function isActivePublicEvent(event: Event) {
   const status = String(event.status ?? '').toUpperCase()
+  if (['FINISHED', 'COMPLETED', 'REJECTED', 'CANCELLED', 'REGISTRATION_CLOSED'].includes(status)) return false
+
+  const schedule = event.dateEnd || event.start_date || event.dateStart
+  if (schedule) {
+    const scheduledAt = new Date(schedule)
+    if (!Number.isNaN(scheduledAt.getTime()) && scheduledAt < new Date()) return false
+  }
+
   return Boolean(event.isPublic && (event.isPublished || ['APPROVED', 'LIVE', 'PUBLISHED'].includes(status)))
 }
 
