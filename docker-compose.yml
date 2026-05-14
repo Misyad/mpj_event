@@ -19,7 +19,7 @@ services:
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:-mpj-event-admin-token}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://host.docker.internal:11434/v1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-ollama}
-      OPENAI_MODEL: ${OPENAI_MODEL:-llama3.2:3b}
+      OPENAI_MODEL: ${OPENAI_MODEL:-llama3.2:1b}
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
