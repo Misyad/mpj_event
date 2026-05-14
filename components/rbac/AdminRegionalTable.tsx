@@ -1,7 +1,7 @@
 'use client'
 
 import type { FormEvent } from 'react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Activity, KeyRound, LogOut, Pencil, Search, ShieldOff, UserPlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,6 +11,7 @@ type Regional = {
   id: string
   name: string
   code: string
+  status?: string
 }
 
 type AdminRegional = {
@@ -34,14 +35,32 @@ type ActivityRow = {
 
 export function AdminRegionalTable({ admins, regionals }: { admins: AdminRegional[]; regionals: Regional[] }) {
   const [rows, setRows] = useState(admins)
+  const [availableRegionals, setAvailableRegionals] = useState(regionals)
   const [search, setSearch] = useState('')
   const [error, setError] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editForm, setEditForm] = useState({ fullName: '', regionalId: '', status: 'active' })
   const [activity, setActivity] = useState<{ adminName: string; rows: ActivityRow[] } | null>(null)
   const [isCreating, setIsCreating] = useState(false)
-  const [form, setForm] = useState({ fullName: '', email: '', password: 'Admin123!', regionalId: regionals[0]?.id ?? '' })
+  const [form, setForm] = useState({ fullName: '', email: '', password: 'Admin123!', regionalId: '' })
   const editingAdmin = rows.find((admin) => admin.id === editingId) ?? null
+
+  useEffect(() => {
+    let active = true
+    async function loadActiveRegionals() {
+      try {
+        const response = await fetch('/api/regionals?active=1', { cache: 'no-store' })
+        const payload = await response.json()
+        if (active && response.ok && payload.ok) setAvailableRegionals(payload.data)
+      } catch {
+        if (active) setAvailableRegionals(regionals)
+      }
+    }
+    loadActiveRegionals()
+    return () => {
+      active = false
+    }
+  }, [regionals])
 
   const filteredRows = useMemo(() => {
     const keyword = search.trim().toLowerCase()
@@ -79,7 +98,7 @@ export function AdminRegionalTable({ admins, regionals }: { admins: AdminRegiona
         method: 'POST',
         body: JSON.stringify(form),
       })
-      setForm({ fullName: '', email: '', password: 'Admin123!', regionalId: regionals[0]?.id ?? '' })
+      setForm({ fullName: '', email: '', password: 'Admin123!', regionalId: '' })
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : 'Gagal membuat admin regional')
     } finally {
@@ -116,9 +135,19 @@ export function AdminRegionalTable({ admins, regionals }: { admins: AdminRegiona
     setEditingId(admin.id)
     setEditForm({
       fullName: admin.fullName,
-      regionalId: admin.regionalId ?? regionals[0]?.id ?? '',
+      regionalId: admin.regionalId ?? '',
       status: admin.status,
     })
+  }
+
+  function selectRegional(regionalId: string) {
+    const regional = availableRegionals.find((item) => item.id === regionalId)
+    setForm((current) => ({
+      ...current,
+      regionalId,
+      fullName: current.fullName.trim() || !regional ? current.fullName : `Admin Regional ${regional.name}`,
+      email: current.email.trim() || !regional ? current.email : `regional.${regional.code}@mpj.local`,
+    }))
   }
 
   async function saveEdit(event: FormEvent<HTMLFormElement>) {
@@ -171,21 +200,26 @@ export function AdminRegionalTable({ admins, regionals }: { admins: AdminRegiona
           className="h-10 rounded-xl"
           placeholder="email@mpj.id"
         />
-        <Select value={form.regionalId} onValueChange={(value) => setForm((current) => ({ ...current, regionalId: value ?? '' }))}>
+        <Select value={form.regionalId} onValueChange={(value) => selectRegional(value ?? '')}>
           <SelectTrigger className="h-10 rounded-xl">
             <SelectValue placeholder="Regional" />
           </SelectTrigger>
           <SelectContent>
-            {regionals.map((regional) => (
+            {availableRegionals.map((regional) => (
               <SelectItem key={regional.id} value={regional.id}>{regional.name}</SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <Button disabled={isCreating} className="h-10 rounded-xl bg-[#1B4332] text-white">
+        <Button disabled={isCreating || availableRegionals.length === 0} className="h-10 rounded-xl bg-[#1B4332] text-white">
           <UserPlus className="h-4 w-4" />
           Tambah
         </Button>
       </form>
+      {availableRegionals.length === 0 ? (
+        <div className="rounded-2xl border border-amber-100 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
+          Belum ada regional aktif. Aktifkan atau tambahkan regional dari menu Master Regional.
+        </div>
+      ) : null}
 
       <div className="rounded-2xl border border-gray-100 bg-white shadow-sm">
         <div className="flex flex-col gap-3 border-b border-gray-100 p-4 md:flex-row md:items-center md:justify-between">
@@ -252,7 +286,7 @@ export function AdminRegionalTable({ admins, regionals }: { admins: AdminRegiona
                 <SelectValue placeholder="Regional" />
               </SelectTrigger>
               <SelectContent>
-                {regionals.map((regional) => (
+                {availableRegionals.map((regional) => (
                   <SelectItem key={regional.id} value={regional.id}>{regional.name}</SelectItem>
                 ))}
               </SelectContent>

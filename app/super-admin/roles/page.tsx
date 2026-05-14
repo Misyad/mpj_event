@@ -4,7 +4,7 @@ import { listRegionalAdmins, listRegionals } from '@/lib/server/rbac'
 export const dynamic = 'force-dynamic'
 
 export default async function SuperAdminRolesPage() {
-  const [admins, regionals] = await Promise.all([listRegionalAdmins(), listRegionals()])
+  const [admins, regionals] = await Promise.all([listRegionalAdmins(), listRegionals({ activeOnly: true })])
 
   return (
     <main className="min-h-screen p-4 md:p-6">

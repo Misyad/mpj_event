@@ -30,6 +30,13 @@ type AdminRow = RowDataPacket & {
   active_sessions: number
 }
 
+type RegionalRow = RowDataPacket & {
+  id: string
+  name: string
+  code: string
+  status: string
+}
+
 export type AdminSession = AccessTokenPayload & {
   email?: string
   fullName?: string
@@ -407,6 +414,14 @@ function parseJsonColumn(value: unknown) {
   } catch {
     return value
   }
+}
+
+function normalizeRegionalCode(code: string) {
+  return code
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 }
 
 export async function writeActivityLog(
@@ -835,18 +850,111 @@ export async function listRolesWithPermissions() {
   })
 }
 
-export async function listRegionals() {
+export async function listRegionals(options: { activeOnly?: boolean } = {}) {
   return withDb(async (db) => {
     const connection = await db.getConnection()
     try {
       await ensureRbacSchema(connection)
-      const [rows] = await connection.query<RowDataPacket[]>('SELECT id, name, code, status FROM regionals ORDER BY name ASC')
+      const [rows] = await connection.query<RegionalRow[]>(
+        `
+          SELECT id, name, code, status
+          FROM regionals
+          WHERE (:activeOnly = 0 OR status = 'active')
+          ORDER BY name ASC
+        `,
+        { activeOnly: options.activeOnly ? 1 : 0 },
+      )
       return rows.map((row) => ({
         id: row.id as string,
         name: row.name as string,
         code: row.code as string,
         status: row.status as string,
       }))
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function createRegional(request: NextRequest, payload: { name: string; code: string }) {
+  const actor = await requireSuperAdmin(request)
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+    try {
+      await ensureRbacSchema(connection)
+      const name = payload.name.trim()
+      const code = normalizeRegionalCode(payload.code)
+      if (!name || !code) throw new Error('Nama dan kode regional wajib diisi')
+
+      const id = randomUUID()
+      await connection.query<ResultSetHeader>(
+        `
+          INSERT INTO regionals (id, name, code, status)
+          VALUES (:id, :name, :code, 'active')
+        `,
+        { id, name, code },
+      )
+      await writeActivityLog(connection, {
+        userId: actor.userId,
+        action: 'regional.created',
+        entityType: 'regional',
+        entityId: id,
+        metadata: { name, code },
+        request,
+      })
+      return { id, name, code, status: 'active' }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      if (message.includes('Duplicate')) throw new Error('Kode regional sudah digunakan')
+      throw error
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function updateRegional(
+  request: NextRequest,
+  regionalId: string,
+  payload: { name?: string; code?: string; status?: string },
+) {
+  const actor = await requireSuperAdmin(request)
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+    try {
+      await ensureRbacSchema(connection)
+      const [existingRows] = await connection.query<RegionalRow[]>('SELECT id, name, code, status FROM regionals WHERE id = :regionalId LIMIT 1', {
+        regionalId,
+      })
+      if (!existingRows[0]) throw new Error('Regional tidak ditemukan')
+
+      const name = payload.name !== undefined ? payload.name.trim() : existingRows[0].name
+      const code = payload.code !== undefined ? normalizeRegionalCode(payload.code) : existingRows[0].code
+      const status = payload.status !== undefined ? payload.status.trim() : existingRows[0].status
+      if (!name || !code) throw new Error('Nama dan kode regional wajib diisi')
+      if (!['active', 'inactive'].includes(status)) throw new Error('Status regional tidak valid')
+
+      await connection.query(
+        `
+          UPDATE regionals
+          SET name = :name, code = :code, status = :status
+          WHERE id = :regionalId
+        `,
+        { regionalId, name, code, status },
+      )
+      await writeActivityLog(connection, {
+        userId: actor.userId,
+        action: 'regional.updated',
+        entityType: 'regional',
+        entityId: regionalId,
+        metadata: { name, code, status },
+        request,
+      })
+      return { id: regionalId, name, code, status }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      if (message.includes('Duplicate')) throw new Error('Kode regional sudah digunakan')
+      throw error
     } finally {
       connection.release()
     }
@@ -865,6 +973,13 @@ export async function createRegionalAdmin(
       const fullName = payload.fullName.trim()
       const email = payload.email.trim().toLowerCase()
       if (!fullName || !email || !payload.regionalId) throw new Error('Nama, email, dan regional wajib diisi')
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Format email tidak valid')
+
+      const [regionalRows] = await connection.query<RowDataPacket[]>(
+        "SELECT id FROM regionals WHERE id = :regionalId AND status = 'active' LIMIT 1",
+        { regionalId: payload.regionalId },
+      )
+      if (!regionalRows[0]) throw new Error('Regional aktif tidak ditemukan')
 
       const [roleRows] = await connection.query<RowDataPacket[]>('SELECT id FROM roles WHERE code = :code LIMIT 1', { code: AUTH_ROLES.regionalAdmin })
       const roleId = roleRows[0]?.id as string | undefined
@@ -935,8 +1050,11 @@ export async function updateRegionalAdmin(request: NextRequest, userId: string, 
         await connection.query('UPDATE users SET status = :status WHERE id = :userId', { status, userId })
       }
       if (regionalId) {
-        const [regionalRows] = await connection.query<RowDataPacket[]>('SELECT id FROM regionals WHERE id = :regionalId LIMIT 1', { regionalId })
-        if (!regionalRows[0]) throw new Error('Regional tidak ditemukan')
+        const [regionalRows] = await connection.query<RowDataPacket[]>(
+          "SELECT id FROM regionals WHERE id = :regionalId AND status = 'active' LIMIT 1",
+          { regionalId },
+        )
+        if (!regionalRows[0]) throw new Error('Regional aktif tidak ditemukan')
         await connection.query(
           `
             INSERT INTO admin_regional_access (user_id, regional_id)

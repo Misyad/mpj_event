@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
-import { Calendar, ChevronRight, CreditCard, Database, History, KeyRound, LayoutDashboard, Menu, QrCode, ReceiptText, UserCheck, Users2, UsersRound, WalletCards, X } from 'lucide-react'
+import { Calendar, ChevronRight, CreditCard, Database, History, KeyRound, LayoutDashboard, MapPinned, Menu, QrCode, ReceiptText, UserCheck, Users2, UsersRound, WalletCards, X } from 'lucide-react'
 import { LogoutButton } from '@/components/auth/LogoutButton'
 import { BrandMark } from '@/components/BrandMark'
 import { cn } from '@/lib/utils'
@@ -13,7 +13,8 @@ const navItems = [
   { href: '/admin-pusat/events', label: 'Master Event', icon: Calendar, exact: false },
   { href: '/admin-pusat/narasumber', label: 'Narasumber', icon: Users2, exact: false },
   { href: '/admin-pusat/peserta', label: 'Master Peserta', icon: UserCheck, exact: false },
-  { href: '/admin-pusat/master-data', label: 'Master Data', icon: Database, exact: false },
+  { href: '/admin-pusat/master-data', label: 'Master Data', icon: Database, exact: true },
+  { href: '/admin-pusat/master-data/regional', label: 'Master Regional', icon: MapPinned, exact: false },
   { href: '/admin-pusat/roles', label: 'Role Admin', icon: UsersRound, exact: false },
   { href: '/admin-pusat/permissions', label: 'Permissions', icon: KeyRound, exact: false },
 ]
