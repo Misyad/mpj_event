@@ -1,12 +1,15 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { CheckCircle2, Clock, ExternalLink, Loader2, Search, Ticket, UserCheck, Wallet, XCircle } from 'lucide-react'
+import { CheckCircle2, Clock, Download, Edit3, ExternalLink, Loader2, Plus, Search, Ticket, Upload, UserCheck, Wallet, XCircle } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import type { AttendanceStatus, EventStatus, PaymentStatus, RegistrationPath } from '@/types'
+import type { AttendanceStatus, Event, EventStatus, PaymentStatus, RegistrationPath } from '@/types'
 
 type RegionalParticipant = {
   id: string
@@ -32,6 +35,28 @@ type RegionalParticipant = {
     location_name: string
   }
 }
+
+type ParticipantForm = {
+  event_id: string
+  registration_path: RegistrationPath
+  full_name: string
+  institution_name: string
+  whatsapp: string
+  email: string
+  niam: string
+}
+
+const emptyForm: ParticipantForm = {
+  event_id: '',
+  registration_path: 'UMUM',
+  full_name: '',
+  institution_name: '',
+  whatsapp: '',
+  email: '',
+  niam: '',
+}
+
+type ImportResult = { row: number; ok: boolean; id?: string; error?: string }
 
 function PaymentBadge({ status }: { status: PaymentStatus }) {
   const map: Record<PaymentStatus, { label: string; className: string }> = {
@@ -77,6 +102,7 @@ function sameStatus(value: string | undefined, filter: string) {
 
 export default function RegionalParticipantsPage() {
   const [participants, setParticipants] = useState<RegionalParticipant[]>([])
+  const [events, setEvents] = useState<Event[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
@@ -84,30 +110,45 @@ export default function RegionalParticipantsPage() {
   const [pathFilter, setPathFilter] = useState('ALL')
   const [payFilter, setPayFilter] = useState('ALL')
   const [attendFilter, setAttendFilter] = useState('ALL')
+  const [formOpen, setFormOpen] = useState(false)
+  const [editingParticipant, setEditingParticipant] = useState<RegionalParticipant | null>(null)
+  const [form, setForm] = useState<ParticipantForm>(emptyForm)
+  const [importOpen, setImportOpen] = useState(false)
+  const [importEventId, setImportEventId] = useState('')
+  const [csvText, setCsvText] = useState('')
+  const [importResults, setImportResults] = useState<ImportResult[]>([])
+  const [isSaving, setIsSaving] = useState(false)
+
+  const loadData = useCallback(async (active = true) => {
+    try {
+      setIsLoading(true)
+      setError('')
+      const [participantsResponse, eventsResponse] = await Promise.all([
+        fetch('/api/regional/participants', { cache: 'no-store' }),
+        fetch('/api/regional/events', { cache: 'no-store' }),
+      ])
+      const [participantsPayload, eventsPayload] = await Promise.all([participantsResponse.json(), eventsResponse.json()])
+      if (!participantsResponse.ok || !participantsPayload.ok) throw new Error(participantsPayload.error || 'Gagal memuat peserta regional')
+      if (!eventsResponse.ok || !eventsPayload.ok) throw new Error(eventsPayload.error || 'Gagal memuat event regional')
+      if (active) {
+        setParticipants(participantsPayload.data ?? [])
+        setEvents(eventsPayload.data ?? [])
+      }
+    } catch (loadError) {
+      if (active) setError(loadError instanceof Error ? loadError.message : 'Gagal memuat data regional')
+    } finally {
+      if (active) setIsLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
-
-    async function loadParticipants() {
-      try {
-        setIsLoading(true)
-        setError('')
-        const response = await fetch('/api/regional/participants', { cache: 'no-store' })
-        const payload = await response.json()
-        if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal memuat peserta regional')
-        if (active) setParticipants(payload.data ?? [])
-      } catch (loadError) {
-        if (active) setError(loadError instanceof Error ? loadError.message : 'Gagal memuat peserta regional')
-      } finally {
-        if (active) setIsLoading(false)
-      }
-    }
-
-    loadParticipants()
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadData(active)
     return () => {
       active = false
     }
-  }, [])
+  }, [loadData])
 
   const enriched = useMemo(() => participants.map((participant) => ({
     ...participant,
@@ -119,13 +160,7 @@ export default function RegionalParticipantsPage() {
       : `https://avatar.iran.liara.run/public/girl?username=${participant.guest?.id ?? participant.id}`,
   })), [participants])
 
-  const eventOptions = useMemo(() => {
-    const byId = new Map<string, RegionalParticipant['event']>()
-    enriched.forEach((participant) => {
-      if (participant.event) byId.set(participant.event.id, participant.event)
-    })
-    return Array.from(byId.values()).sort((a, b) => a.title.localeCompare(b.title))
-  }, [enriched])
+  const eventOptions = useMemo(() => events.sort((a, b) => a.title.localeCompare(b.title)), [events])
 
   const filtered = useMemo(() => {
     const keyword = search.trim().toLowerCase()
@@ -163,6 +198,97 @@ export default function RegionalParticipantsPage() {
 
   const hasFilter = search || eventFilter !== 'ALL' || pathFilter !== 'ALL' || payFilter !== 'ALL' || attendFilter !== 'ALL'
 
+  function openCreate() {
+    setEditingParticipant(null)
+    setForm({ ...emptyForm, event_id: eventOptions[0]?.id ?? '' })
+    setError('')
+    setFormOpen(true)
+  }
+
+  function openEdit(participant: RegionalParticipant) {
+    setEditingParticipant(participant)
+    setForm({
+      event_id: participant.event_id,
+      registration_path: participant.registration_path,
+      full_name: participant.fullName ?? participant.full_name ?? participant.crew?.full_name ?? participant.guest?.full_name ?? '',
+      institution_name: participant.institution ?? participant.institution_name ?? participant.crew?.unit ?? participant.guest?.institution_name ?? '',
+      whatsapp: participant.whatsapp ?? participant.guest?.whatsapp ?? '',
+      email: '',
+      niam: participant.crew?.niam ?? '',
+    })
+    setError('')
+    setFormOpen(true)
+  }
+
+  async function saveParticipant() {
+    try {
+      setIsSaving(true)
+      setError('')
+      const response = await fetch(editingParticipant ? `/api/regional/participants/${editingParticipant.id}` : '/api/regional/participants', {
+        method: editingParticipant ? 'PATCH' : 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(form),
+      })
+      const payload = await response.json()
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal menyimpan peserta')
+      setFormOpen(false)
+      await loadData()
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Gagal menyimpan peserta')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function cancelParticipant(participant: RegionalParticipant) {
+    try {
+      setIsSaving(true)
+      setError('')
+      const response = await fetch(`/api/regional/participants/${participant.id}/cancel`, { method: 'POST' })
+      const payload = await response.json()
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal membatalkan peserta')
+      await loadData()
+    } catch (cancelError) {
+      setError(cancelError instanceof Error ? cancelError.message : 'Gagal membatalkan peserta')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  function parseCsv(text: string) {
+    const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+    if (lines.length < 2) return []
+    const headers = lines[0].split(',').map((header) => header.trim())
+    return lines.slice(1).map((line) => {
+      const cells = line.split(',').map((cell) => cell.trim())
+      return Object.fromEntries(headers.map((header, index) => [header, cells[index] ?? '']))
+    })
+  }
+
+  async function importCsv() {
+    try {
+      setIsSaving(true)
+      setError('')
+      setImportResults([])
+      const rows = parseCsv(csvText)
+      if (!importEventId) throw new Error('Event import wajib dipilih')
+      if (rows.length === 0) throw new Error('CSV minimal berisi header dan satu baris data')
+      const response = await fetch('/api/regional/participants/import', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ event_id: importEventId, rows }),
+      })
+      const payload = await response.json()
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal import CSV')
+      setImportResults(payload.data ?? [])
+      await loadData()
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : 'Gagal import CSV')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   return (
     <main className="min-h-screen p-4 md:p-6">
       <div className="mx-auto max-w-7xl space-y-5">
@@ -177,6 +303,20 @@ export default function RegionalParticipantsPage() {
               Reset Filter
             </button>
           ) : null}
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" onClick={openCreate} className="rounded-xl bg-[#1B4332] text-white">
+              <Plus className="h-4 w-4" />
+              Input Peserta
+            </Button>
+            <Button type="button" variant="outline" onClick={() => { setImportEventId(eventOptions[0]?.id ?? ''); setImportOpen(true); setImportResults([]) }} className="rounded-xl">
+              <Upload className="h-4 w-4" />
+              Import CSV
+            </Button>
+            <Button type="button" variant="outline" className="rounded-xl" onClick={() => window.location.assign('/api/regional/participants/export')}>
+              <Download className="h-4 w-4" />
+              Export CSV
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-3 gap-2 md:grid-cols-6 md:gap-3">
@@ -305,6 +445,16 @@ export default function RegionalParticipantsPage() {
                         </td>
                         <td className="px-4 py-3.5">
                           <div className="flex flex-wrap gap-1.5">
+                            <button type="button" onClick={() => openEdit(participant)} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-600 transition-colors hover:border-[#1B4332] hover:text-[#1B4332]">
+                              <Edit3 className="h-3 w-3" />
+                              Edit
+                            </button>
+                            {String(participant.attendance_status).toLowerCase() !== 'cancelled' ? (
+                              <button type="button" onClick={() => cancelParticipant(participant)} disabled={isSaving} className="inline-flex items-center gap-1 rounded-lg border border-red-100 px-2.5 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:opacity-60">
+                                <XCircle className="h-3 w-3" />
+                                Cancel
+                              </button>
+                            ) : null}
                             <Link href="/regional/events" className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-600 transition-colors hover:border-[#1B4332] hover:text-[#1B4332]">
                               <ExternalLink className="h-3 w-3" />
                               Event
@@ -342,6 +492,10 @@ export default function RegionalParticipantsPage() {
                       ) : null}
                     </div>
                     <div className="flex gap-2">
+                      <button type="button" onClick={() => openEdit(participant)} className="text-xs font-semibold text-[#1B4332] hover:underline">Edit</button>
+                      {String(participant.attendance_status).toLowerCase() !== 'cancelled' ? (
+                        <button type="button" onClick={() => cancelParticipant(participant)} className="text-xs font-semibold text-red-600 hover:underline">Cancel</button>
+                      ) : null}
                       <Link href="/regional/events" className="text-xs font-semibold text-[#1B4332] hover:underline">Daftar event</Link>
                       <Link href={`/ticket/${encodeURIComponent(participant.ticketCode || participant.qr_token)}`} className="text-xs font-semibold text-[#1B4332] hover:underline">Tiket</Link>
                     </div>
@@ -352,6 +506,102 @@ export default function RegionalParticipantsPage() {
           )}
         </div>
       </div>
+
+      <Dialog open={formOpen} onOpenChange={setFormOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{editingParticipant ? 'Edit Peserta Regional' : 'Input Peserta Regional'}</DialogTitle>
+            <DialogDescription>Data peserta hanya dapat dimasukkan untuk event regional dalam scope login Anda.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Event</Label>
+              <Select value={form.event_id} onValueChange={(value) => value != null && setForm((current) => ({ ...current, event_id: value }))} disabled={Boolean(editingParticipant)}>
+                <SelectTrigger><SelectValue placeholder="Pilih event" /></SelectTrigger>
+                <SelectContent>
+                  {eventOptions.map((event) => <SelectItem key={event.id} value={event.id}>{event.title}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Jalur</Label>
+              <Select value={form.registration_path} onValueChange={(value) => setForm((current) => ({ ...current, registration_path: value as RegistrationPath }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="UMUM">Umum</SelectItem>
+                  <SelectItem value="NIAM">NIAM</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {form.registration_path === 'NIAM' ? (
+              <div className="space-y-1.5">
+                <Label>NIAM</Label>
+                <Input value={form.niam} onChange={(event) => setForm((current) => ({ ...current, niam: event.target.value }))} />
+              </div>
+            ) : null}
+            <div className="space-y-1.5">
+              <Label>Nama Lengkap</Label>
+              <Input value={form.full_name} onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Instansi/Unit</Label>
+              <Input value={form.institution_name} onChange={(event) => setForm((current) => ({ ...current, institution_name: event.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>WhatsApp</Label>
+              <Input value={form.whatsapp} onChange={(event) => setForm((current) => ({ ...current, whatsapp: event.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Email</Label>
+              <Input type="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setFormOpen(false)} disabled={isSaving}>Batal</Button>
+            <Button type="button" onClick={saveParticipant} disabled={isSaving} className="bg-[#1B4332] text-white">{isSaving ? 'Menyimpan...' : 'Simpan'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Import Peserta CSV</DialogTitle>
+            <DialogDescription>Gunakan header: registration_path, full_name, institution_name, whatsapp, email, niam.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Event Tujuan</Label>
+              <Select value={importEventId} onValueChange={(value) => value != null && setImportEventId(value)}>
+                <SelectTrigger><SelectValue placeholder="Pilih event" /></SelectTrigger>
+                <SelectContent>
+                  {eventOptions.map((event) => <SelectItem key={event.id} value={event.id}>{event.title}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <textarea
+              value={csvText}
+              onChange={(event) => setCsvText(event.target.value)}
+              className="min-h-40 w-full rounded-xl border border-gray-200 bg-white p-3 text-sm outline-none focus:border-[#1B4332]"
+              placeholder={'registration_path,full_name,institution_name,whatsapp,email,niam\nUMUM,Budi,MPJ Jakarta,62812,budi@mail.com,\nNIAM,Ahmad,Pesantren A,,ahmad@mail.com,NIAM001'}
+            />
+            {importResults.length > 0 ? (
+              <div className="max-h-48 overflow-y-auto rounded-xl border border-gray-100">
+                {importResults.map((result) => (
+                  <div key={result.row} className="flex items-center justify-between gap-3 border-b border-gray-50 px-3 py-2 text-sm last:border-b-0">
+                    <span className="font-semibold">Baris {result.row}</span>
+                    <span className={result.ok ? 'text-emerald-700' : 'text-red-600'}>{result.ok ? 'Berhasil' : result.error}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setImportOpen(false)} disabled={isSaving}>Tutup</Button>
+            <Button type="button" onClick={importCsv} disabled={isSaving} className="bg-[#1B4332] text-white">{isSaving ? 'Mengimport...' : 'Import'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   )
 }

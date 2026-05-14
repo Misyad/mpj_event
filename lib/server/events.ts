@@ -1100,6 +1100,244 @@ export async function getAdminParticipantsFromDb(options: { scope?: EventScope; 
   })
 }
 
+export async function getScopedParticipantFromDb(participantId: string, options: { scope?: EventScope; regionId?: string | null } = {}) {
+  const participants = await getAdminParticipantsFromDb(options)
+  return participants.find((participant) => participant.id === participantId) ?? null
+}
+
+export async function createAdminParticipantInDb(eventIdentifier: string, payload: RegisterPayload, options: { scope?: EventScope; regionId?: string | null; userId?: string | null } = {}) {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+
+    try {
+      await ensureEventV4Schema(connection)
+      await connection.beginTransaction()
+
+      const [eventRows] = await connection.query<EventRow[]>(
+        `
+          ${EVENT_SELECT}
+          WHERE id = :eventIdentifier OR slug = :eventIdentifier
+          LIMIT 1
+          FOR UPDATE
+        `,
+        { eventIdentifier },
+      )
+      const eventRow = eventRows[0]
+      if (!eventRow) throw new Error('Event tidak ditemukan')
+      if (options.scope === 'regional' && (eventRow.scope !== 'regional' || eventRow.region_id !== options.regionId)) {
+        throw new Error('Regional scope tidak valid')
+      }
+
+      const event = mapEvent(eventRow)
+      if (['finished', 'completed', 'registration_closed'].includes(toV4EventStatus(eventRow.status))) {
+        throw new Error('Event tidak menerima input peserta baru')
+      }
+      if (event.status_pendaftaran === 'closed' || event.status_pendaftaran === 'full') throw new Error('Pendaftaran event sudah ditutup')
+      if (event.quota && event.registeredCount && event.registeredCount >= event.quota) throw new Error('Kuota event sudah penuh')
+
+      const requestedPath = payload.registration_path === 'NIAM' ? 'NIAM' : payload.registration_path === 'UMUM' ? 'UMUM' : undefined
+      const member = await findRegistrationMemberByNiam(connection, getString(payload.niam))
+      const registrationPath = requestedPath ?? (member ? 'NIAM' : 'UMUM')
+      const fullName = member?.fullName || getString(payload.full_name || payload.name)
+      const institution = member?.unit || getString(payload.institution_name || payload.institution)
+      const whatsapp = getString(payload.whatsapp)
+      const email = getString(payload.email)
+      const niam = registrationPath === 'NIAM' ? member?.niam || getString(payload.niam) : ''
+
+      if (!fullName) throw new Error('Nama lengkap wajib diisi')
+      if (registrationPath === 'NIAM' && !niam) throw new Error('NIAM wajib diisi')
+      if (registrationPath === 'UMUM' && !whatsapp) throw new Error('Nomor WhatsApp wajib diisi')
+      if (registrationPath === 'UMUM' && !institution) throw new Error('Instansi wajib diisi')
+
+      const [duplicates] = await connection.query<RowDataPacket[]>(
+        registrationPath === 'NIAM'
+          ? `
+              SELECT id FROM mpj_event_participants
+              WHERE event_id = :eventId AND niam = :niam AND LOWER(COALESCE(status, attendance_status, 'registered')) != 'cancelled'
+              LIMIT 1
+            `
+          : `
+              SELECT id FROM mpj_event_participants
+              WHERE event_id = :eventId AND whatsapp = :whatsapp AND LOWER(COALESCE(status, attendance_status, 'registered')) != 'cancelled'
+              LIMIT 1
+            `,
+        { eventId: event.id, niam, whatsapp },
+      )
+      if (duplicates.length > 0) throw new Error(registrationPath === 'NIAM' ? 'NIAM ini sudah terdaftar pada event ini' : 'Nomor WhatsApp ini sudah terdaftar pada event ini')
+
+      const customAnswers = payload.customAnswers ?? payload.custom_responses ?? {}
+      await validateCustomResponses(connection, event.id, customAnswers)
+      const classId = await resolveRegistrationClassId(connection, event.id, getString(payload.class_id))
+      const participantId = randomUUID()
+      const ticketCode = `MPJ-${event.id.slice(0, 8)}-${randomUUID()}`
+      const baseAmount = event.isPaidEvent ? (registrationPath === 'NIAM' ? event.priceNiam ?? 0 : event.priceUmum ?? 0) : 0
+      const requestedAmount = Number(payload.final_amount ?? 0)
+      const paymentAmount = event.isPaidEvent && requestedAmount >= baseAmount && requestedAmount <= baseAmount + 999 ? requestedAmount : baseAmount
+      const paymentStatus = event.isPaidEvent ? 'Unpaid' : 'Free'
+      const participantStatus = event.isPaidEvent ? 'registered' : 'confirmed'
+
+      await connection.query<ResultSetHeader>(
+        `
+          INSERT INTO mpj_event_participants (
+            id, event_id, registration_path, payment_status,
+            attendance_status, qr_token, crew_json, guest_json,
+            full_name, institution_name, whatsapp, user_id, niam, email,
+            class_id, status, ticket_code, payment_id, custom_answers
+          ) VALUES (
+            :participantId, :eventId, :registrationPath, :paymentStatus,
+            :attendanceStatus, :ticketCode, :crewJson, :guestJson,
+            :fullName, :institution, :whatsapp, :userId, :niam, :email,
+            :classId, :participantStatus, :ticketCode, NULL, CAST(:customAnswers AS JSON)
+          )
+        `,
+        {
+          participantId,
+          eventId: event.id,
+          registrationPath,
+          paymentStatus,
+          attendanceStatus: participantStatus === 'confirmed' ? 'Confirmed' : 'Registered',
+          ticketCode,
+          crewJson: registrationPath === 'NIAM' ? JSON.stringify({ niam, full_name: fullName, unit: institution }) : null,
+          guestJson: registrationPath === 'UMUM' ? JSON.stringify({ full_name: fullName, institution_name: institution, whatsapp }) : null,
+          fullName,
+          institution: institution || null,
+          whatsapp: whatsapp || null,
+          userId: options.userId || null,
+          niam: niam || null,
+          email: email || null,
+          classId,
+          participantStatus,
+          customAnswers: JSON.stringify(customAnswers),
+        },
+      )
+
+      const paymentRequest = event.isPaidEvent
+        ? await createPaymentCoreRequest(connection, participantId, paymentAmount, { event, customerName: fullName, customerEmail: email, customerPhone: whatsapp })
+        : null
+      if (paymentRequest) await connection.query<ResultSetHeader>('UPDATE mpj_event_participants SET payment_id = :paymentId WHERE id = :participantId', { participantId, paymentId: paymentRequest.paymentId })
+      await connection.query<ResultSetHeader>('UPDATE mpj_event_events SET current_participants = current_participants + 1 WHERE id = :eventId', { eventId: event.id })
+
+      const [participantRows] = await connection.query<ParticipantRow[]>('SELECT * FROM mpj_event_participants WHERE id = :participantId LIMIT 1', { participantId })
+      await connection.commit()
+      return { participant: mapParticipant(participantRows[0]), paymentCoreRequest: paymentRequest }
+    } catch (error) {
+      await connection.rollback()
+      throw error
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function updateAdminParticipantInDb(participantId: string, payload: RegisterPayload & { attendance_status?: string; payment_status?: string }, options: { scope?: EventScope; regionId?: string | null } = {}) {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+    try {
+      await ensureEventV4Schema(connection)
+      const [rows] = await connection.query<Array<ParticipantRow & { event_scope: EventScope | null; event_region_id: string | null }>>(
+        `
+          SELECT p.*, e.scope AS event_scope, e.region_id AS event_region_id
+          FROM mpj_event_participants p
+          JOIN mpj_event_events e ON e.id = p.event_id
+          WHERE p.id = :participantId
+          LIMIT 1
+        `,
+        { participantId },
+      )
+      const existing = rows[0]
+      if (!existing) return null
+      if (options.scope === 'regional' && (existing.event_scope !== 'regional' || existing.event_region_id !== options.regionId)) throw new Error('Regional scope tidak valid')
+
+      const registrationPath = payload.registration_path ?? existing.registration_path
+      const fullName = getString(payload.full_name || payload.name) || existing.full_name || ''
+      const institution = getString(payload.institution_name || payload.institution) || existing.institution_name || ''
+      const whatsapp = getString(payload.whatsapp) || existing.whatsapp || ''
+      const email = getString(payload.email) || existing.email || ''
+      const niam = registrationPath === 'NIAM' ? getString(payload.niam) || existing.niam || '' : ''
+      const classId = payload.class_id !== undefined ? getString(payload.class_id) || null : existing.class_id
+      const customAnswers = payload.customAnswers ?? payload.custom_responses ?? parseJson(existing.custom_answers) ?? {}
+      await validateCustomResponses(connection, existing.event_id, customAnswers as Record<string, unknown>)
+
+      await connection.query<ResultSetHeader>(
+        `
+          UPDATE mpj_event_participants
+          SET registration_path = :registrationPath,
+              full_name = :fullName,
+              institution_name = :institution,
+              whatsapp = :whatsapp,
+              niam = :niam,
+              email = :email,
+              class_id = :classId,
+              crew_json = :crewJson,
+              guest_json = :guestJson,
+              custom_answers = CAST(:customAnswers AS JSON)
+          WHERE id = :participantId
+        `,
+        {
+          participantId,
+          registrationPath,
+          fullName,
+          institution: institution || null,
+          whatsapp: whatsapp || null,
+          niam: niam || null,
+          email: email || null,
+          classId,
+          crewJson: registrationPath === 'NIAM' ? JSON.stringify({ niam, full_name: fullName, unit: institution }) : null,
+          guestJson: registrationPath === 'UMUM' ? JSON.stringify({ full_name: fullName, institution_name: institution, whatsapp }) : null,
+          customAnswers: JSON.stringify(customAnswers),
+        },
+      )
+      const [updatedRows] = await connection.query<ParticipantRow[]>('SELECT * FROM mpj_event_participants WHERE id = :participantId LIMIT 1', { participantId })
+      return mapParticipant(updatedRows[0])
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function cancelAdminParticipantInDb(participantId: string, options: { scope?: EventScope; regionId?: string | null } = {}) {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+    try {
+      await ensureEventV4Schema(connection)
+      await connection.beginTransaction()
+      const [rows] = await connection.query<Array<ParticipantRow & { event_scope: EventScope | null; event_region_id: string | null }>>(
+        `
+          SELECT p.*, e.scope AS event_scope, e.region_id AS event_region_id
+          FROM mpj_event_participants p
+          JOIN mpj_event_events e ON e.id = p.event_id
+          WHERE p.id = :participantId
+          LIMIT 1
+          FOR UPDATE
+        `,
+        { participantId },
+      )
+      const existing = rows[0]
+      if (!existing) return null
+      if (options.scope === 'regional' && (existing.event_scope !== 'regional' || existing.event_region_id !== options.regionId)) throw new Error('Regional scope tidak valid')
+
+      await connection.query<ResultSetHeader>(
+        "UPDATE mpj_event_participants SET status = 'cancelled', attendance_status = 'Cancelled' WHERE id = :participantId",
+        { participantId },
+      )
+      if (String(existing.status || existing.attendance_status).toLowerCase() !== 'cancelled') {
+        await connection.query<ResultSetHeader>(
+          'UPDATE mpj_event_events SET current_participants = GREATEST(current_participants - 1, 0) WHERE id = :eventId',
+          { eventId: existing.event_id },
+        )
+      }
+      const [updatedRows] = await connection.query<ParticipantRow[]>('SELECT * FROM mpj_event_participants WHERE id = :participantId LIMIT 1', { participantId })
+      await connection.commit()
+      return mapParticipant(updatedRows[0])
+    } catch (error) {
+      await connection.rollback()
+      throw error
+    } finally {
+      connection.release()
+    }
+  })
+}
+
 export async function confirmParticipantManually(eventIdentifier: string, participantId: string) {
   return withDb(async (db) => {
     const connection = await db.getConnection()
