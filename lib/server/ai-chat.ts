@@ -52,6 +52,10 @@ function latestUserText(messages: AiChatMessage[]) {
   return [...messages].reverse().find((message) => message.role === 'user')?.content ?? ''
 }
 
+function normalizeSearchText(value: string) {
+  return value.toLowerCase().replace(/\s+/g, ' ').trim()
+}
+
 function extractTicketLikeCodes(text: string) {
   const matches = text.match(/\b[A-Z0-9][A-Z0-9_-]{5,80}\b/gi) ?? []
   return Array.from(new Set(matches.map((match) => match.trim()))).slice(0, 3)
@@ -102,6 +106,10 @@ function canReadParticipants(session: AdminSession | null) {
   return Boolean(session && hasPermission(session.permissions, 'participants.read'))
 }
 
+function shouldLoadParticipantContext(text: string) {
+  return /\b(peserta|participant|tiket|ticket|qr|bayar|payment|lunas|absen|hadir|check-?in|sertifikat)\b/i.test(text)
+}
+
 function visibleAdminScope(session: AdminSession | null): { scope?: EventScope; regionId?: string | null } {
   if (!session) return {}
   if (session.role === AUTH_ROLES.regionalAdmin) return { scope: 'regional', regionId: session.regionalId }
@@ -121,7 +129,7 @@ async function getAiContext(request: NextRequest, messages: AiChatMessage[]): Pr
       }
       return items
     }).catch(() => [] as Event[]),
-    canReadParticipants(session)
+    canReadParticipants(session) && shouldLoadParticipantContext(userText)
       ? getAdminParticipantsFromDb(adminScope).then((items) => items.slice(0, 25)).catch(() => [])
       : Promise.resolve([]),
     Promise.all(
@@ -140,13 +148,79 @@ async function getAiContext(request: NextRequest, messages: AiChatMessage[]): Pr
   }
 }
 
+function isActivePublicEvent(event: Event) {
+  const status = String(event.status ?? '').toUpperCase()
+  return Boolean(event.isPublic && (event.isPublished || ['APPROVED', 'LIVE', 'PUBLISHED'].includes(status)))
+}
+
+function textToStream(text: string) {
+  const encoder = new TextEncoder()
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(text))
+      controller.close()
+    },
+  })
+}
+
+function buildTicketStatusAnswer(context: AiContext) {
+  if (context.ticketMatches.length === 0) {
+    return 'Kirim kode tiket atau kode QR terlebih dahulu, nanti saya cek status pembayaran dan kehadirannya dari data yang tersedia.'
+  }
+
+  return context.ticketMatches.map((match) => {
+    if (!match.participant) return `${match.code}: tiket tidak ditemukan di data saat ini.`
+    return [
+      `${match.code}:`,
+      `pembayaran ${match.participant.payment_status ?? '-'}`,
+      `kehadiran ${match.participant.attendance_status ?? '-'}`,
+      `ticket ${match.participant.ticketCode ?? '-'}`,
+    ].join(' ')
+  }).join('\n')
+}
+
+function tryBuildFastAnswer(messages: AiChatMessage[], context: AiContext) {
+  const userText = latestUserText(messages)
+  const normalized = normalizeSearchText(userText)
+
+  if (/\b(cara|bagaimana|gimana|daftar|registrasi|pendaftaran)\b/.test(normalized) && /\b(umum|event)\b/.test(normalized)) {
+    return [
+      'Cara daftar event UMUM:',
+      '1. Buka halaman event yang ingin diikuti.',
+      '2. Pilih tombol daftar atau registrasi.',
+      '3. Isi data peserta umum dengan benar.',
+      '4. Jika event berbayar, ikuti instruksi pembayaran sampai status terkonfirmasi.',
+      '5. Simpan tiket atau QR setelah pendaftaran berhasil.',
+    ].join('\n')
+  }
+
+  if (/\b(tiket|ticket|qr)\b/.test(normalized) && /\b(cek|status|lacak|valid)\b/.test(normalized)) {
+    return buildTicketStatusAnswer(context)
+  }
+
+  if (/\b(event|acara)\b/.test(normalized) && /\b(aktif|ada|tersedia|published|publik|berjalan|sedang)\b/.test(normalized)) {
+    const activeEvents = context.events.filter(isActivePublicEvent).slice(0, 8)
+    if (activeEvents.length === 0) return 'Saat ini belum ada event publik aktif yang bisa saya pastikan dari data aplikasi.'
+
+    return [
+      `Ada ${activeEvents.length} event publik aktif:`,
+      '',
+      ...activeEvents.map((event, index) => `${index + 1}. ${event.title} - ${formatDate(event.start_date || event.dateStart)} - ${event.location_name || event.location || '-'}`),
+    ].join('\n')
+  }
+
+  return null
+}
+
 function buildOperationalContext(context: AiContext) {
   const sessionLabel = context.session
     ? `${context.session.role}${context.session.regionalId ? ` (${context.session.regionalId})` : ''}`
     : 'public'
 
-  const visibleEvents = context.events.slice(0, 12)
+  const localModelMode = Boolean(process.env.OPENAI_BASE_URL)
+  const visibleEvents = context.events.slice(0, localModelMode ? 6 : 12)
   const publicEvents = visibleEvents.filter((event) => event.isPublished && event.isPublic).slice(0, 8)
+  const visibleParticipants = context.participants.slice(0, localModelMode ? 8 : 25)
 
   return [
     `Akses pengguna: ${sessionLabel}.`,
@@ -158,7 +232,7 @@ function buildOperationalContext(context: AiContext) {
     publicEvents.length ? publicEvents.map(formatEvent).join('\n') : '- Tidak ada event publik aktif di konteks saat ini.',
     '',
     'Peserta yang bisa dibaca admin:',
-    context.participants.length ? context.participants.map(formatParticipant).join('\n') : '- Tidak ada data peserta admin dalam konteks atau pengguna bukan admin.',
+    visibleParticipants.length ? visibleParticipants.map(formatParticipant).join('\n') : '- Tidak ada data peserta admin dalam konteks atau pengguna bukan admin.',
     '',
     'Pencarian tiket dari pesan pengguna:',
     context.ticketMatches.length
@@ -194,12 +268,16 @@ ${operationalContext}
 }
 
 export async function createAiTextStream(request: NextRequest, messages: AiChatMessage[], context: AiChatContext = {}) {
+  const aiContext = await getAiContext(request, messages)
+  const fastAnswer = tryBuildFastAnswer(messages, aiContext)
+  if (fastAnswer) return textToStream(fastAnswer)
+
   const apiKey = process.env.OPENAI_API_KEY || (process.env.OPENAI_BASE_URL ? 'ollama' : '')
   if (!apiKey) {
     throw new Error('OPENAI_API_KEY atau OPENAI_BASE_URL belum dikonfigurasi di server')
   }
 
-  const operationalContext = buildOperationalContext(await getAiContext(request, messages))
+  const operationalContext = buildOperationalContext(aiContext)
   const client = new OpenAI({
     apiKey,
     baseURL: process.env.OPENAI_BASE_URL,
@@ -214,6 +292,7 @@ export async function createAiTextStream(request: NextRequest, messages: AiChatM
       role: message.role,
       content: message.content,
     })),
+    max_output_tokens: Number(process.env.OPENAI_MAX_OUTPUT_TOKENS || (process.env.OPENAI_BASE_URL ? 350 : 700)),
     stream: true,
   })
 
