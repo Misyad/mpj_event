@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useState } from 'react'
-import { Calendar, ChevronRight, CreditCard, Database, KeyRound, LayoutDashboard, Menu, QrCode, ReceiptText, UserCheck, Users2, UsersRound, WalletCards, X } from 'lucide-react'
+import { Calendar, ChevronRight, CreditCard, Database, History, KeyRound, LayoutDashboard, Menu, QrCode, ReceiptText, UserCheck, Users2, UsersRound, WalletCards, X } from 'lucide-react'
 import { LogoutButton } from '@/components/auth/LogoutButton'
 import { BrandMark } from '@/components/BrandMark'
 import { cn } from '@/lib/utils'
@@ -25,6 +25,7 @@ const financeItems = [
 ]
 
 const footerItems = [
+  { href: '/admin-pusat/audit-logs', label: 'Audit Log', icon: History, exact: false },
   { href: '/scan', label: 'Scan Absensi', icon: QrCode, exact: false },
 ]
 

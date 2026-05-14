@@ -4,7 +4,7 @@ import {
   listRegionalCredentialStatuses,
   upsertPusatGatewayCredential,
 } from '@/lib/server/payment-gateway-credentials'
-import { requireSuperAdmin } from '@/lib/server/rbac'
+import { recordAdminActivity, requireSuperAdmin } from '@/lib/server/rbac'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -37,6 +37,16 @@ export async function PATCH(request: NextRequest) {
       String(payload.webhookSecret || payload.webhook_secret || ''),
       payload.isActive ?? payload.is_active ?? true,
     )
+    await recordAdminActivity(request, {
+      action: 'payment_gateway.pusat_updated',
+      entityType: 'payment_gateway',
+      entityId: 'pusat:paymenku',
+      metadata: {
+        provider: 'paymenku',
+        ownerType: 'pusat',
+        isActive: payload.isActive ?? payload.is_active ?? true,
+      },
+    })
     return NextResponse.json({ ok: true, data: result })
   } catch (error) {
     return jsonError(error)
