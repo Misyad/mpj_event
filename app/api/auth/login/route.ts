@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
   try {
     const payload = await request.json()
     const role = typeof payload.role === 'string' ? (payload.role as AuthRole) : undefined
-    const email = typeof payload.email === 'string' ? payload.email.trim() : ''
+    const email = typeof payload.email === 'string' ? payload.email.trim().toLowerCase() : ''
     const password = typeof payload.password === 'string' ? payload.password : ''
     const remember = Boolean(payload.remember)
     const config = role ? getAuthRoleConfig(role) : null

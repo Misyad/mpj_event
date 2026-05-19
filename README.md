@@ -52,11 +52,14 @@ DB_USER=root
 DB_PASSWORD=
 DB_NAME=app_db
 NEXT_PUBLIC_APP_URL=http://localhost:3000
+AUTH_COOKIE_SECURE=false
 PAYMENKU_API_BASE_URL=https://paymenku.com/api/v1
 PAYMENT_CREDENTIAL_ENCRYPTION_KEY=
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-5.4-mini
 ```
+
+Gunakan `AUTH_COOKIE_SECURE=true` untuk domain HTTPS production. Untuk akses mobile lewat HTTP LAN/IP, gunakan `AUTH_COOKIE_SECURE=false` agar cookie login tersimpan di browser.
 
 Bootstrap database lokal dengan menjalankan SQL berikut secara berurutan:
 

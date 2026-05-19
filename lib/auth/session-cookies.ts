@@ -7,6 +7,19 @@ export const ACTIVE_ROLE_COOKIE = 'mpj_active_role'
 type CookieResponse = NextResponse
 
 function secureCookies() {
+  if (process.env.AUTH_COOKIE_SECURE) {
+    return process.env.AUTH_COOKIE_SECURE === 'true'
+  }
+
+  const publicUrl = process.env.NEXT_PUBLIC_APP_URL
+  if (publicUrl) {
+    try {
+      return new URL(publicUrl).protocol === 'https:'
+    } catch {
+      return false
+    }
+  }
+
   return process.env.NODE_ENV === 'production'
 }
 

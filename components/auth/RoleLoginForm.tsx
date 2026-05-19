@@ -49,6 +49,7 @@ export function RoleLoginForm({
   async function submitLogin(selectedRole?: AuthRole) {
     setError('')
     setIsSubmitting(true)
+    const normalizedEmail = email.trim().toLowerCase()
 
     try {
       const response = await fetch('/api/auth/login', {
@@ -56,7 +57,7 @@ export function RoleLoginForm({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           role: selectedRole ?? role,
-          email,
+          email: normalizedEmail,
           password,
           remember,
           next: nextPath,
@@ -178,6 +179,9 @@ export function RoleLoginForm({
               <Input
                 type="email"
                 required
+                autoCapitalize="none"
+                autoCorrect="off"
+                autoComplete="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 className="h-11 rounded-2xl pl-9"
@@ -198,6 +202,9 @@ export function RoleLoginForm({
               <Input
                 type="password"
                 required
+                autoCapitalize="none"
+                autoCorrect="off"
+                autoComplete="current-password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 className="h-11 rounded-2xl pl-9"
