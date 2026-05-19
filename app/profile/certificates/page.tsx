@@ -52,7 +52,7 @@ function CertificateCard({ item }: { item: UserEventHistoryItem }) {
           <p className="line-clamp-2 text-sm font-extrabold text-[#1B4332]">{item.event.title}</p>
           <p className="mt-1 text-xs font-medium text-gray-500">{item.certificateNumber}</p>
           <Link
-            href={`/certificate/${encodeURIComponent(item.participant.ticketCode || item.participant.qr_token)}`}
+            href={`/certificate/${encodeURIComponent(item.certificateVerificationCode || '')}`}
             className="mt-4 inline-flex items-center gap-2 rounded-full bg-[#1B4332] px-4 py-2 text-xs font-bold text-white"
           >
             <Download className="h-3.5 w-3.5" />

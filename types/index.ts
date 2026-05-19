@@ -102,6 +102,68 @@ export interface Event {
   speaker_id?: string
   custom_fields?: CustomField[]
   classes?: EventClass[]
+  certificateEnabled?: boolean
+  certificateTemplateUrl?: string | null
+  certificateTemplateName?: string | null
+  certificateGeneratedCount?: number
+  certificateLayout?: CertificateTemplateLayout
+}
+
+export interface EventCertificateRecord {
+  id: string
+  eventId: string
+  participantId: string
+  participantName: string
+  ticketCode: string
+  certificateNumber: string
+  verificationCode: string
+  status: CertificateStatus
+  templateUrl: string | null
+  templateName?: string | null
+  eventTitle?: string | null
+  signerName?: string | null
+  signerRole?: string | null
+  issuedAt?: string | null
+  revokedAt?: string | null
+  revokedReason?: string | null
+  reissuedFrom?: string | null
+  generatedFileUrl?: string | null
+  generatedChecksum?: string | null
+  generatedAt: string
+}
+
+export type CertificateStatus = 'active' | 'revoked' | 'expired' | 'reissued'
+
+export type CertificateTemplateFieldKey =
+  | 'certificate_number'
+  | 'participant_name'
+  | 'event_name'
+  | 'role'
+  | 'signer_name'
+  | 'date'
+  | 'qr_code'
+
+export type CertificateTemplateElement = {
+  x: number
+  y: number
+  width: number
+  fontSize: number
+  fontWeight?: '400' | '500' | '600' | '700' | '800'
+  color?: string
+  align?: 'left' | 'center' | 'right'
+  fontFamily?: string
+  lineHeight?: number
+  multiline?: boolean
+}
+
+export type CertificateTemplateLayout = Record<CertificateTemplateFieldKey, CertificateTemplateElement>
+
+export type CertificateReusableTemplate = {
+  id: string
+  name: string
+  templateUrl: string | null
+  layout: CertificateTemplateLayout
+  createdAt: string
 }
 
 export interface BankAccount {

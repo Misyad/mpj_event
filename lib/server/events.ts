@@ -1,9 +1,12 @@
-import { randomUUID } from 'crypto'
+import { createHash, randomBytes, randomUUID } from 'crypto'
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise'
-import type { CustomField, Event, EventCategory, EventClass, EventPaymentMethod, EventScope, GatewayProvider, LocationType, Participant, PaymentRecord, RegistrationStatus } from '@/types'
+import { DEFAULT_CERTIFICATE_LAYOUT, normalizeCertificateLayout } from '@/components/certificates/certificate-template-layout'
+import type { CertificateReusableTemplate, CertificateStatus, CertificateTemplateLayout, CustomField, Event, EventCategory, EventCertificateRecord, EventClass, EventPaymentMethod, EventScope, GatewayProvider, LocationType, Participant, PaymentRecord, RegistrationStatus } from '@/types'
 import { withDb } from '@/lib/server/db'
 import { createPaymenkuTransaction, normalizePaymenkuStatus, type PaymenkuWebhookPayload } from '@/lib/server/paymenku'
 import { getGatewayCredentialForEvent } from '@/lib/server/payment-gateway-credentials'
+import { renderCertificatePdf } from '@/lib/server/certificate-renderer'
+import { getStorageAdapter, sanitizePublicUploadUrl } from '@/lib/server/storage'
 
 const DEFAULT_BANK_ACCOUNT = {
   bank_name: 'BCA',
@@ -41,6 +44,57 @@ type EventRow = RowDataPacket & {
   attended_count: number | null
   status_pendaftaran: RegistrationStatus | null
   registration_deadline: Date | string | null
+  certificate_enabled?: 0 | 1 | null
+  certificate_template_url?: string | null
+  certificate_template_name?: string | null
+  certificate_layout_json?: string | CertificateTemplateLayout | null
+  certificate_generated_count?: number | null
+}
+
+const CERTIFICATE_TOKEN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+function generateVerificationCode() {
+  const bytes = randomBytes(10)
+  let token = ''
+  for (const byte of bytes) token += CERTIFICATE_TOKEN_ALPHABET[byte % CERTIFICATE_TOKEN_ALPHABET.length]
+  return `MPJ-CERT-${token}`
+}
+
+function sha256Hex(value: Buffer) {
+  return createHash('sha256').update(value).digest('hex')
+}
+
+type CertificateRow = RowDataPacket & {
+  id: string
+  event_id: string
+  participant_id: string
+  participant_name: string | null
+  ticket_code: string | null
+  certificate_number: string
+  verification_code: string | null
+  status: CertificateStatus | string | null
+  template_url: string | null
+  template_name: string | null
+  layout_json: string | CertificateTemplateLayout | null
+  participant_name_snapshot: string | null
+  event_title_snapshot: string | null
+  signer_name: string | null
+  signer_role: string | null
+  issued_at: Date | string | null
+  revoked_at: Date | string | null
+  revoked_reason: string | null
+  reissued_from: string | null
+  generated_file_url: string | null
+  generated_checksum: string | null
+  generated_at: Date | string | null
+}
+
+type ReusableCertificateTemplateRow = RowDataPacket & {
+  id: string
+  name: string
+  template_url: string | null
+  layout_json: string | CertificateTemplateLayout | null
+  created_at: Date | string | null
 }
 
 type ParticipantRow = RowDataPacket & {
@@ -117,6 +171,7 @@ export type UserEventHistoryItem = {
   event: Event
   certificateEligible: boolean
   certificateNumber: string
+  certificateVerificationCode?: string | null
   registeredAt: string | null
 }
 
@@ -340,6 +395,11 @@ function mapEvent(row: EventRow, customFields: CustomField[] = [], classes: Even
     registrationDeadline,
     custom_fields: customFields,
     classes,
+    certificateEnabled: Boolean(row.certificate_enabled),
+    certificateTemplateUrl: row.certificate_template_url ?? null,
+    certificateTemplateName: row.certificate_template_name ?? null,
+    certificateLayout: normalizeCertificateLayout(parseJson<CertificateTemplateLayout>(row.certificate_layout_json) ?? DEFAULT_CERTIFICATE_LAYOUT),
+    certificateGeneratedCount: Number(row.certificate_generated_count ?? 0),
   }
 }
 
@@ -750,6 +810,100 @@ export async function ensureEventV4Schema(connection: PoolConnection) {
   `)
 
   await connection.query(`
+    CREATE TABLE IF NOT EXISTS mpj_event_certificate_settings (
+      event_id VARCHAR(36) NOT NULL,
+      enabled TINYINT(1) NOT NULL DEFAULT 0,
+      template_url VARCHAR(700) NULL,
+      template_name VARCHAR(255) NULL,
+      layout_json JSON NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (event_id),
+      KEY mpj_event_certificate_settings_enabled_idx (enabled)
+    )
+  `)
+  await ensureColumn(connection, 'mpj_event_certificate_settings', 'layout_json', 'JSON NULL')
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS mpj_event_certificates (
+      id VARCHAR(36) NOT NULL,
+      event_id VARCHAR(36) NOT NULL,
+      participant_id VARCHAR(36) NOT NULL,
+      certificate_number VARCHAR(120) NOT NULL,
+      verification_code VARCHAR(80) NULL,
+      status VARCHAR(30) NOT NULL DEFAULT 'active',
+      template_url VARCHAR(700) NULL,
+      template_name VARCHAR(255) NULL,
+      layout_json JSON NULL,
+      participant_name_snapshot VARCHAR(255) NULL,
+      event_title_snapshot VARCHAR(255) NULL,
+      signer_name VARCHAR(255) NULL,
+      signer_role VARCHAR(255) NULL,
+      issued_at DATETIME NULL,
+      revoked_at DATETIME NULL,
+      revoked_reason TEXT NULL,
+      reissued_from VARCHAR(36) NULL,
+      generated_file_url VARCHAR(700) NULL,
+      generated_checksum VARCHAR(128) NULL,
+      generated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      generated_by VARCHAR(36) NULL,
+      PRIMARY KEY (id),
+      UNIQUE KEY mpj_event_certificates_event_participant_key (event_id, participant_id),
+      UNIQUE KEY mpj_event_certificates_number_key (certificate_number),
+      UNIQUE KEY mpj_event_certificates_verification_key (verification_code),
+      KEY mpj_event_certificates_event_id_idx (event_id)
+    )
+  `)
+  await ensureColumn(connection, 'mpj_event_certificates', 'verification_code', 'VARCHAR(80) NULL')
+  await ensureColumn(connection, 'mpj_event_certificates', 'status', "VARCHAR(30) NOT NULL DEFAULT 'active'")
+  await ensureColumn(connection, 'mpj_event_certificates', 'template_name', 'VARCHAR(255) NULL')
+  await ensureColumn(connection, 'mpj_event_certificates', 'layout_json', 'JSON NULL')
+  await ensureColumn(connection, 'mpj_event_certificates', 'participant_name_snapshot', 'VARCHAR(255) NULL')
+  await ensureColumn(connection, 'mpj_event_certificates', 'event_title_snapshot', 'VARCHAR(255) NULL')
+  await ensureColumn(connection, 'mpj_event_certificates', 'signer_name', 'VARCHAR(255) NULL')
+  await ensureColumn(connection, 'mpj_event_certificates', 'signer_role', 'VARCHAR(255) NULL')
+  await ensureColumn(connection, 'mpj_event_certificates', 'issued_at', 'DATETIME NULL')
+  await ensureColumn(connection, 'mpj_event_certificates', 'revoked_at', 'DATETIME NULL')
+  await ensureColumn(connection, 'mpj_event_certificates', 'revoked_reason', 'TEXT NULL')
+  await ensureColumn(connection, 'mpj_event_certificates', 'reissued_from', 'VARCHAR(36) NULL')
+  await ensureColumn(connection, 'mpj_event_certificates', 'generated_file_url', 'VARCHAR(700) NULL')
+  await ensureColumn(connection, 'mpj_event_certificates', 'generated_checksum', 'VARCHAR(128) NULL')
+  await ensureIndex(connection, 'mpj_event_certificates', 'mpj_event_certificates_verification_key', 'UNIQUE KEY mpj_event_certificates_verification_key (verification_code)')
+  await ensureIndex(connection, 'mpj_event_certificates', 'mpj_event_certificates_status_idx', 'KEY mpj_event_certificates_status_idx (status)')
+
+  const [certificateRowsMissingCodes] = await connection.query<RowDataPacket[]>(
+    'SELECT id FROM mpj_event_certificates WHERE verification_code IS NULL OR verification_code = "" LIMIT 250',
+  )
+  for (const row of certificateRowsMissingCodes) {
+    let assigned = false
+    for (let attempt = 0; attempt < 8 && !assigned; attempt += 1) {
+      try {
+        await connection.query<ResultSetHeader>(
+          'UPDATE mpj_event_certificates SET verification_code = :verificationCode, issued_at = COALESCE(issued_at, generated_at, NOW()) WHERE id = :id',
+          { id: row.id, verificationCode: generateVerificationCode() },
+        )
+        assigned = true
+      } catch {
+        assigned = false
+      }
+    }
+  }
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS mpj_certificate_templates (
+      id VARCHAR(36) NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      template_url VARCHAR(700) NULL,
+      layout_json JSON NOT NULL,
+      created_by VARCHAR(36) NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY mpj_certificate_templates_name_idx (name)
+    )
+  `)
+
+  await connection.query(`
     UPDATE mpj_event_events
     SET
       slug = LOWER(REPLACE(REPLACE(REPLACE(TRIM(title), ' ', '-'), '/', '-'), '--', '-'))
@@ -846,7 +1000,36 @@ const EVENT_SELECT = `
     current_participants,
     attended_count,
     status_pendaftaran,
-    registration_deadline
+    registration_deadline,
+    COALESCE((
+      SELECT cs.enabled
+      FROM mpj_event_certificate_settings cs
+      WHERE cs.event_id = mpj_event_events.id
+      LIMIT 1
+    ), 0) AS certificate_enabled,
+    (
+      SELECT cs.template_url
+      FROM mpj_event_certificate_settings cs
+      WHERE cs.event_id = mpj_event_events.id
+      LIMIT 1
+    ) AS certificate_template_url,
+    (
+      SELECT cs.template_name
+      FROM mpj_event_certificate_settings cs
+      WHERE cs.event_id = mpj_event_events.id
+      LIMIT 1
+    ) AS certificate_template_name,
+    (
+      SELECT cs.layout_json
+      FROM mpj_event_certificate_settings cs
+      WHERE cs.event_id = mpj_event_events.id
+      LIMIT 1
+    ) AS certificate_layout_json,
+    (
+      SELECT COUNT(*)
+      FROM mpj_event_certificates c
+      WHERE c.event_id = mpj_event_events.id
+    ) AS certificate_generated_count
   FROM mpj_event_events
 `
 
@@ -917,30 +1100,118 @@ export async function getParticipantByTicketCode(ticketCode: string) {
   })
 }
 
+export async function getCertificateByVerificationCode(verificationCode: string) {
+  const normalizedCode = getString(verificationCode).toUpperCase()
+  if (!/^MPJ-CERT-[A-Z0-9]{10,}$/.test(normalizedCode)) return null
+
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+
+    try {
+      await ensureEventV4Schema(connection)
+      const [rows] = await connection.query<CertificateRow[]>(
+        `
+          SELECT
+            c.id,
+            c.event_id,
+            c.participant_id,
+            COALESCE(p.full_name, JSON_UNQUOTE(JSON_EXTRACT(p.crew_json, '$.full_name')), JSON_UNQUOTE(JSON_EXTRACT(p.guest_json, '$.full_name'))) AS participant_name,
+            COALESCE(p.ticket_code, p.qr_token) AS ticket_code,
+            c.certificate_number,
+            c.verification_code,
+            c.status,
+            c.template_url,
+            c.template_name,
+            c.layout_json,
+            c.participant_name_snapshot,
+            c.event_title_snapshot,
+            c.signer_name,
+            c.signer_role,
+            c.issued_at,
+            c.revoked_at,
+            c.revoked_reason,
+            c.reissued_from,
+            c.generated_file_url,
+            c.generated_checksum,
+            c.generated_at
+          FROM mpj_event_certificates c
+          INNER JOIN mpj_event_participants p ON p.id = c.participant_id
+          WHERE c.verification_code = :verificationCode
+          LIMIT 1
+        `,
+        { verificationCode: normalizedCode },
+      )
+      const certificate = rows[0] ? mapCertificateRecord(rows[0]) : null
+      if (!certificate) return null
+
+      const [participantRows] = await connection.query<ParticipantRow[]>(
+        'SELECT * FROM mpj_event_participants WHERE id = :participantId LIMIT 1',
+        { participantId: certificate.participantId },
+      )
+      const event = await getEventFromDb(certificate.eventId)
+      if (!participantRows[0] || !event) return null
+      const status = certificate.status
+      return {
+        participant: mapParticipant(participantRows[0]),
+        event: {
+          ...event,
+          title: certificate.eventTitle || event.title,
+          certificateTemplateUrl: certificate.templateUrl,
+          certificateTemplateName: certificate.templateName,
+          certificateLayout: normalizeCertificateLayout(parseJson<CertificateTemplateLayout>(rows[0].layout_json) ?? event.certificateLayout),
+        },
+        certificate,
+        certificateNumber: certificate.certificateNumber,
+        verificationCode: certificate.verificationCode,
+        templateUrl: certificate.templateUrl,
+        layout: normalizeCertificateLayout(parseJson<CertificateTemplateLayout>(rows[0].layout_json) ?? event.certificateLayout),
+        issuedAt: certificate.issuedAt ?? certificate.generatedAt,
+        generatedFileUrl: certificate.generatedFileUrl,
+        generatedChecksum: certificate.generatedChecksum,
+        eligible: status === 'active',
+        status,
+        reason: status === 'revoked'
+          ? certificate.revokedReason || 'Sertifikat ini telah dicabut.'
+          : status === 'expired'
+            ? 'Sertifikat ini telah kedaluwarsa.'
+            : status === 'reissued'
+              ? 'Sertifikat ini telah diterbitkan ulang.'
+              : null,
+      }
+    } finally {
+      connection.release()
+    }
+  })
+}
+
 export async function getCertificateByTicketCode(ticketCode: string) {
   const participant = await getParticipantByTicketCode(ticketCode)
   if (!participant) return null
-
   const event = await getEventFromDb(participant.event_id)
   if (!event) return null
-
-  const participantStatus = String(participant.status || participant.attendance_status).toLowerCase()
-  const eventStatus = String(event.status).toLowerCase()
-  const hasAttended = participantStatus === 'attended'
-  const eventCompleted = eventStatus === 'finished' || eventStatus === 'completed'
-  const certificateNumber = `MPJ-CERT-${event.id.slice(0, 8).toUpperCase()}-${participant.id.slice(0, 8).toUpperCase()}`
-
   return {
     participant,
     event,
-    certificateNumber,
-    issuedAt: new Date().toISOString(),
-    eligible: hasAttended && eventCompleted,
-    reason: !hasAttended
-      ? 'Sertifikat belum tersedia karena peserta belum check-in.'
-      : !eventCompleted
-        ? 'Sertifikat tersedia setelah event selesai.'
-        : null,
+    certificateNumber: buildCertificateNumber(event, participant),
+    eligible: false,
+    reason: 'Akses sertifikat sekarang menggunakan verification code.',
+  }
+}
+
+async function ensureIndex(connection: PoolConnection, tableName: string, indexName: string, definition: string) {
+  const [rows] = await connection.query<RowDataPacket[]>(
+    `
+      SELECT COUNT(*) AS total
+      FROM INFORMATION_SCHEMA.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = :tableName
+        AND INDEX_NAME = :indexName
+    `,
+    { tableName, indexName },
+  )
+
+  if (Number(rows[0]?.total || 0) === 0) {
+    await connection.query(`ALTER TABLE ${tableName} ADD ${definition}`)
   }
 }
 
@@ -1046,10 +1317,355 @@ function buildCertificateNumber(event: Event, participant: Participant) {
   return `MPJ-CERT-${event.id.slice(0, 8).toUpperCase()}-${participant.id.slice(0, 8).toUpperCase()}`
 }
 
+function getParticipantDisplayName(participant: Participant) {
+  return participant.fullName ?? participant.full_name ?? participant.crew?.full_name ?? participant.guest?.full_name ?? '-'
+}
+
+async function createUniqueVerificationCode(connection: PoolConnection) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const verificationCode = generateVerificationCode()
+    const [rows] = await connection.query<RowDataPacket[]>(
+      'SELECT id FROM mpj_event_certificates WHERE verification_code = :verificationCode LIMIT 1',
+      { verificationCode },
+    )
+    if (rows.length === 0) return verificationCode
+  }
+  throw new Error('Gagal membuat verification code sertifikat')
+}
+
 function isCertificateEligible(event: Event, participant: Participant) {
   const participantStatus = String(participant.status || participant.attendance_status).toLowerCase()
   const eventStatus = String(event.status).toLowerCase()
-  return participantStatus === 'attended' && (eventStatus === 'finished' || eventStatus === 'completed')
+  return Boolean(event.certificateEnabled) && participantStatus === 'attended' && (eventStatus === 'finished' || eventStatus === 'completed')
+}
+
+function mapCertificateRecord(row: CertificateRow): EventCertificateRecord {
+  return {
+    id: row.id,
+    eventId: row.event_id,
+    participantId: row.participant_id,
+    participantName: row.participant_name_snapshot ?? row.participant_name ?? '-',
+    ticketCode: row.ticket_code ?? '',
+    certificateNumber: row.certificate_number,
+    verificationCode: row.verification_code ?? '',
+    status: (row.status || 'active') as CertificateStatus,
+    templateUrl: row.template_url,
+    templateName: row.template_name,
+    eventTitle: row.event_title_snapshot,
+    signerName: row.signer_name,
+    signerRole: row.signer_role,
+    issuedAt: toIsoString(row.issued_at),
+    revokedAt: toIsoString(row.revoked_at),
+    revokedReason: row.revoked_reason,
+    reissuedFrom: row.reissued_from,
+    generatedFileUrl: row.generated_file_url,
+    generatedChecksum: row.generated_checksum,
+    generatedAt: toIsoString(row.generated_at) ?? toIsoString(row.issued_at) ?? new Date().toISOString(),
+  }
+}
+
+function mapReusableCertificateTemplate(row: ReusableCertificateTemplateRow): CertificateReusableTemplate {
+  return {
+    id: row.id,
+    name: row.name,
+    templateUrl: row.template_url,
+    layout: normalizeCertificateLayout(parseJson<CertificateTemplateLayout>(row.layout_json)),
+    createdAt: toIsoString(row.created_at) ?? new Date().toISOString(),
+  }
+}
+
+async function getReusableCertificateTemplates(connection: PoolConnection) {
+  const [rows] = await connection.query<ReusableCertificateTemplateRow[]>(
+    `
+      SELECT id, name, template_url, layout_json, created_at
+      FROM mpj_certificate_templates
+      ORDER BY updated_at DESC
+      LIMIT 50
+    `,
+  )
+  return rows.map(mapReusableCertificateTemplate)
+}
+
+export async function getEventCertificateSummary(eventId: string) {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+
+    try {
+      await ensureEventV4Schema(connection)
+      const event = await getEventFromDb(eventId)
+      if (!event) throw new Error('Event tidak ditemukan')
+      const [rows] = await connection.query<CertificateRow[]>(
+        `
+          SELECT
+            c.id,
+            c.event_id,
+            c.participant_id,
+            COALESCE(p.full_name, JSON_UNQUOTE(JSON_EXTRACT(p.crew_json, '$.full_name')), JSON_UNQUOTE(JSON_EXTRACT(p.guest_json, '$.full_name'))) AS participant_name,
+            COALESCE(p.ticket_code, p.qr_token) AS ticket_code,
+            c.certificate_number,
+            c.verification_code,
+            c.status,
+            c.template_url,
+            c.template_name,
+            c.layout_json,
+            c.participant_name_snapshot,
+            c.event_title_snapshot,
+            c.signer_name,
+            c.signer_role,
+            c.issued_at,
+            c.revoked_at,
+            c.revoked_reason,
+            c.reissued_from,
+            c.generated_file_url,
+            c.generated_checksum,
+            c.generated_at
+          FROM mpj_event_certificates c
+          INNER JOIN mpj_event_participants p ON p.id = c.participant_id
+          WHERE c.event_id = :eventId
+          ORDER BY c.generated_at DESC
+        `,
+        { eventId: event.id },
+      )
+      return {
+        event,
+        settings: {
+          enabled: Boolean(event.certificateEnabled),
+          templateUrl: event.certificateTemplateUrl ?? null,
+          templateName: event.certificateTemplateName ?? null,
+          layout: normalizeCertificateLayout(event.certificateLayout),
+          generatedCount: Number(event.certificateGeneratedCount ?? rows.length),
+        },
+        certificates: rows.map(mapCertificateRecord),
+        templates: await getReusableCertificateTemplates(connection),
+      }
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function updateEventCertificateSettings(eventId: string, payload: { enabled?: boolean; templateUrl?: string | null; templateName?: string | null; layout?: CertificateTemplateLayout; saveReusable?: boolean; actorId?: string | null }) {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+
+    try {
+      await ensureEventV4Schema(connection)
+      const event = await getEventFromDb(eventId)
+      if (!event) throw new Error('Event tidak ditemukan')
+      const enabled = payload.enabled ?? Boolean(event.certificateEnabled)
+      const templateUrl = payload.templateUrl === undefined ? event.certificateTemplateUrl ?? null : payload.templateUrl
+      const templateName = payload.templateName === undefined ? event.certificateTemplateName ?? null : payload.templateName
+      const layout = normalizeCertificateLayout(payload.layout ?? event.certificateLayout ?? DEFAULT_CERTIFICATE_LAYOUT)
+
+      await connection.query<ResultSetHeader>(
+        `
+          INSERT INTO mpj_event_certificate_settings (event_id, enabled, template_url, template_name, layout_json)
+          VALUES (:eventId, :enabled, :templateUrl, :templateName, CAST(:layoutJson AS JSON))
+          ON DUPLICATE KEY UPDATE
+            enabled = VALUES(enabled),
+            template_url = VALUES(template_url),
+            template_name = VALUES(template_name),
+            layout_json = VALUES(layout_json),
+            updated_at = NOW()
+        `,
+        {
+          eventId: event.id,
+          enabled: enabled ? 1 : 0,
+          templateUrl,
+          templateName,
+          layoutJson: JSON.stringify(layout),
+        },
+      )
+
+      if (payload.saveReusable && templateName) {
+        await connection.query<ResultSetHeader>(
+          `
+            INSERT INTO mpj_certificate_templates (id, name, template_url, layout_json, created_by)
+            VALUES (:id, :name, :templateUrl, CAST(:layoutJson AS JSON), :createdBy)
+          `,
+          {
+            id: randomUUID(),
+            name: templateName,
+            templateUrl,
+            layoutJson: JSON.stringify(layout),
+            createdBy: payload.actorId ?? null,
+          },
+        )
+      }
+
+      return getEventCertificateSummary(event.id)
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function generateEventCertificates(eventId: string, actorId?: string | null) {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+
+    try {
+      await ensureEventV4Schema(connection)
+      await connection.beginTransaction()
+      const [eventRows] = await connection.query<EventRow[]>(
+        `${EVENT_SELECT} WHERE id = :eventId OR slug = :eventId LIMIT 1 FOR UPDATE`,
+        { eventId },
+      )
+      const event = eventRows[0] ? mapEvent(eventRows[0]) : null
+      if (!event) throw new Error('Event tidak ditemukan')
+      if (!event.certificateEnabled) throw new Error('Aktifkan sertifikat terlebih dahulu')
+
+      const [participantRows] = await connection.query<ParticipantRow[]>(
+        `
+          SELECT *
+          FROM mpj_event_participants
+          WHERE event_id = :eventId
+            AND LOWER(COALESCE(status, attendance_status, 'registered')) = 'attended'
+          ORDER BY attended_at ASC, checked_in_at ASC, created_at ASC
+        `,
+        { eventId: event.id },
+      )
+
+      let created = 0
+      const storage = getStorageAdapter()
+      for (const row of participantRows) {
+        const participant = mapParticipant(row)
+        if (!isCertificateEligible(event, participant)) continue
+        const [existingRows] = await connection.query<RowDataPacket[]>(
+          'SELECT id FROM mpj_event_certificates WHERE event_id = :eventId AND participant_id = :participantId LIMIT 1',
+          { eventId: event.id, participantId: participant.id },
+        )
+        if (existingRows.length > 0) continue
+
+        const certificateNumber = buildCertificateNumber(event, participant)
+        const verificationCode = await createUniqueVerificationCode(connection)
+        const issuedAt = new Date()
+        const participantName = getParticipantDisplayName(participant)
+        const signerName = 'Ketua Panitia'
+        const signerRole = 'Panitia Event'
+        const layout = normalizeCertificateLayout(event.certificateLayout)
+        const templateUrl = sanitizePublicUploadUrl(event.certificateTemplateUrl)
+        const templateName = event.certificateTemplateName ?? null
+        const rendered = await renderCertificatePdf({
+          verificationCode,
+          certificateNumber,
+          participantName,
+          eventTitle: event.title,
+          issuedDate: issuedAt.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }),
+          signerName,
+          signerRole,
+          templateUrl,
+          layout,
+        })
+        const stored = await storage.putObject(
+          `generated-certificates/${event.id}/${verificationCode}.pdf`,
+          rendered.bytes,
+          'application/pdf',
+        )
+        const checksum = rendered.checksum || sha256Hex(rendered.bytes)
+        const [result] = await connection.query<ResultSetHeader>(
+          `
+            INSERT IGNORE INTO mpj_event_certificates (
+              id, event_id, participant_id, certificate_number, verification_code,
+              status, template_url, template_name, layout_json, participant_name_snapshot,
+              event_title_snapshot, signer_name, signer_role, issued_at,
+              generated_file_url, generated_checksum, generated_by
+            ) VALUES (
+              :id, :eventId, :participantId, :certificateNumber, :verificationCode,
+              'active', :templateUrl, :templateName, CAST(:layoutJson AS JSON), :participantName,
+              :eventTitle, :signerName, :signerRole, :issuedAt,
+              :generatedFileUrl, :generatedChecksum, :generatedBy
+            )
+          `,
+          {
+            id: randomUUID(),
+            eventId: event.id,
+            participantId: participant.id,
+            certificateNumber,
+            verificationCode,
+            templateUrl,
+            templateName,
+            layoutJson: JSON.stringify(layout),
+            participantName,
+            eventTitle: event.title,
+            signerName,
+            signerRole,
+            issuedAt,
+            generatedFileUrl: stored.url,
+            generatedChecksum: checksum,
+            generatedBy: actorId ?? null,
+          },
+        )
+        created += result.affectedRows
+      }
+
+      await connection.commit()
+      const summary = await getEventCertificateSummary(event.id)
+      return { ...summary, created }
+    } catch (error) {
+      await connection.rollback()
+      throw error
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function updateCertificateLifecycle(certificateId: string, status: CertificateStatus, reason?: string | null) {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+
+    try {
+      await ensureEventV4Schema(connection)
+      await connection.query<ResultSetHeader>(
+        `
+          UPDATE mpj_event_certificates
+          SET
+            status = :status,
+            revoked_at = CASE WHEN :status = 'revoked' THEN NOW() ELSE revoked_at END,
+            revoked_reason = CASE WHEN :status = 'revoked' THEN :reason ELSE revoked_reason END
+          WHERE id = :certificateId
+        `,
+        { certificateId, status, reason: reason ?? null },
+      )
+      const [rows] = await connection.query<CertificateRow[]>(
+        `
+          SELECT
+            c.id,
+            c.event_id,
+            c.participant_id,
+            COALESCE(p.full_name, JSON_UNQUOTE(JSON_EXTRACT(p.crew_json, '$.full_name')), JSON_UNQUOTE(JSON_EXTRACT(p.guest_json, '$.full_name'))) AS participant_name,
+            COALESCE(p.ticket_code, p.qr_token) AS ticket_code,
+            c.certificate_number,
+            c.verification_code,
+            c.status,
+            c.template_url,
+            c.template_name,
+            c.layout_json,
+            c.participant_name_snapshot,
+            c.event_title_snapshot,
+            c.signer_name,
+            c.signer_role,
+            c.issued_at,
+            c.revoked_at,
+            c.revoked_reason,
+            c.reissued_from,
+            c.generated_file_url,
+            c.generated_checksum,
+            c.generated_at
+          FROM mpj_event_certificates c
+          INNER JOIN mpj_event_participants p ON p.id = c.participant_id
+          WHERE c.id = :certificateId
+          LIMIT 1
+        `,
+        { certificateId },
+      )
+      if (!rows[0]) throw new Error('Sertifikat tidak ditemukan')
+      return mapCertificateRecord(rows[0])
+    } finally {
+      connection.release()
+    }
+  })
 }
 
 export async function getUserEventHistoryFromDb(userId: string): Promise<UserEventHistoryItem[]> {
@@ -1081,6 +1697,41 @@ export async function getUserEventHistoryFromDb(userId: string): Promise<UserEve
       )
       const fieldsByEvent = await getCustomFieldsByEventIds(connection, eventIds)
       const classesByEvent = await getClassesByEventIds(connection, eventIds)
+      const participantIds = participantRows.map((row) => row.id)
+      const [certificateRows] = participantIds.length > 0
+        ? await connection.query<CertificateRow[]>(
+            `
+              SELECT
+                c.id,
+                c.event_id,
+                c.participant_id,
+                COALESCE(p.full_name, JSON_UNQUOTE(JSON_EXTRACT(p.crew_json, '$.full_name')), JSON_UNQUOTE(JSON_EXTRACT(p.guest_json, '$.full_name'))) AS participant_name,
+                COALESCE(p.ticket_code, p.qr_token) AS ticket_code,
+                c.certificate_number,
+                c.verification_code,
+                c.status,
+                c.template_url,
+                c.template_name,
+                c.layout_json,
+                c.participant_name_snapshot,
+                c.event_title_snapshot,
+                c.signer_name,
+                c.signer_role,
+                c.issued_at,
+                c.revoked_at,
+                c.revoked_reason,
+                c.reissued_from,
+                c.generated_file_url,
+                c.generated_checksum,
+                c.generated_at
+              FROM mpj_event_certificates c
+              INNER JOIN mpj_event_participants p ON p.id = c.participant_id
+              WHERE c.participant_id IN (:participantIds)
+            `,
+            { participantIds },
+          )
+        : [[] as CertificateRow[]]
+      const certificateByParticipant = new Map(certificateRows.map((row) => [row.participant_id, mapCertificateRecord(row)]))
       const eventMap = new Map(
         eventRows.map((row) => [
           row.id,
@@ -1092,11 +1743,14 @@ export async function getUserEventHistoryFromDb(userId: string): Promise<UserEve
         const event = eventMap.get(row.event_id)
         if (!event) return []
         const participant = mapParticipant(row)
+        const certificate = certificateByParticipant.get(participant.id)
+        const certificateEligible = Boolean(certificate && certificate.status === 'active')
         return [{
           participant,
           event,
-          certificateEligible: isCertificateEligible(event, participant),
-          certificateNumber: buildCertificateNumber(event, participant),
+          certificateEligible,
+          certificateNumber: certificate?.certificateNumber ?? buildCertificateNumber(event, participant),
+          certificateVerificationCode: certificate?.verificationCode ?? null,
           registeredAt: toIsoString(row.created_at ?? null) ?? null,
         }]
       })

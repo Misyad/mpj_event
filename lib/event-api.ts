@@ -1,4 +1,5 @@
 import { dummyEvents } from '@/lib/dummy'
+import { DEFAULT_CERTIFICATE_LAYOUT, normalizeCertificateLayout } from '@/components/certificates/certificate-template-layout'
 import type { Event } from '@/types'
 
 type EventApiResponse<T> = {
@@ -67,6 +68,11 @@ export function normalizeEvent(event: Partial<Event> & { id: string; title: stri
     speaker_id: event.speaker_id,
     custom_fields: event.custom_fields,
     classes: event.classes,
+    certificateEnabled: Boolean(event.certificateEnabled),
+    certificateTemplateUrl: event.certificateTemplateUrl ?? null,
+    certificateTemplateName: event.certificateTemplateName ?? null,
+    certificateLayout: normalizeCertificateLayout(event.certificateLayout ?? DEFAULT_CERTIFICATE_LAYOUT),
+    certificateGeneratedCount: Number(event.certificateGeneratedCount ?? 0),
   }
 }
 

@@ -15,8 +15,7 @@ export function QRTicket({ participant, event }: { participant: Participant; eve
   const status = participant.status || participant.attendance_status
   const isValid = status === 'confirmed' || status === 'Confirmed'
   const isUsed = status === 'attended' || status === 'Attended'
-  const eventCompleted = ['finished', 'FINISHED', 'completed', 'COMPLETED'].includes(event.status)
-  const certificateReady = isUsed && eventCompleted
+  const certificateReady = false
   const name = participant.registration_path === 'NIAM'
     ? participant.crew?.full_name
     : participant.guest?.full_name

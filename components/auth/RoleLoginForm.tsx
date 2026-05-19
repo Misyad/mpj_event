@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { AlertCircle, ArrowLeft, ArrowRight, Loader2, LockKeyhole, Mail, ShieldCheck } from 'lucide-react'
 import type { AuthRole } from '@/lib/auth/roles'
 import { AUTH_ROLE_CONFIGS, getAuthRoleConfig } from '@/lib/auth/roles'
+import { PasswordInput } from '@/components/auth/PasswordInput'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -197,20 +198,15 @@ export function RoleLoginForm({
                 Lupa password?
               </button>
             </div>
-            <div className="relative">
-              <LockKeyhole className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <Input
-                type="password"
-                required
-                autoCapitalize="none"
-                autoCorrect="off"
-                autoComplete="current-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                className="h-11 rounded-2xl pl-9"
-                placeholder="Masukkan password"
-              />
-            </div>
+            <PasswordInput
+              required
+              autoCapitalize="none"
+              autoCorrect="off"
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Masukkan password"
+            />
           </div>
 
           <div className="flex items-center justify-between rounded-2xl bg-gray-50 px-3 py-3">

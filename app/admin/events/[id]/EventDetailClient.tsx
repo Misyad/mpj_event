@@ -339,10 +339,10 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
                             Tiket
                           </Link>
                           {isAttended(p) && eventCompleted ? (
-                            <Link href={`/certificate/${encodeURIComponent(p.ticketCode || p.qr_token)}`} className="inline-flex items-center gap-1 rounded-lg border border-[#C9A227]/50 px-2.5 py-1 text-xs font-semibold text-[#8a6d16] transition-colors hover:bg-amber-50">
+                            <span className="inline-flex items-center gap-1 rounded-lg border border-[#C9A227]/50 px-2.5 py-1 text-xs font-semibold text-[#8a6d16]">
                               <Award className="h-3 w-3" />
-                              Sertifikat
-                            </Link>
+                              Generated via Event Card
+                            </span>
                           ) : null}
                         </div>
                       </TableCell>

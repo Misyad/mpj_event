@@ -6,6 +6,7 @@ import { Pencil, Plus, Search } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { toast } from 'sonner'
 
 type Regional = {
   id: string
@@ -27,6 +28,7 @@ export function RegionalManagementClient({ regionals }: { regionals: Regional[] 
   const [search, setSearch] = useState('')
   const [error, setError] = useState('')
   const [isSaving, setIsSaving] = useState(false)
+  const [savingId, setSavingId] = useState<string | null>(null)
   const [codeTouched, setCodeTouched] = useState(false)
   const [form, setForm] = useState({ name: '', code: '' })
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -68,8 +70,11 @@ export function RegionalManagementClient({ regionals }: { regionals: Regional[] 
       })
       setForm({ name: '', code: '' })
       setCodeTouched(false)
+      toast.success('Regional berhasil ditambahkan')
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : 'Gagal membuat regional')
+      const message = createError instanceof Error ? createError.message : 'Gagal membuat regional'
+      setError(message)
+      toast.error(message)
     } finally {
       setIsSaving(false)
     }
@@ -84,24 +89,36 @@ export function RegionalManagementClient({ regionals }: { regionals: Regional[] 
     event.preventDefault()
     if (!editingRegional) return
     try {
+      setSavingId(editingRegional.id)
       await runAction(`/api/regionals/${editingRegional.id}`, {
         method: 'PATCH',
         body: JSON.stringify(editForm),
       })
       setEditingId(null)
+      toast.success('Regional berhasil diperbarui')
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Gagal mengubah regional')
+      const message = saveError instanceof Error ? saveError.message : 'Gagal mengubah regional'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setSavingId(null)
     }
   }
 
   async function toggleStatus(regional: Regional) {
     try {
+      setSavingId(regional.id)
       await runAction(`/api/regionals/${regional.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ status: regional.status === 'active' ? 'inactive' : 'active' }),
       })
+      toast.success(`Regional berhasil ${regional.status === 'active' ? 'dinonaktifkan' : 'diaktifkan'}`)
     } catch (statusError) {
-      setError(statusError instanceof Error ? statusError.message : 'Gagal mengubah status regional')
+      const message = statusError instanceof Error ? statusError.message : 'Gagal mengubah status regional'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setSavingId(null)
     }
   }
 
@@ -178,7 +195,7 @@ export function RegionalManagementClient({ regionals }: { regionals: Regional[] 
                         <Pencil className="h-3.5 w-3.5" />
                         Edit
                       </Button>
-                      <Button size="sm" variant="outline" type="button" onClick={() => toggleStatus(regional)}>
+                      <Button size="sm" variant="outline" type="button" onClick={() => toggleStatus(regional)} disabled={savingId === regional.id}>
                         {regional.status === 'active' ? 'Nonaktifkan' : 'Aktifkan'}
                       </Button>
                     </div>
@@ -205,7 +222,7 @@ export function RegionalManagementClient({ regionals }: { regionals: Regional[] 
             <Input value={editForm.name} onChange={(event) => setEditForm((current) => ({ ...current, name: event.target.value }))} required className="h-10 rounded-xl" />
             <Input value={editForm.code} onChange={(event) => setEditForm((current) => ({ ...current, code: event.target.value }))} required className="h-10 rounded-xl" />
             <div className="flex gap-2">
-              <Button type="submit" className="h-10 rounded-xl bg-[#1B4332] text-white">Simpan</Button>
+              <Button type="submit" className="h-10 rounded-xl bg-[#1B4332] text-white" disabled={savingId === editingRegional.id}>Simpan</Button>
               <Button type="button" variant="outline" className="h-10 rounded-xl" onClick={() => setEditingId(null)}>Batal</Button>
             </div>
           </form>

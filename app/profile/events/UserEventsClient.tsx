@@ -118,7 +118,7 @@ function EventHistoryCard({ item }: { item: UserEventHistoryItem }) {
   const ticketCode = item.participant.ticketCode || item.participant.qr_token
   const eventHref = `/events/${encodeURIComponent(item.event.slug || item.event.id)}`
   const ticketHref = `/ticket/${encodeURIComponent(ticketCode)}`
-  const certificateHref = `/certificate/${encodeURIComponent(ticketCode)}`
+  const certificateHref = item.certificateVerificationCode ? `/certificate/${encodeURIComponent(item.certificateVerificationCode)}` : ''
 
   async function copyTicketCode() {
     try {
@@ -171,7 +171,7 @@ function EventHistoryCard({ item }: { item: UserEventHistoryItem }) {
         <div className="grid gap-2 sm:grid-cols-3">
           <ActionLink href={eventHref} label="Lihat Detail" variant="primary" />
           <ActionLink href={ticketHref} label="Download Tiket" icon={<Download className="h-4 w-4" />} />
-          {item.certificateEligible ? (
+          {item.certificateEligible && certificateHref ? (
             <ActionLink href={certificateHref} label="Sertifikat" icon={<FileBadge2 className="h-4 w-4" />} />
           ) : (
             <span className="inline-flex min-h-11 items-center justify-center rounded-full border border-slate-200 bg-slate-50 px-4 text-center text-xs font-bold text-slate-400">

@@ -1,11 +1,15 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { AttendanceStatus, EventStatus, PaymentStatus, RegistrationPath } from '@/types'
-import { ExternalLink, Search, CheckCircle2, Clock, Loader2, XCircle, Wallet, Ticket, UserCheck } from 'lucide-react'
+import { ExternalLink, Search, CheckCircle2, Clock, Edit3, Loader2, XCircle, Wallet, Ticket, UserCheck } from 'lucide-react'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 type AdminParticipant = {
@@ -34,6 +38,24 @@ type AdminParticipant = {
     start_date: string
     location_name: string
   }
+}
+
+type ParticipantForm = {
+  registration_path: RegistrationPath
+  full_name: string
+  institution_name: string
+  whatsapp: string
+  email: string
+  niam: string
+}
+
+const emptyForm: ParticipantForm = {
+  registration_path: 'UMUM',
+  full_name: '',
+  institution_name: '',
+  whatsapp: '',
+  email: '',
+  niam: '',
 }
 
 // Badge helpers
@@ -86,30 +108,33 @@ export default function MasterPesertaPage() {
   const [payFilter, setPayFilter]       = useState<string>('ALL')
   const [attendFilter, setAttendFilter] = useState<string>('ALL')
   const [eventFilter, setEventFilter]   = useState<string>('ALL')
+  const [editingParticipant, setEditingParticipant] = useState<AdminParticipant | null>(null)
+  const [form, setForm] = useState<ParticipantForm>(emptyForm)
+  const [isSaving, setIsSaving] = useState(false)
+
+  const loadParticipants = useCallback(async (active = true) => {
+    try {
+      setIsLoading(true)
+      setError('')
+      const response = await fetch('/api/admin/participants', { cache: 'no-store' })
+      const payload = await response.json()
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal memuat data peserta')
+      if (active) setParticipants(payload.data ?? [])
+    } catch (loadError) {
+      if (active) setError(loadError instanceof Error ? loadError.message : 'Gagal memuat data peserta')
+    } finally {
+      if (active) setIsLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     let active = true
-
-    async function loadParticipants() {
-      try {
-        setIsLoading(true)
-        setError('')
-        const response = await fetch('/api/admin/participants', { cache: 'no-store' })
-        const payload = await response.json()
-        if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal memuat data peserta')
-        if (active) setParticipants(payload.data ?? [])
-      } catch (loadError) {
-        if (active) setError(loadError instanceof Error ? loadError.message : 'Gagal memuat data peserta')
-      } finally {
-        if (active) setIsLoading(false)
-      }
-    }
-
-    loadParticipants()
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadParticipants(active)
     return () => {
       active = false
     }
-  }, [])
+  }, [loadParticipants])
 
   // Enrich participants with event data
   const enriched = useMemo(() => participants.map(p => ({
@@ -157,6 +182,44 @@ export default function MasterPesertaPage() {
   function resetFilters() {
     setSearch(''); setPathFilter('ALL'); setPayFilter('ALL')
     setAttendFilter('ALL'); setEventFilter('ALL')
+  }
+
+  function openEdit(participant: AdminParticipant) {
+    setEditingParticipant(participant)
+    setForm({
+      registration_path: participant.registration_path,
+      full_name: participant.fullName ?? participant.full_name ?? participant.crew?.full_name ?? participant.guest?.full_name ?? '',
+      institution_name: participant.institution ?? participant.institution_name ?? participant.crew?.unit ?? participant.guest?.institution_name ?? '',
+      whatsapp: participant.whatsapp ?? participant.guest?.whatsapp ?? '',
+      email: participant.email ?? '',
+      niam: participant.crew?.niam ?? '',
+    })
+    setError('')
+  }
+
+  async function saveParticipant() {
+    if (!editingParticipant) return
+
+    try {
+      setIsSaving(true)
+      setError('')
+      const response = await fetch(`/api/admin/participants/${editingParticipant.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(form),
+      })
+      const payload = await response.json()
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal menyimpan peserta')
+      setEditingParticipant(null)
+      toast.success('Data peserta berhasil diperbarui')
+      await loadParticipants()
+    } catch (saveError) {
+      const message = saveError instanceof Error ? saveError.message : 'Gagal menyimpan peserta'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const hasFilter = search || pathFilter !== 'ALL' || payFilter !== 'ALL' || attendFilter !== 'ALL' || eventFilter !== 'ALL'
@@ -323,6 +386,10 @@ export default function MasterPesertaPage() {
                   </td>
                   <td className="px-4 py-3.5">
                     <div className="flex flex-wrap gap-1.5">
+                      <button type="button" onClick={() => openEdit(p)} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-600 transition-colors hover:border-[#1B4332] hover:text-[#1B4332]">
+                        <Edit3 className="h-3 w-3" />
+                        Edit
+                      </button>
                       <Link href={`/admin-pusat/events/${p.event_id}`} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-600 transition-colors hover:border-[#1B4332] hover:text-[#1B4332]">
                         <ExternalLink className="h-3 w-3" />
                         Event
@@ -363,6 +430,7 @@ export default function MasterPesertaPage() {
                 )}
               </div>
               <div className="flex gap-2">
+                <button type="button" onClick={() => openEdit(p)} className="text-xs font-semibold text-[#1B4332] hover:underline">Edit</button>
                 <Link href={`/admin-pusat/events/${p.event_id}`} className="text-xs font-semibold text-[#1B4332] hover:underline">Detail event</Link>
                 <Link href={`/ticket/${encodeURIComponent(p.ticketCode || p.qr_token)}`} className="text-xs font-semibold text-[#1B4332] hover:underline">Tiket</Link>
               </div>
@@ -372,6 +440,64 @@ export default function MasterPesertaPage() {
         </>
         )}
       </div>
+
+      <Dialog open={Boolean(editingParticipant)} onOpenChange={(open) => {
+        if (!open && !isSaving) setEditingParticipant(null)
+      }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Peserta</DialogTitle>
+            <DialogDescription>
+              Perbarui data peserta tanpa membuat pendaftaran baru.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-gray-600">Jalur</Label>
+              <Select value={form.registration_path} onValueChange={(value) => setForm((current) => ({ ...current, registration_path: value as RegistrationPath }))}>
+                <SelectTrigger className="h-10 rounded-xl">
+                  <SelectValue placeholder="Pilih jalur" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NIAM">NIAM</SelectItem>
+                  <SelectItem value="UMUM">Umum</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-gray-600">Nama Lengkap</Label>
+              <Input value={form.full_name} onChange={(event) => setForm((current) => ({ ...current, full_name: event.target.value }))} className="h-10 rounded-xl" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-gray-600">Instansi / Unit</Label>
+              <Input value={form.institution_name} onChange={(event) => setForm((current) => ({ ...current, institution_name: event.target.value }))} className="h-10 rounded-xl" />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-gray-600">WhatsApp</Label>
+                <Input value={form.whatsapp} onChange={(event) => setForm((current) => ({ ...current, whatsapp: event.target.value }))} className="h-10 rounded-xl" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-gray-600">Email</Label>
+                <Input type="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} className="h-10 rounded-xl" />
+              </div>
+            </div>
+            {form.registration_path === 'NIAM' ? (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-gray-600">NIAM</Label>
+                <Input value={form.niam} onChange={(event) => setForm((current) => ({ ...current, niam: event.target.value }))} className="h-10 rounded-xl" />
+              </div>
+            ) : null}
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditingParticipant(null)} disabled={isSaving}>Batal</Button>
+            <Button type="button" className="bg-[#1B4332] text-white hover:bg-[#14532d]" onClick={saveParticipant} disabled={isSaving}>
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Simpan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

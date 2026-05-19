@@ -6,6 +6,7 @@ import { Activity, KeyRound, LogOut, Pencil, Search, ShieldOff, UserPlus } from 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { toast } from 'sonner'
 
 type Regional = {
   id: string
@@ -42,6 +43,7 @@ export function AdminRegionalTable({ admins, regionals }: { admins: AdminRegiona
   const [editForm, setEditForm] = useState({ fullName: '', regionalId: '', status: 'active' })
   const [activity, setActivity] = useState<{ adminName: string; rows: ActivityRow[] } | null>(null)
   const [isCreating, setIsCreating] = useState(false)
+  const [savingId, setSavingId] = useState<string | null>(null)
   const [form, setForm] = useState({ fullName: '', email: '', password: 'Admin123!', regionalId: '' })
   const editingAdmin = rows.find((admin) => admin.id === editingId) ?? null
 
@@ -99,8 +101,11 @@ export function AdminRegionalTable({ admins, regionals }: { admins: AdminRegiona
         body: JSON.stringify(form),
       })
       setForm({ fullName: '', email: '', password: 'Admin123!', regionalId: '' })
+      toast.success('Admin regional berhasil ditambahkan')
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : 'Gagal membuat admin regional')
+      const message = createError instanceof Error ? createError.message : 'Gagal membuat admin regional'
+      setError(message)
+      toast.error(message)
     } finally {
       setIsCreating(false)
     }
@@ -108,26 +113,44 @@ export function AdminRegionalTable({ admins, regionals }: { admins: AdminRegiona
 
   async function suspendAdmin(id: string) {
     try {
+      setSavingId(id)
       await runAction(`/api/super-admin/admins/${id}/suspend`, { method: 'POST' })
+      toast.success('Admin berhasil disuspend')
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : 'Gagal suspend admin')
+      const message = actionError instanceof Error ? actionError.message : 'Gagal suspend admin'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setSavingId(null)
     }
   }
 
   async function resetPassword(id: string) {
     try {
+      setSavingId(id)
       const payload = await runAction(`/api/super-admin/admins/${id}/reset-password`, { method: 'POST' })
       setError(`Reset token sementara: ${payload.data.resetToken}`)
+      toast.success('Reset password berhasil dibuat')
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : 'Gagal reset password')
+      const message = actionError instanceof Error ? actionError.message : 'Gagal reset password'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setSavingId(null)
     }
   }
 
   async function forceLogout(id: string) {
     try {
+      setSavingId(id)
       await runAction(`/api/super-admin/admins/${id}/force-logout`, { method: 'POST' })
+      toast.success('Sesi admin berhasil diputus')
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : 'Gagal force logout')
+      const message = actionError instanceof Error ? actionError.message : 'Gagal force logout'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setSavingId(null)
     }
   }
 
@@ -154,13 +177,19 @@ export function AdminRegionalTable({ admins, regionals }: { admins: AdminRegiona
     event.preventDefault()
     if (!editingAdmin) return
     try {
+      setSavingId(editingAdmin.id)
       await runAction(`/api/super-admin/admins/${editingAdmin.id}`, {
         method: 'PATCH',
         body: JSON.stringify(editForm),
       })
       setEditingId(null)
+      toast.success('Admin regional berhasil diperbarui')
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : 'Gagal update admin')
+      const message = actionError instanceof Error ? actionError.message : 'Gagal update admin'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setSavingId(null)
     }
   }
 
@@ -260,10 +289,10 @@ export function AdminRegionalTable({ admins, regionals }: { admins: AdminRegiona
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
                       <Button size="icon-sm" variant="outline" title="Edit" onClick={() => startEdit(admin)}><Pencil className="h-3.5 w-3.5" /></Button>
-                      <Button size="icon-sm" variant="outline" title="Suspend" onClick={() => suspendAdmin(admin.id)}><ShieldOff className="h-3.5 w-3.5" /></Button>
-                      <Button size="icon-sm" variant="outline" title="Reset Password" onClick={() => resetPassword(admin.id)}><KeyRound className="h-3.5 w-3.5" /></Button>
+                      <Button size="icon-sm" variant="outline" title="Suspend" onClick={() => suspendAdmin(admin.id)} disabled={savingId === admin.id}><ShieldOff className="h-3.5 w-3.5" /></Button>
+                      <Button size="icon-sm" variant="outline" title="Reset Password" onClick={() => resetPassword(admin.id)} disabled={savingId === admin.id}><KeyRound className="h-3.5 w-3.5" /></Button>
                       <Button size="icon-sm" variant="outline" title="View Activity" onClick={() => viewActivity(admin)}><Activity className="h-3.5 w-3.5" /></Button>
-                      <Button size="icon-sm" variant="outline" title="Force Logout" onClick={() => forceLogout(admin.id)}><LogOut className="h-3.5 w-3.5" /></Button>
+                      <Button size="icon-sm" variant="outline" title="Force Logout" onClick={() => forceLogout(admin.id)} disabled={savingId === admin.id}><LogOut className="h-3.5 w-3.5" /></Button>
                     </div>
                   </td>
                 </tr>
@@ -302,7 +331,7 @@ export function AdminRegionalTable({ admins, regionals }: { admins: AdminRegiona
               </SelectContent>
             </Select>
             <div className="flex gap-2">
-              <Button type="submit" className="h-10 rounded-xl bg-[#1B4332] text-white">Simpan</Button>
+              <Button type="submit" className="h-10 rounded-xl bg-[#1B4332] text-white" disabled={savingId === editingAdmin.id}>Simpan</Button>
               <Button type="button" variant="outline" className="h-10 rounded-xl" onClick={() => setEditingId(null)}>Batal</Button>
             </div>
           </form>
