@@ -12,6 +12,8 @@ export default function DevProfileEditPreviewPage() {
     fullName: 'MPJ User',
     email: 'user@mpj-event.local',
     whatsapp: '6281234567890',
+    institution: 'Pesantren Al-Hikmah',
+    niam: 'MPJ-001',
   }
 
   return (
@@ -37,6 +39,8 @@ export default function DevProfileEditPreviewPage() {
         fullName={mockUser.fullName}
         email={mockUser.email}
         whatsapp={mockUser.whatsapp}
+        institution={mockUser.institution}
+        niam={mockUser.niam}
       />
     </div>
   )

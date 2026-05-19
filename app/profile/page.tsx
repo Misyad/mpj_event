@@ -2,11 +2,12 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { ArrowLeft, CalendarDays, ChevronRight, FileBadge2, PencilLine, UserRound } from 'lucide-react'
 import { AUTH_ROLES } from '@/lib/auth/roles'
-import { getCurrentAdminSession } from '@/lib/server/rbac'
+import { getCurrentAdminSession, getPublicUserProfile } from '@/lib/server/rbac'
 
 export default async function ProfilePage() {
   const session = await getCurrentAdminSession(AUTH_ROLES.user)
   if (!session) redirect('/auth/user-login?next=%2Fprofile')
+  const profile = await getPublicUserProfile(session.userId)
 
   const menuItems = [
     {
@@ -45,12 +46,12 @@ export default async function ProfilePage() {
               <UserRound className="h-6 w-6" />
             </div>
             <div className="flex-1 min-w-0">
-              <h2 className="truncate text-base font-extrabold text-[#1B4332]">{session.fullName || 'Akun MPJ Event'}</h2>
-              {session.whatsapp ? (
-                <p className="truncate text-xs font-medium text-gray-500 mt-0.5">{session.whatsapp}</p>
+              <h2 className="truncate text-base font-extrabold text-[#1B4332]">{profile?.fullName || session.fullName || 'Akun MPJ Event'}</h2>
+              {profile?.whatsapp ? (
+                <p className="truncate text-xs font-medium text-gray-500 mt-0.5">{profile.whatsapp}</p>
               ) : null}
-              {session.email ? (
-                <p className="truncate text-xs font-medium text-gray-500">{session.email}</p>
+              {(profile?.email || session.email) ? (
+                <p className="truncate text-xs font-medium text-gray-500">{profile?.email || session.email}</p>
               ) : null}
             </div>
           </div>

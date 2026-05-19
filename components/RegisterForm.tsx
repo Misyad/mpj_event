@@ -28,6 +28,8 @@ type RegistrationContext = {
   fullName: string | null
   email: string | null
   whatsapp: string | null
+  institution?: string | null
+  niam?: string | null
 }
 
 type MemberLookup = {
@@ -78,7 +80,7 @@ const btnGold =
 
 export function RegisterForm({
   event,
-  registrationContext = { isLoggedIn: false, userId: null, fullName: null, email: null, whatsapp: null },
+  registrationContext = { isLoggedIn: false, userId: null, fullName: null, email: null, whatsapp: null, institution: null, niam: null },
 }: {
   event: Event
   registrationContext?: RegistrationContext
@@ -93,7 +95,7 @@ export function RegisterForm({
     fullName: registrationContext.fullName ?? '',
     email: registrationContext.email ?? '',
     whatsapp: registrationContext.whatsapp ?? '',
-    institution: '',
+    institution: registrationContext.institution ?? '',
     institutionId: null,
     selectedClassId: '',
     customResponses: {},
@@ -109,15 +111,24 @@ export function RegisterForm({
   const [errorState, setErrorState] = useState<RegisterErrorState>('')
   const [institutionOpen, setInstitutionOpen] = useState(false)
   const [institutionQuery, setInstitutionQuery] = useState('')
+  const isLoggedIn = registrationContext.isLoggedIn
+  const profileComplete = Boolean(
+    registrationContext.fullName
+      && registrationContext.email
+      && registrationContext.whatsapp
+      && registrationContext.institution,
+  )
+  const profileNiam = registrationContext.niam?.trim() ?? ''
 
   const filteredInstitutions = useMemo(
     () => searchInstitutions(institutionQuery || form.institution),
     [form.institution, institutionQuery],
   )
   const canUseCustomInstitution = event.is_open_for_public && institutionQuery.trim().length > 0
-  const isNiamRegistration = Boolean(member)
-  const finalName = member?.fullName ?? form.fullName
-  const finalInstitution = member?.unit ?? form.institution
+  const isNiamRegistration = Boolean(member) || Boolean(isLoggedIn && profileNiam)
+  const finalName = isLoggedIn ? registrationContext.fullName ?? '' : member?.fullName ?? form.fullName
+  const finalInstitution = isLoggedIn ? registrationContext.institution ?? '' : member?.unit ?? form.institution
+  const finalWhatsapp = isLoggedIn ? registrationContext.whatsapp ?? '' : form.whatsapp
   const finalPrice = event.is_paid ? (isNiamRegistration ? event.price_niam : event.price_public) : 0
   const usesGateway = event.is_paid && event.payment_method === 'gateway'
   const totalAmount = event.is_paid ? finalPrice + (usesGateway ? 0 : uniqueCode) : 0
@@ -134,7 +145,7 @@ export function RegisterForm({
   }, [event.custom_fields, form.customResponses])
 
   const canContinueToPayment = Boolean(finalName)
-    && (isNiamRegistration || (Boolean(form.whatsapp) && Boolean(finalInstitution)))
+    && (isLoggedIn ? profileComplete : isNiamRegistration || (Boolean(form.whatsapp) && Boolean(finalInstitution)))
     && (!hasClasses || Boolean(form.selectedClassId))
     && customFieldsValid
 
@@ -220,17 +231,23 @@ export function RegisterForm({
     setIsSubmitting(true)
 
     try {
+      const identityPayload = isLoggedIn
+        ? {}
+        : {
+            niam: member?.niam,
+            full_name: finalName,
+            email: form.email,
+            unit: member?.unit,
+            institution_name: finalInstitution,
+            institution_id: form.institutionId,
+            whatsapp: form.whatsapp,
+          }
+
       const response = await fetch(`/api/events/${event.id}/register`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          niam: member?.niam,
-          full_name: finalName,
-          email: form.email,
-          unit: member?.unit,
-          institution_name: finalInstitution,
-          institution_id: form.institutionId,
-          whatsapp: form.whatsapp,
+          ...identityPayload,
           final_amount: totalAmount,
           class_id: form.selectedClassId,
           payment_proof_name: form.proofFile?.name,
@@ -382,49 +399,70 @@ export function RegisterForm({
                     <p className="truncate text-xs text-gray-400">{registrationContext.email ?? '-'}</p>
                   </div>
                 </div>
+                <div className="mt-4 space-y-2 rounded-2xl bg-[#f4f7f5] p-3">
+                  <SummaryRow label="WhatsApp" value={registrationContext.whatsapp ?? '-'} />
+                  <SummaryRow label="Instansi" value={registrationContext.institution ?? '-'} />
+                  {profileNiam ? <SummaryRow label="NIAM" value={profileNiam} /> : null}
+                </div>
+                {!profileComplete ? (
+                  <div className="mt-3 rounded-2xl border border-amber-100 bg-amber-50 p-3">
+                    <p className="text-sm font-bold text-amber-800">Profil belum lengkap</p>
+                    <p className="mt-1 text-xs leading-relaxed text-amber-700">
+                      Lengkapi WhatsApp dan instansi di profil agar data pendaftaran mengikuti akun Anda.
+                    </p>
+                    <Link
+                      href="/profile/edit"
+                      className="mt-3 inline-flex rounded-full bg-[#1B4332] px-4 py-2 text-xs font-bold text-white"
+                    >
+                      Lengkapi Profil
+                    </Link>
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
-            <div className="rounded-2xl bg-white p-4 shadow-sm">
-              <p className="text-lg font-extrabold text-[#1B4332]">ID Anggota MPJ</p>
-              <p className="mt-1 text-xs leading-relaxed text-gray-500">
-                Isi jika Anda anggota MPJ. Kosongkan jika belum memiliki NIAM.
-              </p>
-              <div className="mt-4 flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Contoh: MPJ-001"
-                  value={form.niam}
-                  onChange={(eventValue) => {
-                    setForm((current) => ({ ...current, niam: eventValue.target.value }))
-                    setMember(null)
-                  }}
-                  className={inputClass}
-                />
-                <button
-                  type="button"
-                  onClick={validateNiam}
-                  disabled={isCheckingMember || !form.niam.trim()}
-                  className="rounded-2xl bg-[#1B4332] px-4 text-xs font-bold text-white disabled:opacity-50"
-                >
-                  {isCheckingMember ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Cek'}
-                </button>
-              </div>
-
-              {member ? (
-                <div className="mt-3 flex items-start gap-3 rounded-2xl bg-[#e8f0ec] p-4">
-                  <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-[#1B4332]" />
-                  <div>
-                    <p className="text-sm font-bold text-[#1B4332]">Data anggota terdeteksi</p>
-                    <p className="mt-1 text-sm font-semibold text-[#1B4332]">{member.fullName}</p>
-                    <p className="text-xs text-gray-500">{member.niam} - {member.unit || 'Unit belum tercatat'}</p>
-                    <p className="mt-1 text-xs text-[#1B4332]/75">Benefit anggota akan diterapkan otomatis.</p>
-                  </div>
+            {!isLoggedIn ? (
+              <div className="rounded-2xl bg-white p-4 shadow-sm">
+                <p className="text-lg font-extrabold text-[#1B4332]">ID Anggota MPJ</p>
+                <p className="mt-1 text-xs leading-relaxed text-gray-500">
+                  Isi jika Anda anggota MPJ. Kosongkan jika belum memiliki NIAM.
+                </p>
+                <div className="mt-4 flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Contoh: MPJ-001"
+                    value={form.niam}
+                    onChange={(eventValue) => {
+                      setForm((current) => ({ ...current, niam: eventValue.target.value }))
+                      setMember(null)
+                    }}
+                    className={inputClass}
+                  />
+                  <button
+                    type="button"
+                    onClick={validateNiam}
+                    disabled={isCheckingMember || !form.niam.trim()}
+                    className="rounded-2xl bg-[#1B4332] px-4 text-xs font-bold text-white disabled:opacity-50"
+                  >
+                    {isCheckingMember ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Cek'}
+                  </button>
                 </div>
-              ) : null}
-            </div>
 
-            {!member ? (
+                {member ? (
+                  <div className="mt-3 flex items-start gap-3 rounded-2xl bg-[#e8f0ec] p-4">
+                    <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-[#1B4332]" />
+                    <div>
+                      <p className="text-sm font-bold text-[#1B4332]">Data anggota terdeteksi</p>
+                      <p className="mt-1 text-sm font-semibold text-[#1B4332]">{member.fullName}</p>
+                      <p className="text-xs text-gray-500">{member.niam} - {member.unit || 'Unit belum tercatat'}</p>
+                      <p className="mt-1 text-xs text-[#1B4332]/75">Benefit anggota akan diterapkan otomatis.</p>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {!isLoggedIn && !member ? (
               <div className="rounded-2xl bg-white p-4 shadow-sm">
                 <p className="mb-3 text-lg font-extrabold text-[#1B4332]">Data Peserta</p>
                 <div className="space-y-3">
@@ -530,9 +568,9 @@ export function RegisterForm({
               <SummaryRow label="Event" value={event.title} />
               <SummaryRow label="Tipe Peserta" value={isNiamRegistration ? 'Anggota MPJ' : 'Peserta Umum'} />
               <SummaryRow label="Nama" value={finalName} />
-              {!isNiamRegistration ? <SummaryRow label="WhatsApp" value={form.whatsapp} /> : null}
+              <SummaryRow label="WhatsApp" value={finalWhatsapp || '-'} />
               <SummaryRow label="Asal Pesantren / Instansi" value={finalInstitution} />
-              {isNiamRegistration ? <SummaryRow label="NIAM" value={normalizeNiam(form.niam)} /> : null}
+              {isNiamRegistration ? <SummaryRow label="NIAM" value={isLoggedIn ? profileNiam : normalizeNiam(form.niam)} /> : null}
               {selectedClass ? <SummaryRow label="Kelas" value={selectedClass.name} /> : null}
 
               {event.is_paid ? (

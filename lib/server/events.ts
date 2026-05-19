@@ -139,6 +139,9 @@ export type RegistrationContext = {
   userId?: string | null
   fullName?: string | null
   email?: string | null
+  whatsapp?: string | null
+  institutionName?: string | null
+  niam?: string | null
 }
 
 type EventPayload = {
@@ -1755,30 +1758,50 @@ export async function registerEventParticipant(eventIdentifier: string, payload:
         throw new Error('Kuota event sudah penuh')
       }
 
-      const whatsapp = getString(payload.whatsapp)
+      const isLoggedInRegistration = Boolean(context.userId)
+      const whatsapp = getString(context.whatsapp || payload.whatsapp)
       const email = getString(context.email || payload.email)
-      const member = await findRegistrationMemberByNiam(connection, getString(payload.niam))
+      const member = await findRegistrationMemberByNiam(connection, getString(context.niam || payload.niam))
       const registrationPath = member ? 'NIAM' : 'UMUM'
       if (registrationPath === 'UMUM' && !event.allowPublic) throw new Error('Event ini tidak membuka jalur umum')
 
       const fullName = member?.fullName || getString(context.fullName || payload.full_name || payload.name)
       if (!fullName) throw new Error('Nama lengkap wajib diisi')
 
-      const institution = member?.unit || getString(payload.institution_name || payload.institution)
+      const institution = member?.unit || getString(context.institutionName || payload.institution_name || payload.institution)
       const niam = member?.niam ?? ''
+      if (isLoggedInRegistration && !email) throw new Error('Email profil wajib diisi')
+      if (isLoggedInRegistration && !whatsapp) throw new Error('Lengkapi WhatsApp di profil sebelum daftar event')
+      if (isLoggedInRegistration && !institution) throw new Error('Lengkapi instansi di profil sebelum daftar event')
       if (registrationPath === 'UMUM' && !whatsapp) throw new Error('Nomor WhatsApp wajib diisi')
       if (registrationPath === 'UMUM' && !institution) throw new Error('Instansi wajib diisi')
+
+      if (context.userId) {
+        const [accountDuplicates] = await connection.query<RowDataPacket[]>(
+          `
+            SELECT id FROM mpj_event_participants
+            WHERE event_id = :eventId
+              AND user_id = :userId
+              AND LOWER(COALESCE(status, attendance_status, 'registered')) != 'cancelled'
+            LIMIT 1
+          `,
+          { eventId: event.id, userId: context.userId },
+        )
+        if (accountDuplicates.length > 0) throw new Error('Akun ini sudah terdaftar pada event ini')
+      }
 
       const [duplicates] = await connection.query<RowDataPacket[]>(
         registrationPath === 'NIAM'
           ? `
               SELECT id FROM mpj_event_participants
               WHERE event_id = :eventId AND niam = :niam
+                AND LOWER(COALESCE(status, attendance_status, 'registered')) != 'cancelled'
               LIMIT 1
             `
           : `
               SELECT id FROM mpj_event_participants
               WHERE event_id = :eventId AND whatsapp = :whatsapp
+                AND LOWER(COALESCE(status, attendance_status, 'registered')) != 'cancelled'
               LIMIT 1
             `,
         { eventId: event.id, niam, whatsapp },

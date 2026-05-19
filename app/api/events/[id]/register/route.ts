@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { registerEventParticipant } from '@/lib/server/events'
 import { AUTH_ROLES } from '@/lib/auth/roles'
-import { getSessionFromRequest } from '@/lib/server/rbac'
+import { getPublicUserProfile, getSessionFromRequest } from '@/lib/server/rbac'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -18,10 +18,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params
     const session = await getSessionFromRequest(request, AUTH_ROLES.user)
+    const profile = session ? await getPublicUserProfile(session.userId) : null
     const result = await registerEventParticipant(id, await request.json(), {
       userId: session?.userId,
-      fullName: session?.fullName,
-      email: session?.email,
+      fullName: profile?.fullName ?? session?.fullName,
+      email: profile?.email ?? session?.email,
+      whatsapp: profile?.whatsapp,
+      institutionName: profile?.institution,
+      niam: profile?.niam,
     })
 
     return NextResponse.json(

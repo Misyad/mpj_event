@@ -12,6 +12,9 @@ type UserRow = RowDataPacket & {
   id: string
   full_name: string
   email: string
+  whatsapp: string | null
+  institution_name: string | null
+  niam: string | null
   password_hash: string
   status: 'active' | 'suspended' | 'inactive'
   email_verified_at: Date | string | null
@@ -40,6 +43,15 @@ type RegionalRow = RowDataPacket & {
 export type AdminSession = AccessTokenPayload & {
   email?: string
   fullName?: string
+}
+
+export type PublicUserProfile = {
+  id: string
+  fullName: string
+  email: string
+  whatsapp: string | null
+  institution: string | null
+  niam: string | null
 }
 
 export function hashPassword(password: string) {
@@ -102,6 +114,9 @@ export async function ensureRbacSchema(connection: PoolConnection) {
       UNIQUE KEY users_email_unique (email)
     )
   `)
+  await ensureColumn(connection, 'users', 'whatsapp', 'VARCHAR(50) NULL')
+  await ensureColumn(connection, 'users', 'institution_name', 'VARCHAR(255) NULL')
+  await ensureColumn(connection, 'users', 'niam', 'VARCHAR(50) NULL')
 
   await connection.query(`
     CREATE TABLE IF NOT EXISTS roles (
@@ -371,6 +386,79 @@ export async function ensureRbacSchemaWithDb(db: Pool) {
   } finally {
     connection.release()
   }
+}
+
+function mapPublicUserProfile(row: UserRow): PublicUserProfile {
+  return {
+    id: row.id,
+    fullName: row.full_name,
+    email: row.email,
+    whatsapp: row.whatsapp ?? null,
+    institution: row.institution_name ?? null,
+    niam: row.niam ?? null,
+  }
+}
+
+export async function getPublicUserProfile(userId: string): Promise<PublicUserProfile | null> {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+    try {
+      await ensureRbacSchema(connection)
+      const [rows] = await connection.query<UserRow[]>('SELECT * FROM users WHERE id = :userId LIMIT 1', { userId })
+      return rows[0] ? mapPublicUserProfile(rows[0]) : null
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function updatePublicUserProfile(
+  request: NextRequest,
+  payload: { fullName?: string; whatsapp?: string; institution?: string; institution_name?: string; niam?: string | null },
+) {
+  const session = await getSessionFromRequest(request, AUTH_ROLES.user)
+  if (!session) throw new Error('Unauthorized')
+
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+    try {
+      await ensureRbacSchema(connection)
+      const fullName = String(payload.fullName ?? '').trim()
+      const whatsapp = String(payload.whatsapp ?? '').trim()
+      const institution = String(payload.institution ?? payload.institution_name ?? '').trim()
+      const niam = payload.niam === null ? '' : String(payload.niam ?? '').trim().toUpperCase()
+
+      if (!fullName) throw new Error('Nama lengkap wajib diisi')
+      if (!whatsapp) throw new Error('Nomor WhatsApp wajib diisi')
+      if (!institution) throw new Error('Instansi wajib diisi')
+
+      await connection.query<ResultSetHeader>(
+        `
+          UPDATE users
+          SET full_name = :fullName,
+              whatsapp = :whatsapp,
+              institution_name = :institution,
+              niam = :niam
+          WHERE id = :userId
+        `,
+        {
+          userId: session.userId,
+          fullName,
+          whatsapp,
+          institution,
+          niam: niam || null,
+        },
+      )
+
+      const [rows] = await connection.query<UserRow[]>('SELECT * FROM users WHERE id = :userId LIMIT 1', {
+        userId: session.userId,
+      })
+      if (!rows[0]) throw new Error('Profil user tidak ditemukan')
+      return mapPublicUserProfile(rows[0])
+    } finally {
+      connection.release()
+    }
+  })
 }
 
 function requestMeta(request: NextRequest) {
