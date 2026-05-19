@@ -371,17 +371,15 @@ function matchesFilter(item: UserEventHistoryItem, filter: FilterKey) {
 }
 
 function getDisplayTicketCode(item: UserEventHistoryItem) {
-  const code = item.participant.ticketCode?.trim()
-  if (code && !looksInternalCode(code)) return code
+  const source = item.participant.id || item.event.id || item.participant.qr_token || item.participant.ticketCode || ''
+  const normalized = source.replace(/[^a-zA-Z0-9]/g, '')
+  let checksum = 0
 
-  const year = new Date(item.event.start_date).getFullYear() || new Date().getFullYear()
-  const seed = (item.participant.id || item.participant.qr_token || item.event.id).replace(/[^a-zA-Z0-9]/g, '').slice(-5).toUpperCase()
-  return `MPJ-EVT-${year}-${seed.padStart(5, '0')}`
-}
+  for (let index = 0; index < normalized.length; index += 1) {
+    checksum = (checksum * 31 + normalized.charCodeAt(index)) % 10000
+  }
 
-function looksInternalCode(value: string) {
-  const normalized = value.trim()
-  return /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(normalized) || /[0-9a-f]{16,}/i.test(normalized)
+  return `#${String(checksum).padStart(4, '0')}`
 }
 
 function formatDate(value: string) {
