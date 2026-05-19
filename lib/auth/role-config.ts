@@ -49,10 +49,7 @@ export function getSafeRedirectPath(candidate: string | null | undefined, role: 
 
   const [pathname] = candidate.split('?')
   const requiredRole = getRequiredRoleForPath(pathname)
-  if (!requiredRole) {
-    if (role === 'user') return candidate
-    return fallback
-  }
+  if (!requiredRole) return fallback
   if (requiredRole !== role) return fallback
 
   return candidate
