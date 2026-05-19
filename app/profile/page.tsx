@@ -1,13 +1,19 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
-import { ArrowLeft, CalendarDays, ChevronRight, FileBadge2, PencilLine, UserRound } from 'lucide-react'
+import { ArrowLeft, BadgeCheck, CalendarDays, ChevronRight, FileBadge2, PencilLine, UserRound } from 'lucide-react'
 import { AUTH_ROLES } from '@/lib/auth/roles'
 import { getCurrentAdminSession, getPublicUserProfile } from '@/lib/server/rbac'
+import { getUserEventHistoryFromDb } from '@/lib/server/events'
 
 export default async function ProfilePage() {
   const session = await getCurrentAdminSession(AUTH_ROLES.user)
   if (!session) redirect('/auth/user-login?next=%2Fprofile')
-  const profile = await getPublicUserProfile(session.userId)
+  const [profile, eventHistory] = await Promise.all([
+    getPublicUserProfile(session.userId),
+    getUserEventHistoryFromDb(session.userId),
+  ])
+  const certificateCount = eventHistory.filter((item) => item.certificateEligible).length
+  const profileComplete = Boolean(profile?.fullName && profile.whatsapp && profile.institution)
 
   const menuItems = [
     {
@@ -74,10 +80,30 @@ export default async function ProfilePage() {
           </div>
 
           <div className="rounded-3xl border border-black/5 bg-white p-5 shadow-sm">
-            <p className="text-sm font-bold text-[#1B4332]">Profil user sudah siap untuk dipakai di frontend.</p>
-            <p className="mt-2 text-sm leading-relaxed text-gray-500">
-              Riwayat event, sertifikat, dan sinkronisasi profil akan muncul otomatis setelah layanan data user tersedia.
-            </p>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-bold text-[#1B4332]">
+                  {profileComplete ? 'Profil siap untuk daftar event.' : 'Profil belum lengkap.'}
+                </p>
+                <p className="mt-2 text-sm leading-relaxed text-gray-500">
+                  {profileComplete
+                    ? 'Data akun akan dipakai otomatis saat mendaftar event.'
+                    : 'Lengkapi WhatsApp dan instansi agar pendaftaran event memakai data akun.'}
+                </p>
+              </div>
+              {profileComplete ? (
+                <BadgeCheck className="h-5 w-5 shrink-0 text-emerald-600" />
+              ) : (
+                <Link href="/profile/edit" className="shrink-0 text-xs font-bold text-[#1B4332] underline underline-offset-4">
+                  Lengkapi
+                </Link>
+              )}
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <SummaryTile label="Event" value={eventHistory.length} />
+              <SummaryTile label="Sertifikat" value={certificateCount} />
+            </div>
           </div>
         </section>
 
@@ -102,6 +128,15 @@ export default async function ProfilePage() {
           })}
         </section>
       </div>
+    </div>
+  )
+}
+
+function SummaryTile({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl bg-[#f4f7f5] px-4 py-3">
+      <p className="text-2xl font-extrabold text-[#1B4332]">{value}</p>
+      <p className="mt-0.5 text-xs font-semibold text-gray-500">{label}</p>
     </div>
   )
 }

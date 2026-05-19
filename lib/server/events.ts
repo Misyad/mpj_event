@@ -65,6 +65,7 @@ type ParticipantRow = RowDataPacket & {
   attended_at: Date | string | null
   payment_id: string | null
   custom_answers: string | Record<string, unknown> | null
+  created_at?: Date | string | null
 }
 
 type CustomFieldRow = RowDataPacket & {
@@ -109,6 +110,14 @@ type PaymentCoreRequest = {
   checkoutUrl?: string | null
   paymentInfo?: Record<string, unknown> | null
   status: PaymentCoreStatus
+}
+
+export type UserEventHistoryItem = {
+  participant: Participant
+  event: Event
+  certificateEligible: boolean
+  certificateNumber: string
+  registeredAt: string | null
 }
 
 type RegisterPayload = {
@@ -1031,6 +1040,75 @@ export async function getPaymentRecordsByEventFromDb(eventIdentifier: string): P
       connection.release()
     }
   })
+}
+
+function buildCertificateNumber(event: Event, participant: Participant) {
+  return `MPJ-CERT-${event.id.slice(0, 8).toUpperCase()}-${participant.id.slice(0, 8).toUpperCase()}`
+}
+
+function isCertificateEligible(event: Event, participant: Participant) {
+  const participantStatus = String(participant.status || participant.attendance_status).toLowerCase()
+  const eventStatus = String(event.status).toLowerCase()
+  return participantStatus === 'attended' && (eventStatus === 'finished' || eventStatus === 'completed')
+}
+
+export async function getUserEventHistoryFromDb(userId: string): Promise<UserEventHistoryItem[]> {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+
+    try {
+      await ensureEventV4Schema(connection)
+      const [participantRows] = await connection.query<ParticipantRow[]>(
+        `
+          SELECT *
+          FROM mpj_event_participants
+          WHERE user_id = :userId
+            AND LOWER(COALESCE(status, attendance_status, 'registered')) != 'cancelled'
+          ORDER BY created_at DESC
+        `,
+        { userId },
+      )
+
+      if (participantRows.length === 0) return []
+
+      const eventIds = [...new Set(participantRows.map((row) => row.event_id))]
+      const [eventRows] = await connection.query<EventRow[]>(
+        `
+          ${EVENT_SELECT}
+          WHERE id IN (:eventIds)
+        `,
+        { eventIds },
+      )
+      const fieldsByEvent = await getCustomFieldsByEventIds(connection, eventIds)
+      const classesByEvent = await getClassesByEventIds(connection, eventIds)
+      const eventMap = new Map(
+        eventRows.map((row) => [
+          row.id,
+          mapEvent(row, fieldsByEvent.get(row.id) ?? [], classesByEvent.get(row.id) ?? []),
+        ]),
+      )
+
+      return participantRows.flatMap((row) => {
+        const event = eventMap.get(row.event_id)
+        if (!event) return []
+        const participant = mapParticipant(row)
+        return [{
+          participant,
+          event,
+          certificateEligible: isCertificateEligible(event, participant),
+          certificateNumber: buildCertificateNumber(event, participant),
+          registeredAt: toIsoString(row.created_at ?? null) ?? null,
+        }]
+      })
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function getUserCertificatesFromDb(userId: string): Promise<UserEventHistoryItem[]> {
+  const history = await getUserEventHistoryFromDb(userId)
+  return history.filter((item) => item.certificateEligible)
 }
 
 export async function getAdminParticipantsFromDb(options: { scope?: EventScope; regionId?: string | null } = {}) {
