@@ -5,6 +5,8 @@ import { dummyEvents } from '@/lib/dummy'
 import { getEventsFromDb } from '@/lib/server/events'
 import { LoginEntryDialog } from '@/components/auth/LoginEntryDialog'
 import { BrandMark } from '@/components/BrandMark'
+import { AUTH_ROLES } from '@/lib/auth/roles'
+import { getCurrentAdminSession } from '@/lib/server/rbac'
 
 const VISIBLE: EventStatus[] = ['APPROVED', 'FINISHED', 'COMPLETED']
 
@@ -12,6 +14,7 @@ export const dynamic = 'force-dynamic'
 
 export default async function Home() {
   let sourceEvents = dummyEvents
+  const session = await getCurrentAdminSession(AUTH_ROLES.user)
 
   try {
     sourceEvents = await getEventsFromDb({ publicOnly: true })
@@ -34,7 +37,16 @@ export default async function Home() {
           <BrandMark className="h-5 w-5" />
           <span className="font-extrabold text-[#1B4332] text-lg tracking-tight">MPJ Event</span>
         </div>
-        <LoginEntryDialog />
+        <LoginEntryDialog
+          user={
+            session
+              ? {
+                  fullName: session.fullName ?? null,
+                  email: session.email ?? null,
+                }
+              : null
+          }
+        />
       </header>
 
       <main className="flex-1 px-4 py-5 space-y-6">
