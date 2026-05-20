@@ -4,6 +4,8 @@ import { Event } from '@/types'
 import { BadgeStatus } from '@/components/BadgeStatus'
 import { MapPin, Calendar } from 'lucide-react'
 
+const DEFAULT_POSTER_URL = 'https://picsum.photos/seed/mpj-event/800/450'
+
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleDateString('id-ID', {
     day: 'numeric',
@@ -13,13 +15,15 @@ function formatDate(dateStr: string) {
 }
 
 export function EventCard({ event }: { event: Event }) {
+  const posterUrl = normalizePosterUrl(event.poster_url || event.posterUrl)
+
   return (
     <Link href={`/events/${event.id}`}>
       <div className="bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-200">
         {/* Poster */}
         <div className="relative w-full aspect-video">
           <Image
-            src={event.poster_url}
+            src={posterUrl}
             alt={event.title}
             fill
             className="object-cover"
@@ -49,4 +53,13 @@ export function EventCard({ event }: { event: Event }) {
       </div>
     </Link>
   )
+}
+
+function normalizePosterUrl(value?: string | null) {
+  if (!value) return DEFAULT_POSTER_URL
+
+  const legacyUploadMatch = value.match(/^\/uploads\/posters\/([^/?#]+)$/)
+  if (legacyUploadMatch) return `/api/uploads/posters/${legacyUploadMatch[1]}`
+
+  return value
 }
