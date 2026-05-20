@@ -1377,19 +1377,29 @@ export async function updateRolePermissions(request: NextRequest, roleId: string
       await ensureRbacSchema(connection)
       const [roles] = await connection.query<RowDataPacket[]>('SELECT code FROM roles WHERE id = :roleId LIMIT 1', { roleId })
       if (!roles[0]) throw new Error('Role tidak ditemukan')
-      if (roles[0].code === AUTH_ROLES.superAdmin && !permissions.includes('*')) {
+      const roleCode = roles[0].code as string
+      const uniquePermissions = Array.from(new Set(permissions.map((permission) => String(permission).trim()).filter(Boolean)))
+      const allowedPermissions = new Set<string>(ADMIN_PERMISSIONS)
+      const invalidPermissions = uniquePermissions.filter((permission) => !allowedPermissions.has(permission))
+      if (invalidPermissions.length > 0) {
+        throw new Error(`Permission tidak valid: ${invalidPermissions.join(', ')}`)
+      }
+      if (roleCode !== AUTH_ROLES.superAdmin && uniquePermissions.includes('*')) {
+        throw new Error('Permission * hanya untuk Super Admin')
+      }
+      if (roleCode === AUTH_ROLES.superAdmin && !uniquePermissions.includes('*')) {
         throw new Error('Super Admin harus memiliki permission *')
       }
-      await assignPermissions(connection, roleId, permissions)
+      await assignPermissions(connection, roleId, uniquePermissions)
       await writeActivityLog(connection, {
         userId: actor.userId,
         action: 'role.permissions_updated',
         entityType: 'role',
         entityId: roleId,
-        metadata: { permissions },
+        metadata: { permissions: uniquePermissions },
         request,
       })
-      return { id: roleId, permissions }
+      return { id: roleId, permissions: uniquePermissions }
     } finally {
       connection.release()
     }
