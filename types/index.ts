@@ -245,6 +245,8 @@ export interface Pesantren {
   name: string
   founder: string
   region: string
+  scope?: EventScope
+  regionId?: string | null
   kabupaten: string
   total_santri: number
   status: 'Aktif' | 'Non-Aktif'
@@ -255,6 +257,8 @@ export interface MediaUnit {
   name: string
   type: string
   region: string
+  scope?: EventScope
+  regionId?: string | null
   pic: string
   status: 'Aktif' | 'Non-Aktif'
 }
@@ -264,6 +268,8 @@ export interface CrewMember {
   niam: string
   full_name: string
   unit: string
+  scope?: EventScope
+  regionId?: string | null
   role: string
   pesantren: string
   joined_at: string

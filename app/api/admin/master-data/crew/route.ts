@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createMasterCrew, listMasterCrew } from '@/lib/server/master-data'
-import { recordAdminActivity, requireSuperAdmin } from '@/lib/server/rbac'
+import { recordAdminActivity, requireAdminPermission } from '@/lib/server/rbac'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -13,8 +13,8 @@ function masterDataError(error: unknown, fallback: string) {
 
 export async function GET(request: NextRequest) {
   try {
-    await requireSuperAdmin(request)
-    return NextResponse.json({ ok: true, data: await listMasterCrew() })
+    const actor = await requireAdminPermission(request, 'master-data.read')
+    return NextResponse.json({ ok: true, data: await listMasterCrew(actor) })
   } catch (error) {
     return masterDataError(error, 'Gagal memuat kru')
   }
@@ -22,13 +22,14 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    await requireSuperAdmin(request)
-    const data = await createMasterCrew(await request.json())
+    const actor = await requireAdminPermission(request, 'master-data.write')
+    const data = await createMasterCrew(await request.json(), actor)
     await recordAdminActivity(request, {
       action: 'master_crew.created',
       entityType: 'crew_member',
       entityId: data.id,
       metadata: { niam: data.niam, name: data.full_name, unit: data.unit },
+      permission: 'master-data.write',
     })
     return NextResponse.json({ ok: true, data }, { status: 201 })
   } catch (error) {

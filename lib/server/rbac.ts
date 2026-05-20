@@ -1307,9 +1307,10 @@ export async function recordAdminActivity(
     entityType?: string | null
     entityId?: string | null
     metadata?: Record<string, unknown>
+    permission?: AdminPermission
   },
 ) {
-  const actor = await requireAdminPermission(request, 'events.update')
+  const actor = await requireAdminPermission(request, payload.permission ?? 'events.update')
   return withDb(async (db) => {
     const connection = await db.getConnection()
     try {

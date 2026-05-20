@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { updateMasterCrew } from '@/lib/server/master-data'
-import { recordAdminActivity, requireSuperAdmin } from '@/lib/server/rbac'
+import { recordAdminActivity, requireAdminPermission } from '@/lib/server/rbac'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -19,14 +19,15 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   const { id } = await context.params
 
   try {
-    await requireSuperAdmin(request)
-    const data = await updateMasterCrew(id, await request.json())
+    const actor = await requireAdminPermission(request, 'master-data.write')
+    const data = await updateMasterCrew(id, await request.json(), actor)
     if (!data) return NextResponse.json({ ok: false, error: 'Kru tidak ditemukan' }, { status: 404 })
     await recordAdminActivity(request, {
       action: 'master_crew.updated',
       entityType: 'crew_member',
       entityId: data.id,
       metadata: { niam: data.niam, name: data.full_name, unit: data.unit },
+      permission: 'master-data.write',
     })
     return NextResponse.json({ ok: true, data })
   } catch (error) {
