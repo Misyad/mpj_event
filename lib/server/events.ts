@@ -1611,13 +1611,13 @@ export async function generateEventCertificates(eventId: string, actorId?: strin
   })
 }
 
-export async function updateCertificateLifecycle(certificateId: string, status: CertificateStatus, reason?: string | null) {
+export async function updateCertificateLifecycle(certificateId: string, status: CertificateStatus, reason?: string | null, eventId?: string) {
   return withDb(async (db) => {
     const connection = await db.getConnection()
 
     try {
       await ensureEventV4Schema(connection)
-      await connection.query<ResultSetHeader>(
+      const [result] = await connection.query<ResultSetHeader>(
         `
           UPDATE mpj_event_certificates
           SET
@@ -1625,9 +1625,11 @@ export async function updateCertificateLifecycle(certificateId: string, status: 
             revoked_at = CASE WHEN :status = 'revoked' THEN NOW() ELSE revoked_at END,
             revoked_reason = CASE WHEN :status = 'revoked' THEN :reason ELSE revoked_reason END
           WHERE id = :certificateId
+            AND (:eventId IS NULL OR event_id = :eventId)
         `,
-        { certificateId, status, reason: reason ?? null },
+        { certificateId, status, reason: reason ?? null, eventId: eventId ?? null },
       )
+      if (result.affectedRows === 0) throw new Error('Sertifikat tidak ditemukan')
       const [rows] = await connection.query<CertificateRow[]>(
         `
           SELECT
@@ -1656,9 +1658,10 @@ export async function updateCertificateLifecycle(certificateId: string, status: 
           FROM mpj_event_certificates c
           INNER JOIN mpj_event_participants p ON p.id = c.participant_id
           WHERE c.id = :certificateId
+            AND (:eventId IS NULL OR c.event_id = :eventId)
           LIMIT 1
         `,
-        { certificateId },
+        { certificateId, eventId: eventId ?? null },
       )
       if (!rows[0]) throw new Error('Sertifikat tidak ditemukan')
       return mapCertificateRecord(rows[0])

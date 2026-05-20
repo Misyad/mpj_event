@@ -35,7 +35,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { normalizeEvent } from '@/lib/event-api'
 import { CertificateTemplateEditor } from '@/components/certificates/CertificateTemplateEditor'
 import { DEFAULT_CERTIFICATE_LAYOUT, normalizeCertificateLayout } from '@/components/certificates/certificate-template-layout'
-import type { CertificateReusableTemplate, CertificateTemplateFieldKey, CertificateTemplateLayout, Event, EventCategory, EventCertificateRecord, EventStatus, Speaker } from '@/types'
+import type { CertificateReusableTemplate, CertificateStatus, CertificateTemplateFieldKey, CertificateTemplateLayout, Event, EventCategory, EventCertificateRecord, EventStatus, Speaker } from '@/types'
 
 type ApprovalLog = {
   action: string
@@ -146,6 +146,20 @@ function formatCurrency(value: number) {
     currency: 'IDR',
     maximumFractionDigits: 0,
   }).format(value)
+}
+
+function certificateStatusLabel(status?: CertificateStatus | string | null) {
+  if (status === 'revoked') return 'Revoked'
+  if (status === 'expired') return 'Expired'
+  if (status === 'reissued') return 'Reissued'
+  return 'Active'
+}
+
+function certificateStatusClass(status?: CertificateStatus | string | null) {
+  if (status === 'revoked') return 'border-red-100 bg-red-50 text-red-700'
+  if (status === 'expired') return 'border-amber-100 bg-amber-50 text-amber-700'
+  if (status === 'reissued') return 'border-blue-100 bg-blue-50 text-blue-700'
+  return 'border-emerald-100 bg-emerald-50 text-emerald-700'
 }
 
 function getEventQuota(event: Event) {
@@ -260,6 +274,7 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
   const [isCertificateSaving, setIsCertificateSaving] = useState(false)
   const [isGeneratingCertificates, setIsGeneratingCertificates] = useState(false)
   const [isUploadingTemplate, setIsUploadingTemplate] = useState(false)
+  const [certificateStatusUpdatingId, setCertificateStatusUpdatingId] = useState<string | null>(null)
 
   useEffect(() => {
     if (initialEvents) return
@@ -542,6 +557,37 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
       toast.error(message)
     } finally {
       setIsGeneratingCertificates(false)
+    }
+  }
+
+  async function updateCertificateStatus(certificate: EventCertificateRecord, status: CertificateStatus) {
+    if (!certificateEvent) return
+    const reason = status === 'revoked' ? window.prompt('Alasan revoke sertifikat ini?') : ''
+    if (status === 'revoked' && reason === null) return
+
+    try {
+      setCertificateStatusUpdatingId(certificate.id)
+      setError('')
+      const response = await fetch(`/api/admin/events/${encodeURIComponent(certificateEvent.id)}/certificates/${encodeURIComponent(certificate.id)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status, reason: reason?.trim() || null }),
+      })
+      const payload = await response.json()
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal mengubah status sertifikat')
+      setCertificateSummary((current) => current
+        ? {
+            ...current,
+            certificates: current.certificates.map((item) => item.id === certificate.id ? payload.data : item),
+          }
+        : current)
+      toast.success(`Sertifikat ${certificateStatusLabel(status).toLowerCase()}`)
+    } catch (statusError) {
+      const message = statusError instanceof Error ? statusError.message : 'Gagal mengubah status sertifikat'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setCertificateStatusUpdatingId(null)
     }
   }
 
@@ -977,16 +1023,36 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
                         {certificateSummary.certificates.map((certificate) => (
                           <div key={certificate.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between">
                             <div>
-                              <p className="text-sm font-bold text-[#1B4332]">{certificate.participantName}</p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-sm font-bold text-[#1B4332]">{certificate.participantName}</p>
+                                <span className={`rounded-full border px-2 py-0.5 text-[11px] font-bold ${certificateStatusClass(certificate.status)}`}>
+                                  {certificateStatusLabel(certificate.status)}
+                                </span>
+                              </div>
                               <p className="font-mono text-xs text-gray-500">{certificate.certificateNumber}</p>
+                              {certificate.revokedReason ? <p className="mt-1 text-xs font-medium text-red-600">Alasan: {certificate.revokedReason}</p> : null}
                             </div>
-                            <div className="flex gap-2">
-                              <Link href={`/certificate/${encodeURIComponent(certificate.verificationCode)}`} target="_blank">
-                                <Button type="button" variant="outline" className="h-8 rounded-lg text-xs">Preview</Button>
+                            <div className="flex flex-wrap gap-2">
+                              {certificate.verificationCode ? (
+                                <Link href={`/certificate/${encodeURIComponent(certificate.verificationCode)}`} target="_blank">
+                                  <Button type="button" variant="outline" className="h-8 rounded-lg text-xs">Preview</Button>
+                                </Link>
+                              ) : null}
+                              <Link href={certificate.generatedFileUrl || (certificate.verificationCode ? `/certificate/${encodeURIComponent(certificate.verificationCode)}` : '#')} target="_blank">
+                                <Button type="button" className="h-8 rounded-lg bg-[#1B4332] text-xs text-white" disabled={!certificate.generatedFileUrl && !certificate.verificationCode}>Download</Button>
                               </Link>
-                              <Link href={certificate.generatedFileUrl || `/certificate/${encodeURIComponent(certificate.verificationCode)}`} target="_blank">
-                                <Button type="button" className="h-8 rounded-lg bg-[#1B4332] text-xs text-white">Download</Button>
-                              </Link>
+                              {certificate.status === 'active' ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="h-8 rounded-lg border-red-100 text-xs text-red-600 hover:bg-red-50"
+                                  onClick={() => updateCertificateStatus(certificate, 'revoked')}
+                                  disabled={certificateStatusUpdatingId === certificate.id}
+                                >
+                                  {certificateStatusUpdatingId === certificate.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+                                  Revoke
+                                </Button>
+                              ) : null}
                             </div>
                           </div>
                         ))}

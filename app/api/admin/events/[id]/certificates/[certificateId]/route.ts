@@ -30,7 +30,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const payload = await request.json()
     const status = String(payload.status || 'revoked') as CertificateStatus
     if (!['active', 'revoked', 'expired', 'reissued'].includes(status)) throw new Error('Status sertifikat tidak valid')
-    const certificate = await updateCertificateLifecycle(certificateId, status, payload.reason)
+    const certificate = await updateCertificateLifecycle(certificateId, status, payload.reason, event.id)
     await recordAdminActivity(request, {
       action: `event_certificate.${status}`,
       entityType: 'event_certificate',

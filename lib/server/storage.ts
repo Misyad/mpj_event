@@ -21,7 +21,8 @@ function sanitizeKey(key: string) {
 }
 
 class LocalPublicStorageAdapter implements StorageAdapter {
-  async putObject(key: string, body: Buffer, _contentType: string): Promise<StoredObject> {
+  async putObject(key: string, body: Buffer, contentType: string): Promise<StoredObject> {
+    void contentType
     const safeKey = sanitizeKey(key)
     const uploadDir = path.join(process.cwd(), 'public', 'uploads')
     const targetPath = path.join(uploadDir, safeKey)
