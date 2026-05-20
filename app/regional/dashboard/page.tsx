@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { BarChart3, CalendarDays, CheckCircle2, Clock, MapPin, Ticket, UserCheck, Wallet } from 'lucide-react'
 import { AUTH_ROLES } from '@/lib/auth/roles'
-import { getAdminParticipantsFromDb, getEventsFromDb } from '@/lib/server/events'
+import { getRegionalDashboard } from '@/lib/server/dashboard'
 import { getCurrentAdminSession } from '@/lib/server/rbac'
 
 export const dynamic = 'force-dynamic'
@@ -16,24 +16,15 @@ function formatDate(value?: string) {
   }).format(new Date(value))
 }
 
-function sameStatus(value: string | undefined, target: string) {
-  return String(value || '').toLowerCase() === target.toLowerCase()
-}
-
 export default async function RegionalDashboardPage() {
   const session = await getCurrentAdminSession(AUTH_ROLES.regionalAdmin)
   if (!session?.regionalId) redirect('/auth/regional-admin-login')
 
-  const [allEvents, participants] = await Promise.all([
-    getEventsFromDb(),
-    getAdminParticipantsFromDb({ scope: 'regional', regionId: session.regionalId }),
-  ])
-  const events = allEvents.filter((event) => event.scope === 'regional' && event.regionId === session.regionalId)
-  const attendedCount = participants.filter((participant) => sameStatus(participant.attendance_status, 'Attended')).length
-  const paidCount = participants.filter((participant) => participant.payment_status === 'Paid' || participant.payment_status === 'Free').length
-  const pendingCount = participants.filter((participant) => participant.payment_status === 'Unpaid' || participant.payment_status === 'Pending_Approval').length
-  const openEvents = events.filter((event) => event.status_pendaftaran !== 'closed' && !['finished', 'completed'].includes(String(event.status).toLowerCase())).length
-  const recentEvents = events.slice(0, 5)
+  const dashboard = await getRegionalDashboard(session)
+  const attendedCount = dashboard.summary.attended
+  const paidCount = dashboard.summary.paid
+  const pendingCount = dashboard.summary.pendingPayment
+  const recentEvents = dashboard.recentEvents
 
   return (
     <main className="min-h-screen bg-[#eef3ef] p-4 md:p-6">
@@ -51,8 +42,8 @@ export default async function RegionalDashboardPage() {
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {[
-            { label: 'Event Regional', value: events.length, note: `${openEvents} masih berjalan`, icon: CalendarDays, color: 'text-[#1B4332]', bg: 'bg-emerald-50' },
-            { label: 'Total Peserta', value: participants.length, note: 'Semua event regional', icon: UserCheck, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+            { label: 'Event Regional', value: dashboard.summary.total, note: `${dashboard.summary.open} masih berjalan`, icon: CalendarDays, color: 'text-[#1B4332]', bg: 'bg-emerald-50' },
+            { label: 'Total Peserta', value: dashboard.summary.participants, note: 'Semua event regional', icon: UserCheck, color: 'text-indigo-600', bg: 'bg-indigo-50' },
             { label: 'Sudah Hadir', value: attendedCount, note: 'Check-in QR', icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-50' },
             { label: 'Pembayaran Beres', value: paidCount, note: `${pendingCount} menunggu`, icon: Wallet, color: 'text-amber-600', bg: 'bg-amber-50' },
           ].map((item) => {
@@ -113,9 +104,9 @@ export default async function RegionalDashboardPage() {
             </div>
             <div className="mt-5 space-y-4">
               {[
-                { label: 'Check-in', value: attendedCount, total: Math.max(participants.length, 1), color: 'bg-emerald-600' },
-                { label: 'Pembayaran Beres', value: paidCount, total: Math.max(participants.length, 1), color: 'bg-amber-500' },
-                { label: 'Menunggu Pembayaran', value: pendingCount, total: Math.max(participants.length, 1), color: 'bg-red-500' },
+                { label: 'Check-in', value: attendedCount, total: Math.max(dashboard.summary.participants, 1), color: 'bg-emerald-600' },
+                { label: 'Pembayaran Beres', value: paidCount, total: Math.max(dashboard.summary.participants, 1), color: 'bg-amber-500' },
+                { label: 'Menunggu Pembayaran', value: pendingCount, total: Math.max(dashboard.summary.participants, 1), color: 'bg-red-500' },
               ].map((item) => {
                 const percent = Math.min(100, Math.round((item.value / item.total) * 100))
                 return (
