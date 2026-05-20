@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { deleteSpeakerFromDb, getSpeakerFromDb, updateSpeakerInDb } from '@/lib/server/speakers'
-import { requireAdminPermission } from '@/lib/server/rbac'
+import { recordAdminActivity, requireAdminPermission } from '@/lib/server/rbac'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -32,6 +32,12 @@ async function updateSpeaker(request: NextRequest, id: string) {
   await requireAdminPermission(request, 'events.update')
   const data = await updateSpeakerInDb(id, await request.json())
   if (!data) return NextResponse.json({ ok: false, error: 'Narasumber tidak ditemukan' }, { status: 404 })
+  await recordAdminActivity(request, {
+    action: 'speaker.updated',
+    entityType: 'speaker',
+    entityId: data.id,
+    metadata: { name: data.nama_lengkap, category: data.kategori },
+  })
   return NextResponse.json({ ok: true, data })
 }
 
@@ -60,7 +66,13 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
   try {
     await requireAdminPermission(request, 'events.update')
-    await deleteSpeakerFromDb(id)
+    const deleted = await deleteSpeakerFromDb(id)
+    if (!deleted) return NextResponse.json({ ok: false, error: 'Narasumber tidak ditemukan' }, { status: 404 })
+    await recordAdminActivity(request, {
+      action: 'speaker.deleted',
+      entityType: 'speaker',
+      entityId: id,
+    })
     return NextResponse.json({ ok: true })
   } catch (error) {
     return adminError(error)

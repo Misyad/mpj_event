@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createSpeakerInDb, getSpeakersFromDb } from '@/lib/server/speakers'
-import { requireAdminPermission } from '@/lib/server/rbac'
+import { recordAdminActivity, requireAdminPermission } from '@/lib/server/rbac'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -25,6 +25,12 @@ export async function POST(request: NextRequest) {
   try {
     await requireAdminPermission(request, 'events.create')
     const data = await createSpeakerInDb(await request.json())
+    await recordAdminActivity(request, {
+      action: 'speaker.created',
+      entityType: 'speaker',
+      entityId: data.id,
+      metadata: { name: data.nama_lengkap, category: data.kategori },
+    })
     return NextResponse.json({ ok: true, data }, { status: 201 })
   } catch (error) {
     return adminError(error)

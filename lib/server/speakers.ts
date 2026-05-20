@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import type { PoolConnection, RowDataPacket } from 'mysql2/promise'
+import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise'
 import { withDb } from '@/lib/server/db'
 import type { Speaker, SpeakerCategory } from '@/types'
 
@@ -47,6 +47,51 @@ async function ensureSpeakerSchema(connection: PoolConnection) {
       PRIMARY KEY (id)
     )
   `)
+  await ensureColumn(connection, 'speakers', 'alamat', 'TEXT NULL')
+  await ensureColumn(connection, 'speakers', 'keahlian', 'JSON NOT NULL DEFAULT (JSON_ARRAY())')
+  await ensureColumn(connection, 'speakers', 'no_telp', 'VARCHAR(20) NULL')
+  await ensureColumn(connection, 'speakers', 'portfolio_url', 'VARCHAR(500) NULL')
+  await ensureColumn(connection, 'speakers', 'kategori', "ENUM('Tech','Bisnis','Desain','Jurnalistik','Keagamaan','Lainnya') NOT NULL DEFAULT 'Lainnya'")
+  await ensureColumn(connection, 'speakers', 'foto_path', 'VARCHAR(500) NULL')
+  await ensureColumn(connection, 'speakers', 'bio', 'TEXT NULL')
+  await ensureColumn(connection, 'speakers', 'created_at', 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP')
+  await ensureColumn(connection, 'speakers', 'updated_at', 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP')
+  await ensureIndex(connection, 'speakers', 'speakers_name_idx', 'nama_lengkap')
+  await ensureIndex(connection, 'speakers', 'speakers_category_idx', 'kategori')
+}
+
+async function ensureColumn(connection: PoolConnection, tableName: string, columnName: string, definition: string) {
+  const [rows] = await connection.query<RowDataPacket[]>(
+    `
+      SELECT COUNT(*) AS total
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = :tableName
+        AND COLUMN_NAME = :columnName
+    `,
+    { tableName, columnName },
+  )
+
+  if (Number(rows[0]?.total || 0) === 0) {
+    await connection.query(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`)
+  }
+}
+
+async function ensureIndex(connection: PoolConnection, tableName: string, indexName: string, columnName: string) {
+  const [rows] = await connection.query<RowDataPacket[]>(
+    `
+      SELECT COUNT(*) AS total
+      FROM INFORMATION_SCHEMA.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = :tableName
+        AND INDEX_NAME = :indexName
+    `,
+    { tableName, indexName },
+  )
+
+  if (Number(rows[0]?.total || 0) === 0) {
+    await connection.query(`ALTER TABLE ${tableName} ADD INDEX ${indexName} (${columnName})`)
+  }
 }
 
 function parseSkills(value: SpeakerRow['keahlian']): string[] {
@@ -199,7 +244,8 @@ export async function deleteSpeakerFromDb(id: string) {
     const connection = await db.getConnection()
     try {
       await ensureSpeakerSchema(connection)
-      await connection.query('DELETE FROM speakers WHERE id = :id', { id })
+      const [result] = await connection.query<ResultSetHeader>('DELETE FROM speakers WHERE id = :id', { id })
+      return result.affectedRows > 0
     } finally {
       connection.release()
     }
