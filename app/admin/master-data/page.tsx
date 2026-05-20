@@ -1,7 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { dummyCrew, dummyMedia, dummyPesantren } from '@/lib/dummy'
+import { useEffect, useMemo, useState } from 'react'
 import type { CrewMember, MediaUnit, Pesantren } from '@/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -14,24 +13,76 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Building2, Database, Pencil, Radio, Search, Users } from 'lucide-react'
 import { toast } from 'sonner'
 
+type MasterKind = 'pesantren' | 'media' | 'crew'
+
 type EditingState =
   | { kind: 'pesantren'; item: Pesantren }
   | { kind: 'media'; item: MediaUnit }
   | { kind: 'crew'; item: CrewMember }
 
+const EMPTY_PESANTREN: Pesantren = { id: '', name: '', founder: '', region: '', kabupaten: '', total_santri: 0, status: 'Aktif' }
+const EMPTY_MEDIA: MediaUnit = { id: '', name: '', type: '', region: '', pic: '', status: 'Aktif' }
+const EMPTY_CREW: CrewMember = { id: '', niam: '', full_name: '', unit: '', role: '', pesantren: '', joined_at: new Date().toISOString().slice(0, 10) }
+
+const ENDPOINTS: Record<MasterKind, string> = {
+  pesantren: '/api/admin/master-data/pesantren',
+  media: '/api/admin/master-data/media',
+  crew: '/api/admin/master-data/crew',
+}
+
 export default function MasterDataPage() {
-  const [pesantrenRows, setPesantrenRows] = useState(dummyPesantren)
-  const [mediaRows, setMediaRows] = useState(dummyMedia)
-  const [crewRows, setCrewRows] = useState(dummyCrew)
+  const [pesantrenRows, setPesantrenRows] = useState<Pesantren[]>([])
+  const [mediaRows, setMediaRows] = useState<MediaUnit[]>([])
+  const [crewRows, setCrewRows] = useState<CrewMember[]>([])
   const [search, setSearch] = useState('')
   const [regionFilter, setRegionFilter] = useState('ALL')
   const [editing, setEditing] = useState<EditingState | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  async function loadMasterData(active = true) {
+    try {
+      setIsLoading(true)
+      setError('')
+      const [pesantrenResponse, mediaResponse, crewResponse] = await Promise.all([
+        fetch(ENDPOINTS.pesantren, { cache: 'no-store' }),
+        fetch(ENDPOINTS.media, { cache: 'no-store' }),
+        fetch(ENDPOINTS.crew, { cache: 'no-store' }),
+      ])
+      const [pesantrenPayload, mediaPayload, crewPayload] = await Promise.all([
+        pesantrenResponse.json(),
+        mediaResponse.json(),
+        crewResponse.json(),
+      ])
+      if (!pesantrenResponse.ok || !pesantrenPayload.ok) throw new Error(pesantrenPayload.error || 'Gagal memuat pesantren')
+      if (!mediaResponse.ok || !mediaPayload.ok) throw new Error(mediaPayload.error || 'Gagal memuat media')
+      if (!crewResponse.ok || !crewPayload.ok) throw new Error(crewPayload.error || 'Gagal memuat kru')
+      if (!active) return
+      setPesantrenRows(pesantrenPayload.data ?? [])
+      setMediaRows(mediaPayload.data ?? [])
+      setCrewRows(crewPayload.data ?? [])
+    } catch (loadError) {
+      if (active) setError(loadError instanceof Error ? loadError.message : 'Gagal memuat master data')
+    } finally {
+      if (active) setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    let active = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadMasterData(active)
+    return () => {
+      active = false
+    }
+  }, [])
 
   const regions = useMemo(() => ['ALL', ...Array.from(new Set([
     ...pesantrenRows.map((item) => item.region),
     ...mediaRows.map((item) => item.region),
     ...crewRows.map((item) => item.unit),
-  ]))], [crewRows, mediaRows, pesantrenRows])
+  ].map((region) => region.trim()).filter(Boolean)))], [crewRows, mediaRows, pesantrenRows])
 
   const filteredPesantren = useMemo(() => {
     const keyword = search.trim().toLowerCase()
@@ -67,13 +118,36 @@ export default function MasterDataPage() {
     })
   }
 
-  function saveEditing() {
+  function startCreate(kind: MasterKind) {
+    if (kind === 'pesantren') setEditing({ kind, item: { ...EMPTY_PESANTREN } })
+    if (kind === 'media') setEditing({ kind, item: { ...EMPTY_MEDIA } })
+    if (kind === 'crew') setEditing({ kind, item: { ...EMPTY_CREW } })
+    setError('')
+  }
+
+  async function saveEditing() {
     if (!editing) return
-    if (editing.kind === 'pesantren') setPesantrenRows((current) => current.map((item) => (item.id === editing.item.id ? editing.item : item)))
-    if (editing.kind === 'media') setMediaRows((current) => current.map((item) => (item.id === editing.item.id ? editing.item : item)))
-    if (editing.kind === 'crew') setCrewRows((current) => current.map((item) => (item.id === editing.item.id ? editing.item : item)))
-    toast.success('Master data berhasil diperbarui')
-    setEditing(null)
+    const endpoint = editing.item.id ? `${ENDPOINTS[editing.kind]}/${editing.item.id}` : ENDPOINTS[editing.kind]
+    try {
+      setIsSaving(true)
+      setError('')
+      const response = await fetch(endpoint, {
+        method: editing.item.id ? 'PATCH' : 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(editing.item),
+      })
+      const payload = await response.json()
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal menyimpan master data')
+      toast.success(editing.item.id ? 'Master data berhasil diperbarui' : 'Master data berhasil ditambahkan')
+      setEditing(null)
+      await loadMasterData()
+    } catch (saveError) {
+      const message = saveError instanceof Error ? saveError.message : 'Gagal menyimpan master data'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return (
@@ -84,15 +158,17 @@ export default function MasterDataPage() {
       </div>
 
       <div className="grid gap-3 md:grid-cols-4">
-        <SummaryCard icon={<Database className="h-4 w-4" />} label="Sumber Data" value="Penampungan" tone="text-[#1B4332]" />
+        <SummaryCard icon={<Database className="h-4 w-4" />} label="Sumber Data" value="Database" tone="text-[#1B4332]" />
         <SummaryCard icon={<Building2 className="h-4 w-4" />} label="Pesantren" value={String(pesantrenRows.length)} tone="text-emerald-700" />
         <SummaryCard icon={<Radio className="h-4 w-4" />} label="Media" value={String(mediaRows.length)} tone="text-blue-700" />
         <SummaryCard icon={<Users className="h-4 w-4" />} label="Kru" value={String(crewRows.length)} tone="text-purple-700" />
       </div>
 
-      <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-        Data ini masih menjadi penampungan internal. Edit di halaman ini menjaga bentuk UI dan tidak membuat data baru.
-      </div>
+      {error ? (
+        <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+          {error}
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-2 sm:flex-row">
         <div className="relative flex-1">
@@ -109,6 +185,17 @@ export default function MasterDataPage() {
         </Select>
       </div>
 
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" onClick={() => startCreate('pesantren')} className="rounded-xl bg-[#1B4332] text-white">Tambah Pesantren</Button>
+        <Button type="button" onClick={() => startCreate('media')} variant="outline" className="rounded-xl">Tambah Media</Button>
+        <Button type="button" onClick={() => startCreate('crew')} variant="outline" className="rounded-xl">Tambah Kru</Button>
+      </div>
+
+      {isLoading ? (
+        <div className="rounded-2xl border border-gray-100 bg-white py-16 text-center text-sm font-semibold text-gray-400">
+          Memuat master data...
+        </div>
+      ) : (
       <Tabs defaultValue="pesantren" className="w-full">
         <TabsList className="h-auto w-full justify-start gap-1 rounded-xl bg-gray-100 p-1">
           <TabsTrigger value="pesantren" className="rounded-lg px-3 py-1.5 text-xs font-semibold data-[state=active]:bg-[#1B4332] data-[state=active]:text-white">
@@ -192,8 +279,9 @@ export default function MasterDataPage() {
           }))} />
         </TabsContent>
       </Tabs>
+      )}
 
-      <EditMasterDialog editing={editing} onChange={updateEditing} onCancel={() => setEditing(null)} onSave={saveEditing} />
+      <EditMasterDialog editing={editing} isSaving={isSaving} onChange={updateEditing} onCancel={() => setEditing(null)} onSave={saveEditing} />
     </div>
   )
 }
@@ -262,15 +350,16 @@ function StatusBadge({ status }: { status: 'Aktif' | 'Non-Aktif' }) {
   return <Badge className={status === 'Aktif' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}>{status}</Badge>
 }
 
-function EditMasterDialog({ editing, onChange, onCancel, onSave }: { editing: EditingState | null; onChange: (field: string, value: string | number) => void; onCancel: () => void; onSave: () => void }) {
+function EditMasterDialog({ editing, isSaving, onChange, onCancel, onSave }: { editing: EditingState | null; isSaving: boolean; onChange: (field: string, value: string | number) => void; onCancel: () => void; onSave: () => void }) {
+  const actionLabel = editing?.item.id ? 'Edit' : 'Tambah'
   return (
     <Dialog open={Boolean(editing)} onOpenChange={(open) => {
       if (!open) onCancel()
     }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Edit {editing?.kind === 'pesantren' ? 'Pesantren' : editing?.kind === 'media' ? 'Media' : 'Kru'}</DialogTitle>
-          <DialogDescription>Preload data existing, lalu simpan perubahan tanpa membuat data baru.</DialogDescription>
+          <DialogTitle>{actionLabel} {editing?.kind === 'pesantren' ? 'Pesantren' : editing?.kind === 'media' ? 'Media' : 'Kru'}</DialogTitle>
+          <DialogDescription>Data disimpan ke database master data dan langsung dipakai modul registrasi/event.</DialogDescription>
         </DialogHeader>
         {editing?.kind === 'pesantren' ? (
           <div className="grid gap-3">
@@ -302,8 +391,8 @@ function EditMasterDialog({ editing, onChange, onCancel, onSave }: { editing: Ed
           </div>
         ) : null}
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={onCancel}>Batal</Button>
-          <Button type="button" className="bg-[#1B4332] text-white hover:bg-[#14532d]" onClick={onSave}>Simpan</Button>
+          <Button type="button" variant="outline" onClick={onCancel} disabled={isSaving}>Batal</Button>
+          <Button type="button" className="bg-[#1B4332] text-white hover:bg-[#14532d]" onClick={onSave} disabled={isSaving}>{isSaving ? 'Menyimpan...' : 'Simpan'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -13,11 +13,7 @@ import {
   Upload,
   UserRound,
 } from 'lucide-react'
-import {
-  getInstitutionOptions,
-  searchInstitutions,
-  type InstitutionOption,
-} from '@/lib/institution-options'
+import type { InstitutionOption } from '@/lib/institution-options'
 import type { Event } from '@/types'
 
 type Step = 1 | 2
@@ -86,7 +82,7 @@ export function RegisterForm({
   registrationContext?: RegistrationContext
 }) {
   const router = useRouter()
-  const institutionOptions = useMemo(() => getInstitutionOptions(), [])
+  const [institutionOptions, setInstitutionOptions] = useState<InstitutionOption[]>([])
   const institutionRef = useRef<HTMLDivElement>(null)
 
   const [step, setStep] = useState<Step>(1)
@@ -120,10 +116,33 @@ export function RegisterForm({
   )
   const profileNiam = registrationContext.niam?.trim() ?? ''
 
-  const filteredInstitutions = useMemo(
-    () => searchInstitutions(institutionQuery || form.institution),
-    [form.institution, institutionQuery],
-  )
+  useEffect(() => {
+    let active = true
+
+    async function loadInstitutions() {
+      try {
+        const response = await fetch('/api/institutions', { cache: 'no-store' })
+        const payload = await response.json()
+        if (response.ok && payload.ok && active) setInstitutionOptions(payload.data ?? [])
+      } catch {
+        if (active) setInstitutionOptions([])
+      }
+    }
+
+    loadInstitutions()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const filteredInstitutions = useMemo(() => {
+    const keyword = (institutionQuery || form.institution).trim().toLowerCase()
+    if (!keyword) return institutionOptions
+    return institutionOptions.filter((option) => {
+      const haystacks = [option.name, option.subtitle ?? '', option.kind]
+      return haystacks.some((value) => value.toLowerCase().includes(keyword))
+    })
+  }, [form.institution, institutionOptions, institutionQuery])
   const canUseCustomInstitution = event.is_open_for_public && institutionQuery.trim().length > 0
   const isNiamRegistration = Boolean(member) || Boolean(isLoggedIn && profileNiam)
   const finalName = isLoggedIn ? registrationContext.fullName ?? '' : member?.fullName ?? form.fullName
