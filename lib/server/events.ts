@@ -1260,6 +1260,22 @@ export async function getCertificateByTicketCode(ticketCode: string) {
   }
 }
 
+function normalizePaymentStatus(value: unknown, fallback: unknown) {
+  const normalized = getString(value || fallback)
+  const allowed = ['Free', 'Unpaid', 'Pending_Approval', 'Paid']
+  const match = allowed.find((status) => status.toLowerCase() === normalized.toLowerCase())
+  if (!match) throw new Error('Status pembayaran tidak valid')
+  return match
+}
+
+function normalizeAttendanceStatus(value: unknown, fallback: unknown) {
+  const normalized = getString(value || fallback)
+  const allowed = ['Registered', 'Confirmed', 'Attended', 'Cancelled']
+  const match = allowed.find((status) => status.toLowerCase() === normalized.toLowerCase())
+  if (!match) throw new Error('Status kehadiran tidak valid')
+  return match
+}
+
 async function ensureIndex(connection: PoolConnection, tableName: string, indexName: string, definition: string) {
   const [rows] = await connection.query<RowDataPacket[]>(
     `
@@ -2056,6 +2072,9 @@ export async function updateAdminParticipantInDb(participantId: string, payload:
       const niam = registrationPath === 'NIAM' ? getString(payload.niam) || existing.niam || '' : ''
       const classId = payload.class_id !== undefined ? getString(payload.class_id) || null : existing.class_id
       const customAnswers = payload.customAnswers ?? payload.custom_responses ?? parseJson(existing.custom_answers) ?? {}
+      const paymentStatus = normalizePaymentStatus(payload.payment_status, existing.payment_status)
+      const attendanceStatus = normalizeAttendanceStatus(payload.attendance_status, existing.attendance_status)
+      const participantStatus = attendanceStatus.toLowerCase()
       await validateCustomResponses(connection, existing.event_id, customAnswers as Record<string, unknown>)
 
       await connection.query<ResultSetHeader>(
@@ -2068,6 +2087,9 @@ export async function updateAdminParticipantInDb(participantId: string, payload:
               niam = :niam,
               email = :email,
               class_id = :classId,
+              payment_status = :paymentStatus,
+              attendance_status = :attendanceStatus,
+              status = :participantStatus,
               crew_json = :crewJson,
               guest_json = :guestJson,
               custom_answers = CAST(:customAnswers AS JSON)
@@ -2082,6 +2104,9 @@ export async function updateAdminParticipantInDb(participantId: string, payload:
           niam: niam || null,
           email: email || null,
           classId,
+          paymentStatus,
+          attendanceStatus,
+          participantStatus,
           crewJson: registrationPath === 'NIAM' ? JSON.stringify({ niam, full_name: fullName, unit: institution }) : null,
           guestJson: registrationPath === 'UMUM' ? JSON.stringify({ full_name: fullName, institution_name: institution, whatsapp }) : null,
           customAnswers: JSON.stringify(customAnswers),

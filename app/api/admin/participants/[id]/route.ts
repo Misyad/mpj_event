@@ -21,7 +21,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       action: 'admin_participant.updated',
       entityType: 'participant',
       entityId: data.id,
-      metadata: { eventId: data.event_id },
+      metadata: { eventId: data.event_id, paymentStatus: data.payment_status, attendanceStatus: data.attendance_status },
     })
 
     return NextResponse.json({ ok: true, data })
