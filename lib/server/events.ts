@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'crypto'
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise'
 import { DEFAULT_CERTIFICATE_LAYOUT, normalizeCertificateLayout } from '@/components/certificates/certificate-template-layout'
-import type { CertificateReusableTemplate, CertificateStatus, CertificateTemplateLayout, CustomField, Event, EventCategory, EventCertificateRecord, EventClass, EventPaymentMethod, EventScope, GatewayProvider, LocationType, Participant, PaymentRecord, RegistrationStatus } from '@/types'
+import type { BankAccount, CertificateReusableTemplate, CertificateStatus, CertificateTemplateLayout, CustomField, Event, EventCategory, EventCertificateRecord, EventClass, EventPaymentMethod, EventScope, GatewayProvider, LocationType, Participant, PaymentRecord, RegistrationStatus, StaffMember } from '@/types'
 import { withDb } from '@/lib/server/db'
 import { createPaymenkuTransaction, normalizePaymenkuStatus, type PaymenkuWebhookPayload } from '@/lib/server/paymenku'
 import { getGatewayCredentialForEvent } from '@/lib/server/payment-gateway-credentials'
@@ -32,9 +32,11 @@ type EventRow = RowDataPacket & {
   payment_method: EventPaymentMethod | null
   gateway_provider: GatewayProvider | null
   gateway_config: string | Event['gateway_config'] | null
+  bank_account_json: string | BankAccount | null
   price_niam: number
   price_public: number
   status: string
+  speaker_id: string | null
   scope: EventScope | null
   region_id: string | null
   is_published: 0 | 1 | null
@@ -166,6 +168,15 @@ type PaymentCoreRequest = {
   status: PaymentCoreStatus
 }
 
+type EventStaffRow = RowDataPacket & {
+  id: string
+  event_id: string
+  niam: string | null
+  full_name: string
+  role: string | null
+  unit: string | null
+}
+
 export type UserEventHistoryItem = {
   participant: Participant
   event: Event
@@ -238,6 +249,8 @@ type EventPayload = {
   gateway_config?: Event['gateway_config']
   gatewayConfig?: Event['gateway_config']
   paymenkuChannelCode?: string
+  bank_account?: BankAccount | null
+  bankAccount?: BankAccount | null
   price_niam?: number
   priceNiam?: number
   price_public?: number
@@ -254,9 +267,19 @@ type EventPayload = {
   quota?: number | null
   registration_deadline?: string | null
   registrationDeadline?: string | null
+  speaker_id?: string | null
+  speakerId?: string | null
   custom_fields?: CustomField[]
   customFields?: CustomField[]
   classes?: EventClass[]
+}
+
+type EventStaffPayload = {
+  niam?: string | null
+  full_name?: string
+  fullName?: string
+  role?: string | null
+  unit?: string | null
 }
 
 function toIsoString(value: Date | string | null) {
@@ -335,6 +358,24 @@ function stringifyGatewayConfig(value: unknown) {
   return normalized ? JSON.stringify(normalized) : null
 }
 
+function normalizeBankAccount(value: unknown): BankAccount {
+  const parsed = parseJson<Partial<BankAccount>>(value) ?? {}
+  const bankName = getString(parsed.bank_name)
+  const accountNumber = getString(parsed.account_number)
+  const accountName = getString(parsed.account_name)
+
+  return {
+    bank_name: bankName || DEFAULT_BANK_ACCOUNT.bank_name,
+    account_number: accountNumber || DEFAULT_BANK_ACCOUNT.account_number,
+    account_name: accountName || DEFAULT_BANK_ACCOUNT.account_name,
+  }
+}
+
+function stringifyBankAccount(value: unknown) {
+  const account = normalizeBankAccount(value)
+  return JSON.stringify(account)
+}
+
 function mapEvent(row: EventRow, customFields: CustomField[] = [], classes: EventClass[] = []): Event {
   const dateStart = toIsoString(row.start_date) ?? new Date().toISOString()
   const dateEnd = toIsoString(row.end_date)
@@ -347,6 +388,7 @@ function mapEvent(row: EventRow, customFields: CustomField[] = [], classes: Even
   const slug = row.slug || slugify(row.title)
   const paymentMethod = normalizePaymentMethod(row.payment_method)
   const gatewayConfig = normalizeGatewayConfig(row.gateway_config)
+  const bankAccount = normalizeBankAccount(row.bank_account_json)
 
   return {
     id: row.id,
@@ -380,11 +422,12 @@ function mapEvent(row: EventRow, customFields: CustomField[] = [], classes: Even
     price_public: Number(row.price_public ?? 0),
     priceUmum: Number(row.price_public ?? 0),
     status: status as Event['status'],
+    speaker_id: row.speaker_id ?? undefined,
     scope: row.scope ?? 'pusat',
     regionId: row.region_id,
     isPublished: Boolean(row.is_published),
     isPublic: Boolean(row.is_public),
-    bank_account: DEFAULT_BANK_ACCOUNT,
+    bank_account: bankAccount,
     max_participants: quota,
     quota,
     current_participants: registeredCount,
@@ -724,6 +767,8 @@ export async function ensureEventV4Schema(connection: PoolConnection) {
   await ensureColumn(connection, 'mpj_event_events', 'payment_method', "VARCHAR(50) NOT NULL DEFAULT 'manual'")
   await ensureColumn(connection, 'mpj_event_events', 'gateway_provider', 'VARCHAR(50) NULL')
   await ensureColumn(connection, 'mpj_event_events', 'gateway_config', 'JSON NULL')
+  await ensureColumn(connection, 'mpj_event_events', 'bank_account_json', 'JSON NULL')
+  await ensureColumn(connection, 'mpj_event_events', 'speaker_id', 'VARCHAR(36) NULL')
 
   await ensureColumn(connection, 'mpj_event_participants', 'user_id', 'VARCHAR(36) NULL')
   await ensureColumn(connection, 'mpj_event_participants', 'niam', 'VARCHAR(50) NULL')
@@ -768,6 +813,21 @@ export async function ensureEventV4Schema(connection: PoolConnection) {
   await ensureColumn(connection, 'mpj_event_custom_fields', 'required', 'TINYINT(1) NOT NULL DEFAULT 0')
   await ensureColumn(connection, 'mpj_event_custom_fields', 'options', 'JSON NULL')
   await ensureColumn(connection, 'mpj_event_custom_fields', 'order_num', 'INT NOT NULL DEFAULT 0')
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS mpj_event_staff (
+      id VARCHAR(36) NOT NULL,
+      event_id VARCHAR(36) NOT NULL,
+      niam VARCHAR(50) NULL,
+      full_name VARCHAR(255) NOT NULL,
+      role VARCHAR(120) NULL,
+      unit VARCHAR(255) NULL,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      KEY mpj_event_staff_event_id_idx (event_id)
+    )
+  `)
 
   await connection.query(`
     CREATE TABLE IF NOT EXISTS mpj_payment_core_payments (
@@ -989,9 +1049,11 @@ const EVENT_SELECT = `
     payment_method,
     gateway_provider,
     gateway_config,
+    bank_account_json,
     price_niam,
     price_public,
     status,
+    speaker_id,
     scope,
     region_id,
     is_published,
@@ -2197,15 +2259,15 @@ export async function createEventInDb(payload: EventPayload) {
           INSERT INTO mpj_event_events (
             id, title, slug, category, poster_url, description, location_gmaps,
             location_name, location_type, meeting_url, start_date, end_date,
-            is_open_for_public, is_paid, payment_method, gateway_provider, gateway_config,
-            price_niam, price_public, status,
+            is_open_for_public, is_paid, payment_method, gateway_provider, gateway_config, bank_account_json,
+            price_niam, price_public, status, speaker_id,
             scope, region_id, is_published, is_public, max_participants,
             current_participants, attended_count, status_pendaftaran, registration_deadline
           ) VALUES (
             :id, :title, :slug, :category, :posterUrl, :description, :locationMapsUrl,
             :locationName, :locationType, :meetingUrl, :startDate, :endDate,
-            :allowPublic, :isPaid, :paymentMethod, :gatewayProvider, CAST(:gatewayConfig AS JSON),
-            :priceNiam, :priceUmum, :status,
+            :allowPublic, :isPaid, :paymentMethod, :gatewayProvider, CAST(:gatewayConfig AS JSON), CAST(:bankAccount AS JSON),
+            :priceNiam, :priceUmum, :status, :speakerId,
             :scope, :regionId, :isPublished, :isPublic, :quota,
             0, 0, :registrationStatus, :registrationDeadline
           )
@@ -2228,9 +2290,11 @@ export async function createEventInDb(payload: EventPayload) {
           paymentMethod,
           gatewayProvider,
           gatewayConfig,
+          bankAccount: stringifyBankAccount(payload.bankAccount ?? payload.bank_account),
           priceNiam: toNullableInteger(payload.priceNiam ?? payload.price_niam) ?? 0,
           priceUmum: toNullableInteger(payload.priceUmum ?? payload.price_public) ?? 0,
           status,
+          speakerId: getString(payload.speakerId ?? payload.speaker_id) || null,
           scope: payload.scope || 'pusat',
           regionId: payload.regionId ?? payload.region_id ?? null,
           isPublished: toBooleanInt(isPublished),
@@ -2305,6 +2369,9 @@ export async function updateEventInDb(identifier: string, payload: EventPayload)
       if (payload.gateway_config !== undefined || payload.gatewayConfig !== undefined || payload.paymenkuChannelCode !== undefined) {
         setField('gateway_config', 'gatewayConfig', stringifyGatewayConfig(payload.gatewayConfig ?? payload.gateway_config ?? { channelCode: payload.paymenkuChannelCode }))
       }
+      if (payload.bankAccount !== undefined || payload.bank_account !== undefined) {
+        setField('bank_account_json', 'bankAccount', stringifyBankAccount(payload.bankAccount ?? payload.bank_account))
+      }
       if (payload.price_niam !== undefined || payload.priceNiam !== undefined) {
         if (published) throw new Error('Harga tidak boleh diubah setelah publish')
         setField('price_niam', 'priceNiam', toNullableInteger(payload.priceNiam ?? payload.price_niam) ?? 0)
@@ -2321,6 +2388,7 @@ export async function updateEventInDb(identifier: string, payload: EventPayload)
         if (status === 'registration_closed') setField('status_pendaftaran', 'registrationStatusFromStatus', 'closed')
         if (status === 'finished' || status === 'FINISHED') setField('status_pendaftaran', 'registrationStatusFinished', 'closed')
       }
+      if (payload.speakerId !== undefined || payload.speaker_id !== undefined) setField('speaker_id', 'speakerId', getString(payload.speakerId ?? payload.speaker_id) || null)
       if (payload.scope !== undefined) setField('scope', 'scope', payload.scope)
       if (payload.regionId !== undefined || payload.region_id !== undefined) setField('region_id', 'regionId', payload.regionId ?? payload.region_id ?? null)
       if (payload.isPublished !== undefined || payload.is_published !== undefined) {
@@ -2347,6 +2415,157 @@ export async function updateEventInDb(identifier: string, payload: EventPayload)
       connection.release()
     }
   })
+}
+
+function mapEventStaff(row: EventStaffRow): StaffMember {
+  return {
+    id: row.id,
+    event_id: row.event_id,
+    niam: row.niam ?? '',
+    full_name: row.full_name,
+    role: row.role ?? '',
+    unit: row.unit ?? '',
+  }
+}
+
+function normalizeEventStaffPayload(payload: EventStaffPayload) {
+  const fullName = getString(payload.fullName ?? payload.full_name)
+  if (!fullName) throw new Error('Nama panitia wajib diisi')
+
+  return {
+    niam: getString(payload.niam) || null,
+    fullName,
+    role: getString(payload.role) || null,
+    unit: getString(payload.unit) || null,
+  }
+}
+
+export async function getEventStaffFromDb(eventIdentifier: string) {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+
+    try {
+      await ensureEventV4Schema(connection)
+      const event = await getEventFromDb(eventIdentifier)
+      if (!event) throw new Error('Event tidak ditemukan')
+
+      const [rows] = await connection.query<EventStaffRow[]>(
+        `
+          SELECT id, event_id, niam, full_name, role, unit
+          FROM mpj_event_staff
+          WHERE event_id = :eventId
+          ORDER BY created_at ASC
+        `,
+        { eventId: event.id },
+      )
+      return rows.map(mapEventStaff)
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function createEventStaffInDb(eventIdentifier: string, payload: EventStaffPayload) {
+  const staff = normalizeEventStaffPayload(payload)
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+
+    try {
+      await ensureEventV4Schema(connection)
+      const event = await getEventFromDb(eventIdentifier)
+      if (!event) throw new Error('Event tidak ditemukan')
+
+      const id = randomUUID()
+      await connection.query<ResultSetHeader>(
+        `
+          INSERT INTO mpj_event_staff (id, event_id, niam, full_name, role, unit)
+          VALUES (:id, :eventId, :niam, :fullName, :role, :unit)
+        `,
+        { id, eventId: event.id, ...staff },
+      )
+      return {
+        id,
+        event_id: event.id,
+        niam: staff.niam ?? '',
+        full_name: staff.fullName,
+        role: staff.role ?? '',
+        unit: staff.unit ?? '',
+      }
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function updateEventStaffInDb(eventIdentifier: string, staffId: string, payload: EventStaffPayload) {
+  const staff = normalizeEventStaffPayload(payload)
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+
+    try {
+      await ensureEventV4Schema(connection)
+      const event = await getEventFromDb(eventIdentifier)
+      if (!event) throw new Error('Event tidak ditemukan')
+
+      const [existingRows] = await connection.query<EventStaffRow[]>(
+        'SELECT id FROM mpj_event_staff WHERE id = :staffId AND event_id = :eventId LIMIT 1',
+        { staffId, eventId: event.id },
+      )
+      if (!existingRows[0]) throw new Error('Panitia tidak ditemukan')
+
+      await connection.query<ResultSetHeader>(
+        `
+          UPDATE mpj_event_staff
+          SET niam = :niam,
+              full_name = :fullName,
+              role = :role,
+              unit = :unit
+          WHERE id = :staffId AND event_id = :eventId
+        `,
+        { staffId, eventId: event.id, ...staff },
+      )
+      return {
+        id: staffId,
+        event_id: event.id,
+        niam: staff.niam ?? '',
+        full_name: staff.fullName,
+        role: staff.role ?? '',
+        unit: staff.unit ?? '',
+      }
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function deleteEventStaffFromDb(eventIdentifier: string, staffId: string) {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+
+    try {
+      await ensureEventV4Schema(connection)
+      const event = await getEventFromDb(eventIdentifier)
+      if (!event) throw new Error('Event tidak ditemukan')
+
+      const [result] = await connection.query<ResultSetHeader>(
+        'DELETE FROM mpj_event_staff WHERE id = :staffId AND event_id = :eventId',
+        { staffId, eventId: event.id },
+      )
+      if (result.affectedRows === 0) throw new Error('Panitia tidak ditemukan')
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+export async function archiveEventInDb(identifier: string) {
+  const event = await updateEventInDb(identifier, {
+    status: 'registration_closed',
+    isPublished: false,
+    is_public: false,
+  })
+  if (!event) throw new Error('Event tidak ditemukan')
+  return event
 }
 
 async function appendPaymentCoreAudit(

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { AUTH_ROLES } from '@/lib/auth/roles'
-import { getEventFromDb, getParticipantsByEventFromDb, getPaymentRecordsByEventFromDb, updateEventInDb } from '@/lib/server/events'
+import { archiveEventInDb, getEventFromDb, getParticipantsByEventFromDb, getPaymentRecordsByEventFromDb, updateEventInDb } from '@/lib/server/events'
 import { recordAdminActivity, requireAdminPermission, requireRegionalScope } from '@/lib/server/rbac'
 
 export const runtime = 'nodejs'
@@ -103,8 +103,26 @@ export async function PUT(request: NextRequest, context: RouteContext) {
   }
 }
 
-export async function DELETE(_request: NextRequest, context: RouteContext) {
+export async function DELETE(request: NextRequest, context: RouteContext) {
   const { id } = await context.params
 
-  return NextResponse.json({ ok: false, error: `Delete event ${id} belum diaktifkan untuk Event V4` }, { status: 405 })
+  try {
+    const session = await requireAdminPermission(request, 'events.update')
+    const existing = await getEventFromDb(id)
+    if (!existing) return NextResponse.json({ ok: false, error: 'Event tidak ditemukan' }, { status: 404 })
+    if (session.role === AUTH_ROLES.regionalAdmin && (existing.scope !== 'regional' || existing.regionId !== session.regionalId)) {
+      throw new Error('Regional scope tidak valid')
+    }
+
+    const event = await archiveEventInDb(existing.id)
+    await recordAdminActivity(request, {
+      action: 'event.archived',
+      entityType: 'event',
+      entityId: event.id,
+      metadata: { title: event.title, previousStatus: existing.status, nextStatus: event.status },
+    })
+    return NextResponse.json({ ok: true, data: event })
+  } catch (error) {
+    return adminError(error)
+  }
 }

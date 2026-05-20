@@ -276,6 +276,11 @@ export default function NewEventPage() {
           gatewayConfig: form.isPaid && form.paymentMethod === 'gateway'
             ? { channelCode: form.paymenkuChannelCode, channelName: form.paymenkuChannelName }
             : null,
+          bank_account: {
+            bank_name: form.bankName,
+            account_number: form.bankNumber,
+            account_name: form.bankAccountName,
+          },
           price_niam: Number(form.priceNiam || 0),
           priceNiam: Number(form.priceNiam || 0),
           price_public: Number(form.pricePublic || 0),
@@ -288,6 +293,7 @@ export default function NewEventPage() {
           isPublic: true,
           status_pendaftaran: 'open',
           registrationDeadline: form.registrationDeadline || null,
+          speaker_id: form.speakerId,
           custom_fields: customFields,
           classes,
         }),

@@ -1,1 +1,1 @@
-export { default, generateStaticParams } from '../../../admin/events/[id]/page'
+export { default, dynamic } from '../../../admin/events/[id]/page'

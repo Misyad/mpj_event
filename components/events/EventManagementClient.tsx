@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { BadgeStatus } from '@/components/BadgeStatus'
+import { SpeakerCombobox } from '@/components/SpeakerCombobox'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -65,6 +66,10 @@ type EventForm = {
   priceNiam: string
   pricePublic: string
   maxParticipants: string
+  bankName: string
+  bankNumber: string
+  bankAccountName: string
+  speakerId: string | null
 }
 
 type CertificateSummary = {
@@ -125,6 +130,10 @@ const EMPTY_FORM: EventForm = {
   priceNiam: '0',
   pricePublic: '0',
   maxParticipants: '',
+  bankName: '',
+  bankNumber: '',
+  bankAccountName: '',
+  speakerId: null,
 }
 
 function formatDate(value?: string) {
@@ -210,6 +219,10 @@ function buildForm(event: Event): EventForm {
     priceNiam: String(event.price_niam ?? event.priceNiam ?? 0),
     pricePublic: String(event.price_public ?? event.priceUmum ?? 0),
     maxParticipants: event.max_participants || event.quota ? String(event.max_participants ?? event.quota) : '',
+    bankName: event.bank_account?.bank_name ?? '',
+    bankNumber: event.bank_account?.account_number ?? '',
+    bankAccountName: event.bank_account?.account_name ?? '',
+    speakerId: event.speaker_id ?? null,
   }
 }
 
@@ -244,6 +257,12 @@ function payloadFromForm(form: EventForm, mode: EventManagementClientProps['mode
     priceUmum: Number(form.pricePublic || 0),
     max_participants: form.maxParticipants ? Number(form.maxParticipants) : null,
     quota: form.maxParticipants ? Number(form.maxParticipants) : null,
+    bank_account: {
+      bank_name: form.bankName,
+      account_number: form.bankNumber,
+      account_name: form.bankAccountName,
+    },
+    speaker_id: form.speakerId,
   }
 }
 
@@ -1170,6 +1189,14 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
                 <Label className="text-xs font-semibold text-gray-600">Deskripsi</Label>
                 <Textarea value={form.description} onChange={(event) => setForm((current) => current ? { ...current, description: event.target.value } : current)} />
               </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-gray-600">Narasumber Utama</Label>
+                <SpeakerCombobox
+                  value={form.speakerId ?? undefined}
+                  onChange={(speakerId) => setForm((current) => current ? { ...current, speakerId } : current)}
+                  placeholder="Pilih narasumber"
+                />
+              </div>
               <div className="grid gap-3 sm:grid-cols-3">
                 {isAdminPusat ? (
                   <div className="space-y-1.5">
@@ -1196,6 +1223,22 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
                   <input type="checkbox" checked={form.isPaid} onChange={(event) => setForm((current) => current ? { ...current, isPaid: event.target.checked } : current)} />
                 </label>
               </div>
+              {form.isPaid ? (
+                <div className="grid gap-3 rounded-2xl bg-gray-50 p-4 sm:grid-cols-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-gray-600">Bank</Label>
+                    <Input value={form.bankName} onChange={(event) => setForm((current) => current ? { ...current, bankName: event.target.value } : current)} className="h-10 rounded-xl bg-white" placeholder="BCA" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-gray-600">Nomor Rekening</Label>
+                    <Input value={form.bankNumber} onChange={(event) => setForm((current) => current ? { ...current, bankNumber: event.target.value } : current)} className="h-10 rounded-xl bg-white" placeholder="1234567890" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-gray-600">Atas Nama</Label>
+                    <Input value={form.bankAccountName} onChange={(event) => setForm((current) => current ? { ...current, bankAccountName: event.target.value } : current)} className="h-10 rounded-xl bg-white" placeholder="MPJ Indonesia" />
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : null}
           <DialogFooter>

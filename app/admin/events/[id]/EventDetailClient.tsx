@@ -2,19 +2,19 @@
 
 import { use, useEffect, useState } from 'react'
 import Image from 'next/image'
-import { getStaffByEvent } from '@/lib/dummy'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ArrowLeft, Award, Building2, Calendar, CheckCircle, CheckCircle2, CreditCard, ExternalLink, History, Info, Loader2, MapPin, QrCode, ScanLine, Users, XCircle } from 'lucide-react'
+import { ArrowLeft, Award, Building2, Calendar, CheckCircle, CheckCircle2, CreditCard, ExternalLink, History, Info, Loader2, MapPin, Pencil, Plus, QrCode, ScanLine, Trash2, Users, XCircle } from 'lucide-react'
 import Link from 'next/link'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 import { normalizeEvent } from '@/lib/event-api'
 import { EventFinancePanel } from '@/components/finance/EventFinancePanel'
-import type { Event, Participant } from '@/types'
+import type { Event, Participant, StaffMember } from '@/types'
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Draft', PENDING: 'Menunggu Approval', APPROVED: 'Disetujui',
@@ -70,11 +70,26 @@ type ApprovalLog = {
   createdAt: string
 }
 
+type StaffForm = {
+  id?: string
+  full_name: string
+  niam: string
+  role: string
+  unit: string
+}
+
+const EMPTY_STAFF_FORM: StaffForm = {
+  full_name: '',
+  niam: '',
+  role: '',
+  unit: '',
+}
+
 export default function EventDetailClient({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
-  const staff = getStaffByEvent(id)
   const [event, setEvent] = useState<Event | null>(null)
   const [participants, setParticipants] = useState<Participant[]>([])
+  const [staff, setStaff] = useState<StaffMember[]>([])
   const [isPublic, setIsPublic] = useState(false)
   const [isPaid, setIsPaid] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
@@ -84,6 +99,9 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
   const [approvalTarget, setApprovalTarget] = useState<'APPROVED' | 'REJECTED' | null>(null)
   const [approvalReason, setApprovalReason] = useState('')
   const [isApproving, setIsApproving] = useState(false)
+  const [staffForm, setStaffForm] = useState<StaffForm | null>(null)
+  const [staffSaving, setStaffSaving] = useState(false)
+  const [staffDeletingId, setStaffDeletingId] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -92,17 +110,20 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
       try {
         setIsLoading(true)
         setError('')
-        const [response, logsResponse] = await Promise.all([
+        const [response, logsResponse, staffResponse] = await Promise.all([
           fetch(`/api/admin/events/${encodeURIComponent(id)}`, { cache: 'no-store' }),
           fetch(`/api/admin/events/${encodeURIComponent(id)}/approval-logs`, { cache: 'no-store' }),
+          fetch(`/api/admin/events/${encodeURIComponent(id)}/staff`, { cache: 'no-store' }),
         ])
-        const [payload, logsPayload] = await Promise.all([response.json(), logsResponse.json()])
+        const [payload, logsPayload, staffPayload] = await Promise.all([response.json(), logsResponse.json(), staffResponse.json()])
         if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal memuat detail event')
+        if (!staffResponse.ok || !staffPayload.ok) throw new Error(staffPayload.error || 'Gagal memuat panitia event')
 
         const loadedEvent = normalizeEvent(payload.data)
         if (!active) return
         setEvent(loadedEvent)
         setParticipants(payload.participants ?? [])
+        setStaff(staffPayload.data ?? [])
         setApprovalLogs(logsResponse.ok && logsPayload.ok ? logsPayload.data ?? [] : [])
         setIsPublic(loadedEvent.is_open_for_public)
         setIsPaid(loadedEvent.is_paid)
@@ -166,6 +187,65 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
       setError(approvalError instanceof Error ? approvalError.message : 'Gagal mengubah status event')
     } finally {
       setIsApproving(false)
+    }
+  }
+
+  function openStaffForm(staffMember?: StaffMember) {
+    setStaffForm(staffMember
+      ? {
+          id: staffMember.id,
+          full_name: staffMember.full_name,
+          niam: staffMember.niam,
+          role: staffMember.role,
+          unit: staffMember.unit,
+        }
+      : EMPTY_STAFF_FORM)
+    setError('')
+  }
+
+  async function saveStaff() {
+    if (!staffForm) return
+    if (!staffForm.full_name.trim()) {
+      setError('Nama panitia wajib diisi')
+      return
+    }
+
+    try {
+      setStaffSaving(true)
+      setError('')
+      const endpoint = staffForm.id
+        ? `/api/admin/events/${encodeURIComponent(id)}/staff/${encodeURIComponent(staffForm.id)}`
+        : `/api/admin/events/${encodeURIComponent(id)}/staff`
+      const response = await fetch(endpoint, {
+        method: staffForm.id ? 'PATCH' : 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(staffForm),
+      })
+      const payload = await response.json()
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal menyimpan panitia')
+
+      const saved = payload.data as StaffMember
+      setStaff((current) => staffForm.id ? current.map((item) => item.id === saved.id ? saved : item) : [...current, saved])
+      setStaffForm(null)
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Gagal menyimpan panitia')
+    } finally {
+      setStaffSaving(false)
+    }
+  }
+
+  async function deleteStaff(staffId: string) {
+    try {
+      setStaffDeletingId(staffId)
+      setError('')
+      const response = await fetch(`/api/admin/events/${encodeURIComponent(id)}/staff/${encodeURIComponent(staffId)}`, { method: 'DELETE' })
+      const payload = await response.json()
+      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal menghapus panitia')
+      setStaff((current) => current.filter((item) => item.id !== staffId))
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : 'Gagal menghapus panitia')
+    } finally {
+      setStaffDeletingId(null)
     }
   }
 
@@ -267,7 +347,10 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
               <p className="font-bold text-[#1B4332] text-sm">Daftar Panitia ({staff.length})</p>
-              <Button size="sm" className="bg-[#1B4332] hover:bg-[#14532d] text-white rounded-xl text-xs h-8">+ Tambah</Button>
+              <Button size="sm" onClick={() => openStaffForm()} className="bg-[#1B4332] hover:bg-[#14532d] text-white rounded-xl text-xs h-8">
+                <Plus className="h-3.5 w-3.5" />
+                Tambah
+              </Button>
             </div>
             {staff.length === 0 ? (
               <div className="py-12 text-center text-gray-400 text-sm">Belum ada panitia terdaftar.</div>
@@ -278,14 +361,25 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
                   <TableHead className="font-bold text-[#1B4332]">NIAM</TableHead>
                   <TableHead className="font-bold text-[#1B4332]">Jabatan</TableHead>
                   <TableHead className="font-bold text-[#1B4332]">Unit</TableHead>
+                  <TableHead className="font-bold text-[#1B4332]">Aksi</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {staff.map(s => (
                     <TableRow key={s.id} className="hover:bg-green-50/40">
                       <TableCell className="font-semibold text-[#1B4332] text-sm">{s.full_name}</TableCell>
-                      <TableCell className="text-xs text-gray-500 font-mono">{s.niam}</TableCell>
+                      <TableCell className="text-xs text-gray-500 font-mono">{s.niam || '-'}</TableCell>
                       <TableCell><span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-semibold">{s.role}</span></TableCell>
                       <TableCell className="text-sm text-gray-600">{s.unit}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-1.5">
+                          <Button type="button" size="sm" variant="outline" className="h-8 rounded-lg px-2 text-xs" onClick={() => openStaffForm(s)}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button type="button" size="sm" variant="outline" className="h-8 rounded-lg border-red-100 px-2 text-xs text-red-600 hover:bg-red-50" onClick={() => deleteStaff(s.id)} disabled={staffDeletingId === s.id}>
+                            {staffDeletingId === s.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                          </Button>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -494,6 +588,43 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
             <Button type="button" variant="outline" onClick={() => setApprovalTarget(null)} disabled={isApproving}>Batal</Button>
             <Button type="button" className={approvalTarget === 'APPROVED' ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-red-600 text-white hover:bg-red-700'} onClick={() => approvalTarget && updateEventStatus(approvalTarget)} disabled={isApproving}>
               {isApproving ? 'Memproses...' : approvalTarget === 'APPROVED' ? 'Approve' : 'Tolak'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(staffForm)} onOpenChange={(open) => {
+        if (!open) setStaffForm(null)
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{staffForm?.id ? 'Edit Panitia' : 'Tambah Panitia'}</DialogTitle>
+            <DialogDescription>Data panitia tersimpan di backend dan tampil kembali setelah halaman direfresh.</DialogDescription>
+          </DialogHeader>
+          {staffForm ? (
+            <div className="grid gap-4">
+              <div className="space-y-1.5">
+                <Label>Nama Lengkap</Label>
+                <Input value={staffForm.full_name} onChange={(changeEvent) => setStaffForm((current) => current ? { ...current, full_name: changeEvent.target.value } : current)} placeholder="Nama panitia" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>NIAM</Label>
+                <Input value={staffForm.niam} onChange={(changeEvent) => setStaffForm((current) => current ? { ...current, niam: changeEvent.target.value } : current)} placeholder="Opsional" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Jabatan</Label>
+                <Input value={staffForm.role} onChange={(changeEvent) => setStaffForm((current) => current ? { ...current, role: changeEvent.target.value } : current)} placeholder="Ketua Panitia, Bendahara, Registrasi" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Unit</Label>
+                <Input value={staffForm.unit} onChange={(changeEvent) => setStaffForm((current) => current ? { ...current, unit: changeEvent.target.value } : current)} placeholder="Regional / unit asal" />
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setStaffForm(null)} disabled={staffSaving}>Batal</Button>
+            <Button type="button" className="bg-[#1B4332] text-white hover:bg-[#14532d]" onClick={saveStaff} disabled={staffSaving}>
+              {staffSaving ? 'Menyimpan...' : 'Simpan'}
             </Button>
           </DialogFooter>
         </DialogContent>
