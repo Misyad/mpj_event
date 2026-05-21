@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { BadgeStatus } from '@/components/BadgeStatus'
+import { PosterUploader } from '@/components/PosterUploader'
 import { SpeakerCombobox } from '@/components/SpeakerCombobox'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -60,6 +61,8 @@ type EventForm = {
   location: string
   locationMapsUrl: string
   posterUrl: string
+  posterFile: File | null
+  posterPreview: string
   description: string
   isOpenForPublic: boolean
   isPaid: boolean
@@ -124,6 +127,8 @@ const EMPTY_FORM: EventForm = {
   location: '',
   locationMapsUrl: '',
   posterUrl: '',
+  posterFile: null,
+  posterPreview: '',
   description: '',
   isOpenForPublic: true,
   isPaid: false,
@@ -213,6 +218,8 @@ function buildForm(event: Event): EventForm {
     location: event.location_name ?? event.location ?? '',
     locationMapsUrl: event.location_gmaps ?? event.locationMapsUrl ?? '',
     posterUrl: event.poster_url ?? event.posterUrl ?? '',
+    posterFile: null,
+    posterPreview: '',
     description: event.description,
     isOpenForPublic: Boolean(event.is_open_for_public ?? event.allowPublic),
     isPaid: Boolean(event.is_paid ?? event.isPaidEvent),
@@ -264,6 +271,20 @@ function payloadFromForm(form: EventForm, mode: EventManagementClientProps['mode
     },
     speaker_id: form.speakerId,
   }
+}
+
+async function uploadPoster(file: File) {
+  const body = new FormData()
+  body.append('file', file)
+  const response = await fetch('/api/admin/uploads/poster', {
+    method: 'POST',
+    body,
+  })
+  const payload = await response.json()
+  if (!response.ok || !payload.ok) {
+    throw new Error(payload.error || 'Gagal mengupload poster')
+  }
+  return String(payload.url)
 }
 
 export function EventManagementClient({ mode, title, subtitle, scopeLabel, createHref, initialEvents, regionalId }: EventManagementClientProps) {
@@ -431,6 +452,8 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
     try {
       setIsSaving(true)
       setError('')
+      const posterUrl = form.posterFile ? await uploadPoster(form.posterFile) : form.posterUrl
+      const eventPayload = payloadFromForm({ ...form, posterUrl }, mode)
       const endpoint = isAdminPusat
         ? `/api/admin/events/${editingEvent?.id}`
         : editingEvent
@@ -439,7 +462,7 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
       const response = await fetch(endpoint, {
         method: editingEvent ? 'PATCH' : 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payloadFromForm(form, mode)),
+        body: JSON.stringify(eventPayload),
       })
       const payload = await response.json()
       if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal menyimpan event')
@@ -1182,8 +1205,17 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-gray-600">Poster URL</Label>
-                <Input value={form.posterUrl} onChange={(event) => setForm((current) => current ? { ...current, posterUrl: event.target.value } : current)} className="h-10 rounded-xl" placeholder="Opsional" />
+                <Label className="text-xs font-semibold text-gray-600">Poster Event</Label>
+                <PosterUploader
+                  key={`${editingEvent?.id ?? 'new'}-${form.posterUrl || 'empty'}`}
+                  currentUrl={form.posterPreview || form.posterUrl}
+                  onFileSelect={(file, previewUrl) => {
+                    setForm((current) => current ? { ...current, posterFile: file, posterPreview: previewUrl } : current)
+                  }}
+                  onClear={() => {
+                    setForm((current) => current ? { ...current, posterFile: null, posterPreview: '', posterUrl: '' } : current)
+                  }}
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-gray-600">Deskripsi</Label>

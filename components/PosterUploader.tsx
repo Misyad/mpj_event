@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useId, useState } from 'react'
 import Image from 'next/image'
 import { ImageIcon, Upload, X } from 'lucide-react'
 
@@ -14,7 +14,9 @@ const MAX_SIZE_KB = 100
 const ALLOWED = ['image/jpeg', 'image/webp', 'image/png']
 
 export function PosterUploader({ onFileSelect, onClear, currentUrl }: PosterUploaderProps) {
+  const inputId = useId()
   const [preview, setPreview] = useState<string | null>(currentUrl ?? null)
+  const [imageRatio, setImageRatio] = useState<number | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fileName, setFileName] = useState<string | null>(null)
@@ -33,6 +35,7 @@ export function PosterUploader({ onFileSelect, onClear, currentUrl }: PosterUplo
     reader.onload = (event) => {
       const url = event.target?.result as string
       setPreview(url)
+      setImageRatio(null)
       setFileName(file.name)
       onFileSelect?.(file, url)
     }
@@ -53,6 +56,7 @@ export function PosterUploader({ onFileSelect, onClear, currentUrl }: PosterUplo
 
   function clearPreview() {
     setPreview(null)
+    setImageRatio(null)
     setFileName(null)
     setError(null)
     onClear?.()
@@ -61,9 +65,24 @@ export function PosterUploader({ onFileSelect, onClear, currentUrl }: PosterUplo
   return (
     <div className="space-y-2">
       {preview ? (
-        <div className="relative rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
-          <div className="relative aspect-[4/5] max-h-64 overflow-hidden">
-            <Image src={preview} alt="Poster preview" fill sizes="256px" className="object-cover" />
+        <div className="relative w-full max-w-sm rounded-xl overflow-hidden bg-gray-50 border border-gray-200">
+          <div
+            className="relative w-full max-h-80 overflow-hidden"
+            style={{ aspectRatio: imageRatio ?? 4 / 5 }}
+          >
+            <Image
+              src={preview}
+              alt="Poster preview"
+              fill
+              sizes="(max-width: 640px) 100vw, 384px"
+              className="object-contain"
+              onLoad={(event) => {
+                const image = event.currentTarget
+                if (image.naturalWidth && image.naturalHeight) {
+                  setImageRatio(image.naturalWidth / image.naturalHeight)
+                }
+              }}
+            />
           </div>
           <button
             type="button"
@@ -80,7 +99,7 @@ export function PosterUploader({ onFileSelect, onClear, currentUrl }: PosterUplo
         </div>
       ) : (
         <label
-          htmlFor="poster-upload"
+          htmlFor={inputId}
           onDragOver={(event) => {
             event.preventDefault()
             setIsDragging(true)
@@ -100,8 +119,8 @@ export function PosterUploader({ onFileSelect, onClear, currentUrl }: PosterUplo
             <p className="text-sm font-semibold text-gray-600">{isDragging ? 'Lepaskan file di sini' : 'Drag & drop poster'}</p>
             <p className="text-xs text-gray-400 mt-0.5">atau <span className="text-[#1B4332] font-semibold">klik untuk memilih file</span></p>
           </div>
-          <p className="text-[10px] text-gray-300">JPG / WebP / PNG - Rasio 4:5 - Maks 100KB</p>
-          <input id="poster-upload" type="file" accept=".jpg,.jpeg,.webp,.png" className="hidden" onChange={handleChange} />
+          <p className="text-[10px] text-gray-300">JPG / WebP / PNG - Rasio mengikuti gambar - Maks 100KB</p>
+          <input id={inputId} type="file" accept=".jpg,.jpeg,.webp,.png" className="hidden" onChange={handleChange} />
         </label>
       )}
       {error ? (

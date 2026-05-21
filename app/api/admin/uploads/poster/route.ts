@@ -20,9 +20,18 @@ function uploadError(error: unknown) {
   return NextResponse.json({ ok: false, error: message }, { status })
 }
 
+async function requirePosterUploadPermission(request: NextRequest) {
+  try {
+    return await requireAdminPermission(request, 'events.create')
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Unauthorized') throw error
+    return requireAdminPermission(request, 'events.update')
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
-    await requireAdminPermission(request, 'events.create')
+    await requirePosterUploadPermission(request)
 
     const formData = await request.formData()
     const file = formData.get('file')
