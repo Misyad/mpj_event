@@ -3,7 +3,16 @@ import { redirect } from 'next/navigation'
 import { ArrowLeft, BadgeCheck, CalendarDays, ChevronRight, FileBadge2, PencilLine, UserRound } from 'lucide-react'
 import { AUTH_ROLES } from '@/lib/auth/roles'
 import { getCurrentAdminSession, getPublicUserProfile } from '@/lib/server/rbac'
-import { getUserEventHistoryFromDb } from '@/lib/server/events'
+import { getEventsFromDb, getUserEventHistoryFromDb } from '@/lib/server/events'
+import { ProfileActionCenter } from '@/components/user/ProfileActionCenter'
+
+async function getPublicEventsSafe() {
+  try {
+    return await getEventsFromDb({ publicOnly: true })
+  } catch {
+    return []
+  }
+}
 
 export default async function ProfilePage() {
   const session = await getCurrentAdminSession(AUTH_ROLES.user)
@@ -12,6 +21,7 @@ export default async function ProfilePage() {
     getPublicUserProfile(session.userId),
     getUserEventHistoryFromDb(session.userId),
   ])
+  const publicEvents = await getPublicEventsSafe()
   const certificateCount = eventHistory.filter((item) => item.certificateEligible).length
   const profileComplete = Boolean(profile?.fullName && profile.whatsapp && profile.institution)
 
@@ -106,6 +116,10 @@ export default async function ProfilePage() {
             </div>
           </div>
         </section>
+
+        <hr className="border-t border-black/5" />
+
+        <ProfileActionCenter profile={profile} eventHistory={eventHistory} publicEvents={publicEvents} />
 
         <hr className="border-t border-black/5" />
 
