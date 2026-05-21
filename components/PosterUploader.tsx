@@ -65,37 +65,51 @@ export function PosterUploader({ onFileSelect, onClear, currentUrl }: PosterUplo
   return (
     <div className="space-y-2">
       {preview ? (
-        <div className="relative w-full max-w-sm rounded-xl overflow-hidden bg-gray-50 border border-gray-200">
-          <div
-            className="relative w-full max-h-80 overflow-hidden"
-            style={{ aspectRatio: imageRatio ?? 4 / 5 }}
-          >
-            <Image
-              src={preview}
-              alt="Poster preview"
-              fill
-              sizes="(max-width: 640px) 100vw, 384px"
-              className="object-contain"
-              onLoad={(event) => {
-                const image = event.currentTarget
-                if (image.naturalWidth && image.naturalHeight) {
-                  setImageRatio(image.naturalWidth / image.naturalHeight)
-                }
-              }}
-            />
-          </div>
-          <button
-            type="button"
-            onClick={clearPreview}
-            className="absolute top-2 right-2 w-7 h-7 bg-black/60 hover:bg-black/80 text-white rounded-full flex items-center justify-center transition-colors"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-          {fileName ? (
-            <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[10px] px-3 py-1.5 truncate">
-              {fileName}
+        <div className="w-full max-w-sm overflow-hidden rounded-xl border border-emerald-100 bg-white/90 shadow-sm">
+          <div className="relative bg-gray-50">
+            <div
+              className="relative w-full max-h-80 overflow-hidden"
+              style={{ aspectRatio: imageRatio ?? 4 / 5 }}
+            >
+              <Image
+                src={preview}
+                alt="Poster preview"
+                fill
+                sizes="(max-width: 640px) 100vw, 384px"
+                className="object-contain"
+                onLoad={(event) => {
+                  const image = event.currentTarget
+                  if (image.naturalWidth && image.naturalHeight) {
+                    setImageRatio(image.naturalWidth / image.naturalHeight)
+                  }
+                }}
+              />
             </div>
-          ) : null}
+            <button
+              type="button"
+              onClick={clearPreview}
+              className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-white transition-colors hover:bg-black/80"
+              aria-label="Hapus poster"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+            {fileName ? (
+              <div className="absolute bottom-0 left-0 right-0 truncate bg-black/50 px-3 py-1.5 text-[10px] text-white">
+                {fileName}
+              </div>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 border-t border-emerald-50 bg-white/80 p-3">
+            <label htmlFor={inputId} className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-xl bg-emerald-700 px-3 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-800">
+              <Upload className="h-3.5 w-3.5" />
+              Ganti Poster
+            </label>
+            <button type="button" onClick={clearPreview} className="inline-flex h-9 items-center gap-2 rounded-xl border border-red-100 bg-white px-3 text-xs font-bold text-red-600 transition hover:bg-red-50">
+              <X className="h-3.5 w-3.5" />
+              Hapus Poster
+            </button>
+            <input id={inputId} type="file" accept=".jpg,.jpeg,.webp,.png" className="hidden" onChange={handleChange} />
+          </div>
         </div>
       ) : (
         <label
@@ -106,20 +120,21 @@ export function PosterUploader({ onFileSelect, onClear, currentUrl }: PosterUplo
           }}
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
-          className={`flex flex-col items-center justify-center gap-3 p-8 rounded-xl border-2 border-dashed cursor-pointer transition-all ${
+          className={`flex cursor-pointer flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-8 transition-all ${
             isDragging
-              ? 'border-[#1B4332] bg-[#1B4332]/5 scale-[1.01]'
-              : 'border-gray-200 bg-gray-50 hover:border-[#1B4332]/40 hover:bg-gray-100'
+              ? 'scale-[1.01] border-emerald-600 bg-emerald-50'
+              : 'border-gray-200 bg-white/70 hover:border-emerald-500 hover:bg-emerald-50/50'
           }`}
         >
-          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors ${isDragging ? 'bg-[#1B4332]/10' : 'bg-gray-200'}`}>
-            {isDragging ? <Upload className="w-5 h-5 text-[#1B4332]" /> : <ImageIcon className="w-5 h-5 text-gray-400" />}
+          <div className={`flex h-12 w-12 items-center justify-center rounded-2xl transition-colors ${isDragging ? 'bg-emerald-100' : 'bg-gray-100'}`}>
+            {isDragging ? <Upload className="h-5 w-5 text-emerald-700" /> : <ImageIcon className="h-5 w-5 text-gray-400" />}
           </div>
           <div className="text-center">
             <p className="text-sm font-semibold text-gray-600">{isDragging ? 'Lepaskan file di sini' : 'Drag & drop poster'}</p>
-            <p className="text-xs text-gray-400 mt-0.5">atau <span className="text-[#1B4332] font-semibold">klik untuk memilih file</span></p>
+            <p className="mt-0.5 text-xs text-gray-400">atau <span className="font-semibold text-emerald-700">klik untuk Upload Poster</span></p>
           </div>
-          <p className="text-[10px] text-gray-300">JPG / WebP / PNG - Rasio mengikuti gambar - Maks 100KB</p>
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-semibold text-emerald-700">Upload Poster</span>
+          <p className="text-[10px] text-gray-400">JPG / WebP / PNG - Rasio mengikuti gambar - Maks 100KB</p>
           <input id={inputId} type="file" accept=".jpg,.jpeg,.webp,.png" className="hidden" onChange={handleChange} />
         </label>
       )}

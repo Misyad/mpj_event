@@ -58,6 +58,11 @@ type EventForm = {
   status: EventStatus
   date: string
   time: string
+  registrationOpen: string
+  registrationClose: string
+  eventDate: string
+  durationMode: '1' | '2' | '3' | 'custom'
+  durationCustom: string
   location: string
   locationMapsUrl: string
   posterUrl: string
@@ -124,6 +129,11 @@ const EMPTY_FORM: EventForm = {
   status: 'draft',
   date: '',
   time: '',
+  registrationOpen: '',
+  registrationClose: '',
+  eventDate: '',
+  durationMode: '1',
+  durationCustom: '',
   location: '',
   locationMapsUrl: '',
   posterUrl: '',
@@ -189,6 +199,45 @@ function getEventDateParts(value?: string) {
   }
 }
 
+function getDateInputPart(value?: string | null) {
+  const date = new Date(value ?? '')
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toISOString().slice(0, 10)
+}
+
+function getEventExtra(event: Event) {
+  return event as Event & {
+    registration_open?: string | null
+    registrationOpen?: string | null
+    registration_close?: string | null
+    registrationClose?: string | null
+    registration_deadline?: string | null
+    registrationDeadline?: string | null
+    event_date?: string | null
+    eventDate?: string | null
+    duration?: string | number | null
+    duration_days?: string | number | null
+    durationDays?: string | number | null
+  }
+}
+
+function getDurationFormValue(value?: string | number | null) {
+  const duration = Number(value)
+  if ([1, 2, 3].includes(duration)) {
+    return { durationMode: String(duration) as EventForm['durationMode'], durationCustom: '' }
+  }
+  if (duration > 0) {
+    return { durationMode: 'custom' as const, durationCustom: String(duration) }
+  }
+  return { durationMode: '1' as const, durationCustom: '' }
+}
+
+function getDurationDays(form: EventForm) {
+  const value = form.durationMode === 'custom' ? Number(form.durationCustom) : Number(form.durationMode)
+  if (!Number.isFinite(value) || value < 1) throw new Error('Durasi event wajib diisi minimal 1 hari')
+  return value
+}
+
 function getCrewNeeds(event: Event) {
   if (event.category === 'Pelatihan') return ['Dokumentasi', 'Operator Absensi', 'Liaison Narasumber']
   if (event.category === 'Seremonial') return ['Protokoler', 'Dokumentasi', 'Registrasi']
@@ -208,13 +257,21 @@ function registerHref(event: Event) {
 }
 
 function buildForm(event: Event): EventForm {
-  const dateParts = getEventDateParts(event.start_date ?? event.dateStart)
+  const eventExtra = getEventExtra(event)
+  const dateParts = getEventDateParts(eventExtra.event_date ?? eventExtra.eventDate ?? event.start_date ?? event.dateStart)
+  const registrationClose = eventExtra.registration_close ?? eventExtra.registrationClose ?? eventExtra.registration_deadline ?? eventExtra.registrationDeadline
+  const duration = getDurationFormValue(eventExtra.duration ?? eventExtra.duration_days ?? eventExtra.durationDays)
   return {
     title: event.title,
     category: event.category,
     status: event.status,
     date: dateParts.date,
     time: dateParts.time,
+    registrationOpen: getDateInputPart(eventExtra.registration_open ?? eventExtra.registrationOpen),
+    registrationClose: getDateInputPart(registrationClose),
+    eventDate: dateParts.date,
+    durationMode: duration.durationMode,
+    durationCustom: duration.durationCustom,
     location: event.location_name ?? event.location ?? '',
     locationMapsUrl: event.location_gmaps ?? event.locationMapsUrl ?? '',
     posterUrl: event.poster_url ?? event.posterUrl ?? '',
@@ -235,8 +292,17 @@ function buildForm(event: Event): EventForm {
 
 function payloadFromForm(form: EventForm, mode: EventManagementClientProps['mode']) {
   if (!form.title.trim()) throw new Error('Nama event wajib diisi')
-  if (!form.date) throw new Error('Tanggal event wajib diisi')
-  const startDate = new Date(`${form.date}T${form.time || '00:00'}`)
+  const eventDate = form.eventDate || form.date
+  if (!eventDate) throw new Error('Tanggal acara wajib diisi')
+  if (form.registrationOpen && form.registrationClose && form.registrationClose < form.registrationOpen) {
+    throw new Error('Tanggal tutup pendaftaran tidak boleh sebelum tanggal buka pendaftaran')
+  }
+  if (form.registrationClose && eventDate < form.registrationClose) {
+    throw new Error('Tanggal acara tidak boleh sebelum tanggal tutup pendaftaran')
+  }
+  const durationDays = getDurationDays(form)
+  const startDate = new Date(`${eventDate}T${form.time || '00:00'}`)
+  const registrationDeadline = form.registrationClose ? new Date(`${form.registrationClose}T23:59:00`).toISOString() : null
   const slug = form.title.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
   return {
     title: form.title,
@@ -252,6 +318,16 @@ function payloadFromForm(form: EventForm, mode: EventManagementClientProps['mode
     locationMapsUrl: form.locationMapsUrl,
     start_date: startDate.toISOString(),
     dateStart: startDate.toISOString(),
+    registration_open: form.registrationOpen || null,
+    registrationOpen: form.registrationOpen || null,
+    registration_close: form.registrationClose || null,
+    registrationClose: form.registrationClose || null,
+    registration_deadline: registrationDeadline,
+    registrationDeadline,
+    event_date: eventDate,
+    eventDate,
+    duration: durationDays,
+    duration_days: durationDays,
     is_open_for_public: form.isOpenForPublic,
     allowPublic: form.isOpenForPublic,
     is_paid: form.isPaid,
@@ -1150,62 +1226,95 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
           setForm(null)
         }
       }}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{editingEvent ? 'Edit Event' : 'Buat Event Regional'}</DialogTitle>
-            <DialogDescription>{isAdminPusat ? 'Perbarui data event existing tanpa membuat event baru.' : 'Event regional tersimpan sebagai draft lalu diajukan ke Admin Pusat untuk approval.'}</DialogDescription>
+        <DialogContent className="overflow-hidden border-white/70 bg-white/80 p-0 shadow-xl backdrop-blur sm:max-w-3xl">
+          <DialogHeader className="sticky top-0 z-10 border-b border-emerald-100/70 bg-white/85 px-5 py-4 backdrop-blur md:px-6">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700 shadow-sm">
+                <CalendarDays className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <DialogTitle className="text-lg font-extrabold text-[#1B4332]">{editingEvent ? 'Edit Event' : 'Buat Event Regional'}</DialogTitle>
+                <DialogDescription className="mt-1 text-sm text-gray-500">
+                  {isAdminPusat ? 'Perbarui data event existing tanpa membuat event baru.' : 'Event regional tersimpan sebagai draft lalu diajukan ke Admin Pusat untuk approval.'}
+                </DialogDescription>
+              </div>
+            </div>
           </DialogHeader>
           {form ? (
-            <div className="grid max-h-[70vh] gap-4 overflow-y-auto pr-1">
-              <div className="space-y-1.5">
+            <div className="grid max-h-[72vh] gap-5 overflow-y-auto px-5 py-5 md:grid-cols-2 md:px-6">
+              <div className="space-y-1.5 md:col-span-2">
                 <Label className="text-xs font-semibold text-gray-600">Nama Event</Label>
-                <Input value={form.title} onChange={(event) => setForm((current) => current ? { ...current, title: event.target.value } : current)} className="h-10 rounded-xl" />
+                <Input value={form.title} onChange={(event) => setForm((current) => current ? { ...current, title: event.target.value } : current)} className="h-11 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500" />
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-gray-600">Kategori</Label>
-                  <Select value={form.category} onValueChange={(value) => setForm((current) => current ? { ...current, category: value as EventCategory } : current)}>
-                    <SelectTrigger className="h-10 rounded-xl"><SelectValue placeholder="Kategori" /></SelectTrigger>
-                    <SelectContent>{CATEGORY_OPTIONS.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}</SelectContent>
-                  </Select>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-gray-600">Kategori</Label>
+                <Select value={form.category} onValueChange={(value) => setForm((current) => current ? { ...current, category: value as EventCategory } : current)}>
+                  <SelectTrigger className="h-11 rounded-2xl border-gray-200 bg-white/90 focus:ring-emerald-500"><SelectValue placeholder="Kategori" /></SelectTrigger>
+                  <SelectContent>{CATEGORY_OPTIONS.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-gray-600">Status</Label>
+                <Select value={form.status} onValueChange={(value) => setForm((current) => current ? { ...current, status: value as EventStatus } : current)} disabled={!isAdminPusat}>
+                  <SelectTrigger className="h-11 rounded-2xl border-gray-200 bg-white/90 focus:ring-emerald-500 disabled:opacity-100"><SelectValue placeholder="Status" /></SelectTrigger>
+                  <SelectContent>{STATUS_OPTIONS.map((status) => <SelectItem key={status} value={status}>{STATUS_LABELS[status] ?? status}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4 shadow-sm md:col-span-2">
+                <div className="flex items-center gap-2 text-sm font-extrabold text-[#1B4332]">
+                  <CalendarDays className="h-4 w-4 text-emerald-600" />
+                  Timeline Event
                 </div>
-                {isAdminPusat ? (
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold text-gray-600">Status</Label>
-                    <Select value={form.status} onValueChange={(value) => setForm((current) => current ? { ...current, status: value as EventStatus } : current)}>
-                      <SelectTrigger className="h-10 rounded-xl"><SelectValue placeholder="Status" /></SelectTrigger>
-                      <SelectContent>{STATUS_OPTIONS.map((status) => <SelectItem key={status} value={status}>{STATUS_LABELS[status] ?? status}</SelectItem>)}</SelectContent>
+                    <Label className="text-xs font-semibold text-gray-600">Tanggal Buka Pendaftaran</Label>
+                    <Input type="date" value={form.registrationOpen} onChange={(event) => setForm((current) => current ? { ...current, registrationOpen: event.target.value } : current)} className="h-11 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-gray-600">Tanggal Tutup Pendaftaran</Label>
+                    <Input type="date" value={form.registrationClose} onChange={(event) => setForm((current) => current ? { ...current, registrationClose: event.target.value } : current)} className="h-11 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-gray-600">Tanggal Acara</Label>
+                    <Input type="date" value={form.eventDate} onChange={(event) => setForm((current) => current ? { ...current, eventDate: event.target.value, date: event.target.value } : current)} className="h-11 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-gray-600">Jam Acara</Label>
+                    <Input type="time" value={form.time} onChange={(event) => setForm((current) => current ? { ...current, time: event.target.value } : current)} className="h-11 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold text-gray-600">Durasi Event</Label>
+                    <Select value={form.durationMode} onValueChange={(value) => setForm((current) => current ? { ...current, durationMode: value as EventForm['durationMode'] } : current)}>
+                      <SelectTrigger className="h-11 rounded-2xl border-gray-200 bg-white/90 focus:ring-emerald-500"><SelectValue placeholder="Durasi" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">1 Hari</SelectItem>
+                        <SelectItem value="2">2 Hari</SelectItem>
+                        <SelectItem value="3">3 Hari</SelectItem>
+                        <SelectItem value="custom">Custom</SelectItem>
+                      </SelectContent>
                     </Select>
                   </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold text-gray-600">Kuota</Label>
-                    <Input type="number" min="1" value={form.maxParticipants} onChange={(event) => setForm((current) => current ? { ...current, maxParticipants: event.target.value } : current)} className="h-10 rounded-xl" placeholder="Tidak dibatasi" />
-                  </div>
-                )}
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-gray-600">Tanggal</Label>
-                  <Input type="date" value={form.date} onChange={(event) => setForm((current) => current ? { ...current, date: event.target.value } : current)} className="h-10 rounded-xl" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-gray-600">Jam</Label>
-                  <Input type="time" value={form.time} onChange={(event) => setForm((current) => current ? { ...current, time: event.target.value } : current)} className="h-10 rounded-xl" />
-                </div>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-gray-600">Lokasi</Label>
-                  <Input value={form.location} onChange={(event) => setForm((current) => current ? { ...current, location: event.target.value } : current)} className="h-10 rounded-xl" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-gray-600">Google Maps</Label>
-                  <Input value={form.locationMapsUrl} onChange={(event) => setForm((current) => current ? { ...current, locationMapsUrl: event.target.value } : current)} className="h-10 rounded-xl" />
+                  {form.durationMode === 'custom' ? (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold text-gray-600">Durasi Custom</Label>
+                      <Input type="number" min="1" value={form.durationCustom} onChange={(event) => setForm((current) => current ? { ...current, durationCustom: event.target.value } : current)} className="h-11 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500" placeholder="Jumlah hari" />
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-gray-600">Poster Event</Label>
+                <Label className="text-xs font-semibold text-gray-600">Lokasi</Label>
+                <Input value={form.location} onChange={(event) => setForm((current) => current ? { ...current, location: event.target.value } : current)} className="h-11 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-gray-600">Google Maps</Label>
+                <Input value={form.locationMapsUrl} onChange={(event) => setForm((current) => current ? { ...current, locationMapsUrl: event.target.value } : current)} className="h-11 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500" />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label className="text-xs font-semibold text-gray-600">Poster Event</Label>
+                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-700">Upload Poster / Ganti Poster / Hapus Poster</span>
+                </div>
                 <PosterUploader
                   key={`${editingEvent?.id ?? 'new'}-${form.posterUrl || 'empty'}`}
                   currentUrl={form.posterPreview || form.posterUrl}
@@ -1217,11 +1326,11 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
                   }}
                 />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 md:col-span-2">
                 <Label className="text-xs font-semibold text-gray-600">Deskripsi</Label>
-                <Textarea value={form.description} onChange={(event) => setForm((current) => current ? { ...current, description: event.target.value } : current)} />
+                <Textarea value={form.description} onChange={(event) => setForm((current) => current ? { ...current, description: event.target.value } : current)} className="min-h-28 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500" />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 md:col-span-2">
                 <Label className="text-xs font-semibold text-gray-600">Narasumber Utama</Label>
                 <SpeakerCombobox
                   value={form.speakerId ?? undefined}
@@ -1229,56 +1338,54 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
                   placeholder="Pilih narasumber"
                 />
               </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                {isAdminPusat ? (
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold text-gray-600">Kuota</Label>
-                    <Input type="number" min="1" value={form.maxParticipants} onChange={(event) => setForm((current) => current ? { ...current, maxParticipants: event.target.value } : current)} className="h-10 rounded-xl" placeholder="Tidak dibatasi" />
-                  </div>
-                ) : null}
+              <div className="grid gap-3 md:col-span-2 sm:grid-cols-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold text-gray-600">Kuota</Label>
+                  <Input type="number" min="1" value={form.maxParticipants} onChange={(event) => setForm((current) => current ? { ...current, maxParticipants: event.target.value } : current)} className="h-11 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500" placeholder="Tidak dibatasi" />
+                </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold text-gray-600">Harga NIAM</Label>
-                  <Input type="number" min="0" value={form.priceNiam} onChange={(event) => setForm((current) => current ? { ...current, priceNiam: event.target.value } : current)} className="h-10 rounded-xl" />
+                  <Input type="number" min="0" value={form.priceNiam} onChange={(event) => setForm((current) => current ? { ...current, priceNiam: event.target.value } : current)} className="h-11 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500" />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-semibold text-gray-600">Harga Umum</Label>
-                  <Input type="number" min="0" value={form.pricePublic} onChange={(event) => setForm((current) => current ? { ...current, pricePublic: event.target.value } : current)} className="h-10 rounded-xl" />
+                  <Input type="number" min="0" value={form.pricePublic} onChange={(event) => setForm((current) => current ? { ...current, pricePublic: event.target.value } : current)} className="h-11 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500" />
                 </div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="flex items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 text-sm font-semibold text-[#1B4332]">
+              <div className="grid gap-3 md:col-span-2 sm:grid-cols-2">
+                <label className="flex items-center justify-between rounded-2xl border border-gray-100 bg-white/80 px-4 py-3 text-sm font-semibold text-[#1B4332] shadow-sm">
                   Jalur umum
                   <input type="checkbox" checked={form.isOpenForPublic} onChange={(event) => setForm((current) => current ? { ...current, isOpenForPublic: event.target.checked } : current)} />
                 </label>
-                <label className="flex items-center justify-between rounded-2xl bg-gray-50 px-4 py-3 text-sm font-semibold text-[#1B4332]">
+                <label className="flex items-center justify-between rounded-2xl border border-gray-100 bg-white/80 px-4 py-3 text-sm font-semibold text-[#1B4332] shadow-sm">
                   Event berbayar
                   <input type="checkbox" checked={form.isPaid} onChange={(event) => setForm((current) => current ? { ...current, isPaid: event.target.checked } : current)} />
                 </label>
               </div>
               {form.isPaid ? (
-                <div className="grid gap-3 rounded-2xl bg-gray-50 p-4 sm:grid-cols-3">
+                <div className="grid gap-3 rounded-2xl border border-gray-100 bg-white/80 p-4 shadow-sm md:col-span-2 sm:grid-cols-3">
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold text-gray-600">Bank</Label>
-                    <Input value={form.bankName} onChange={(event) => setForm((current) => current ? { ...current, bankName: event.target.value } : current)} className="h-10 rounded-xl bg-white" placeholder="BCA" />
+                    <Input value={form.bankName} onChange={(event) => setForm((current) => current ? { ...current, bankName: event.target.value } : current)} className="h-11 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500" placeholder="BCA" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold text-gray-600">Nomor Rekening</Label>
-                    <Input value={form.bankNumber} onChange={(event) => setForm((current) => current ? { ...current, bankNumber: event.target.value } : current)} className="h-10 rounded-xl bg-white" placeholder="1234567890" />
+                    <Input value={form.bankNumber} onChange={(event) => setForm((current) => current ? { ...current, bankNumber: event.target.value } : current)} className="h-11 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500" placeholder="1234567890" />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold text-gray-600">Atas Nama</Label>
-                    <Input value={form.bankAccountName} onChange={(event) => setForm((current) => current ? { ...current, bankAccountName: event.target.value } : current)} className="h-10 rounded-xl bg-white" placeholder="MPJ Indonesia" />
+                    <Input value={form.bankAccountName} onChange={(event) => setForm((current) => current ? { ...current, bankAccountName: event.target.value } : current)} className="h-11 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500" placeholder="MPJ Indonesia" />
                   </div>
                 </div>
               ) : null}
             </div>
           ) : null}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => {
+          <DialogFooter className="sticky bottom-0 z-10 border-t border-emerald-100/70 bg-white/85 px-5 py-4 backdrop-blur md:px-6">
+            <Button type="button" variant="outline" className="rounded-xl border-gray-200 bg-white text-gray-700 hover:bg-gray-50" onClick={() => {
               setEditingEvent(null)
               setForm(null)
             }} disabled={isSaving}>Batal</Button>
-            <Button type="button" className="bg-[#1B4332] text-white hover:bg-[#14532d]" onClick={saveEvent} disabled={isSaving}>
+            <Button type="button" className="rounded-xl bg-emerald-700 text-white shadow-sm transition hover:bg-emerald-800" onClick={saveEvent} disabled={isSaving}>
               {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {editingEvent ? 'Simpan' : 'Simpan Draft'}
             </Button>
