@@ -35,7 +35,12 @@ function cleanupRateLimits() {
  * Get client IP for rate limiting
  */
 export function getClientIp(request: NextRequest): string {
-  return request.ip || request.headers.get('x-forwarded-for') || 'unknown'
+  // Prefer X-Forwarded-For (may contain a list), then X-Real-IP.
+  const xff = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || ''
+  if (xff) {
+    return String(xff).split(',')[0].trim()
+  }
+  return 'unknown'
 }
 
 /**
