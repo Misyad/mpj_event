@@ -26,6 +26,16 @@ function getCategoryColor(category: string) {
   return CATEGORY_COLORS[category] ?? 'bg-gray-100 text-gray-600'
 }
 
+function getSpeakerInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return 'N'
+  return parts.slice(0, 2).map((part) => part[0]?.toUpperCase()).join('')
+}
+
+function hasProfileImage(url: string) {
+  return Boolean(url && url !== '/mpj-logo.jpeg')
+}
+
 type SpeakerForm = {
   nama_lengkap: string
   alamat: string
@@ -238,73 +248,86 @@ export default function NarasumberPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map((speaker) => (
-            <div key={speaker.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4 hover:shadow-md transition-shadow">
-              <div className="flex items-start gap-3">
-                <Image
-                  src={speaker.foto_url}
-                  alt={speaker.nama_lengkap}
-                  width={48}
-                  height={48}
-                  className="h-12 w-12 rounded-xl object-cover bg-gray-100 shrink-0"
-                />
+            <div
+              key={speaker.id}
+              className="group flex h-full flex-col rounded-2xl border border-white/70 bg-white/80 p-5 shadow-sm backdrop-blur transition-all duration-300 hover:-translate-y-1 hover:shadow-xl"
+            >
+              <div className="flex flex-1 items-start gap-4">
+                <div className="shrink-0">
+                  {hasProfileImage(speaker.foto_url) ? (
+                    <Image
+                      src={speaker.foto_url}
+                      alt={speaker.nama_lengkap}
+                      width={64}
+                      height={64}
+                      className="h-16 w-16 rounded-full bg-gray-100 object-cover shadow-lg ring-4 ring-white/70 transition-all duration-300 group-hover:scale-105"
+                    />
+                  ) : (
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-lg font-extrabold text-white shadow-lg ring-4 ring-white/70 transition-all duration-300 group-hover:scale-105">
+                      {getSpeakerInitials(speaker.nama_lengkap)}
+                    </div>
+                  )}
+                </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-bold text-[#1B4332] text-sm line-clamp-1">{speaker.nama_lengkap}</p>
-                  <p className="text-xs text-gray-400 mt-0.5 truncate">{speaker.alamat || 'Alamat belum diisi'}</p>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full mt-1 inline-block ${getCategoryColor(speaker.kategori)}`}>
+                  <p className="line-clamp-1 text-base font-extrabold text-[#1B4332]">{speaker.nama_lengkap}</p>
+                  <p className="mt-0.5 truncate text-xs text-gray-400">{speaker.alamat || 'Alamat belum diisi'}</p>
+                  <span className={`mt-2 inline-flex max-w-full rounded-full px-2.5 py-1 text-[10px] font-bold ${getCategoryColor(speaker.kategori)}`}>
                     {speaker.kategori}
                   </span>
+
+                  <p className="mt-4 line-clamp-2 text-xs leading-relaxed text-gray-500">{speaker.bio || 'Bio belum diisi.'}</p>
+
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {speaker.keahlian.length > 0 ? (
+                      speaker.keahlian.map((skill) => (
+                        <span key={skill} className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">{skill}</span>
+                      ))
+                    ) : (
+                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500">Keahlian belum diisi</span>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">{speaker.bio || 'Bio belum diisi.'}</p>
-
-              <div className="flex flex-wrap gap-1.5">
-                {speaker.keahlian.length > 0 ? (
-                  speaker.keahlian.map((skill) => (
-                    <span key={skill} className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">{skill}</span>
-                  ))
-                ) : (
-                  <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-medium">Keahlian belum diisi</span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 pt-1 border-t border-gray-50">
+              <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-gray-100/80 pt-4">
                 {speaker.no_telp ? (
-                  <a href={`tel:${speaker.no_telp}`} className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-[#1B4332] transition-colors">
+                  <a href={`tel:${speaker.no_telp}`} className="flex min-w-0 items-center gap-1.5 truncate text-xs text-gray-500 transition-colors hover:text-[#1B4332]">
                     <Phone className="w-3.5 h-3.5" /> {speaker.no_telp}
                   </a>
                 ) : (
-                  <span className="flex items-center gap-1.5 text-xs text-gray-400">
+                  <span className="flex min-w-0 items-center gap-1.5 truncate text-xs text-gray-400">
                     <Phone className="w-3.5 h-3.5" /> Belum ada nomor
                   </span>
                 )}
                 <div className="flex-1" />
-                {speaker.portfolio_url ? (
-                  <a
-                    href={speaker.portfolio_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                <div className="ml-auto flex items-center gap-2">
+                  {speaker.portfolio_url ? (
+                    <a
+                      href={speaker.portfolio_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-blue-50 hover:text-blue-600"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => startEdit(speaker)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white/70 px-2.5 py-1 text-xs font-semibold text-gray-600 transition-colors hover:border-[#1B4332] hover:text-[#1B4332]"
                   >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => startEdit(speaker)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-600 transition-colors hover:border-[#1B4332] hover:text-[#1B4332]"
-                >
-                  <Pencil className="h-3 w-3" />
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDeletingSpeaker(speaker)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-red-100 px-2.5 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50"
-                >
-                  <Trash2 className="h-3 w-3" />
-                  Delete
-                </button>
+                    <Pencil className="h-3 w-3" />
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeletingSpeaker(speaker)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-red-100 bg-white/70 px-2.5 py-1 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    Delete
+                  </button>
+                </div>
               </div>
             </div>
           ))}
