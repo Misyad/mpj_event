@@ -15,6 +15,7 @@ import {
   UserRound,
 } from 'lucide-react'
 import { BrandMark } from '@/components/BrandMark'
+import { AuthDebugPanel } from '@/components/auth/AuthDebugPanel'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -24,6 +25,7 @@ type RegisterStep = 'form' | 'otp' | 'success'
 type RegisterResponse = {
   ok?: boolean
   error?: string
+  redirectTo?: string
   canResendAt?: string
 }
 
@@ -90,8 +92,27 @@ export function UserRegisterFlow({ nextPath }: { nextPath?: string }) {
     setInfo('')
 
     if (!OTP_ENABLED) {
-      setRedirectTo(loginHref)
-      setStep('success')
+      if (mode === 'submit') setIsRequestingOtp(true)
+
+      try {
+        const response = await fetch('/api/auth/user-register', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(requestPayload),
+        })
+        const payload = (await response.json()) as RegisterResponse
+
+        if (!response.ok || !payload.ok) {
+          throw new Error(payload.error || 'Registrasi akun gagal')
+        }
+
+        setRedirectTo(loginHref)
+        setStep('success')
+      } catch (submitError) {
+        setError(submitError instanceof Error ? submitError.message : 'Registrasi akun gagal')
+      } finally {
+        if (mode === 'submit') setIsRequestingOtp(false)
+      }
       return
     }
 
@@ -365,6 +386,7 @@ export function UserRegisterFlow({ nextPath }: { nextPath?: string }) {
             </div>
           ) : null}
         </div>
+        <AuthDebugPanel />
       </div>
     </div>
   )

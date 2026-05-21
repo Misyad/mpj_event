@@ -592,29 +592,38 @@ export async function loginAdmin(request: NextRequest, payload: { role?: AuthRol
     const connection = await db.getConnection()
     const meta = requestMeta(request)
     const requestedRole = payload.role ?? null
+    const email = payload.email.trim().toLowerCase()
     try {
       await ensureRbacSchema(connection)
-      const [userRows] = await connection.query<UserRow[]>('SELECT * FROM users WHERE email = :email LIMIT 1', { email: payload.email })
+      const [userRows] = await connection.query<UserRow[]>('SELECT * FROM users WHERE email = :email LIMIT 1', { email })
       const user = userRows[0]
 
       if (!user) {
-        await auditLogin(connection, { email: payload.email, roleCode: requestedRole, success: false, failureReason: 'user_not_found', ...meta })
-        throw new Error('Email atau password tidak valid')
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('[LOGIN DEBUG]', { email, role: requestedRole, userFound: false, passwordMatch: false })
+        }
+        await auditLogin(connection, { email, roleCode: requestedRole, success: false, failureReason: 'user_not_found', ...meta })
+        throw new Error('Akun belum terdaftar')
       }
 
       if (user.status !== 'active') {
-        await auditLogin(connection, { userId: user.id, email: payload.email, roleCode: requestedRole, success: false, failureReason: 'user_suspended', ...meta })
+        await auditLogin(connection, { userId: user.id, email, roleCode: requestedRole, success: false, failureReason: 'user_suspended', ...meta })
         throw new Error('Akun admin tidak aktif')
       }
 
-      if (!verifyPassword(payload.password, user.password_hash)) {
-        await auditLogin(connection, { userId: user.id, email: payload.email, roleCode: requestedRole, success: false, failureReason: 'invalid_password', ...meta })
-        throw new Error('Email atau password tidak valid')
+      const passwordMatch = verifyPassword(payload.password, user.password_hash)
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('[LOGIN DEBUG]', { email, role: requestedRole, userFound: true, passwordMatch })
+      }
+
+      if (!passwordMatch) {
+        await auditLogin(connection, { userId: user.id, email, roleCode: requestedRole, success: false, failureReason: 'invalid_password', ...meta })
+        throw new Error('Password salah')
       }
 
       const roles = await getUserRoles(connection, user.id)
       if (roles.length === 0) {
-        await auditLogin(connection, { userId: user.id, email: payload.email, roleCode: requestedRole, success: false, failureReason: 'role_not_found', ...meta })
+        await auditLogin(connection, { userId: user.id, email, roleCode: requestedRole, success: false, failureReason: 'role_not_found', ...meta })
         throw new Error('Akun ini belum memiliki role akses')
       }
 
@@ -632,7 +641,7 @@ export async function loginAdmin(request: NextRequest, payload: { role?: AuthRol
 
       const role = payload.role ?? roles[0]
       if (!roles.includes(role)) {
-        await auditLogin(connection, { userId: user.id, email: payload.email, roleCode: role, success: false, failureReason: 'role_mismatch', ...meta })
+        await auditLogin(connection, { userId: user.id, email, roleCode: role, success: false, failureReason: 'role_mismatch', ...meta })
         throw new Error('Akun ini tidak memiliki akses role yang dipilih')
       }
 
@@ -672,7 +681,7 @@ export async function loginAdmin(request: NextRequest, payload: { role?: AuthRol
         },
       )
       await connection.query('UPDATE users SET last_login_at = NOW() WHERE id = :userId', { userId: user.id })
-      await auditLogin(connection, { userId: user.id, email: payload.email, roleCode: role, success: true, ...meta })
+      await auditLogin(connection, { userId: user.id, email, roleCode: role, success: true, ...meta })
       await writeActivityLog(connection, {
         userId: user.id,
         action: 'admin.login',

@@ -3,8 +3,8 @@ import {
   checkOtpVerifyRateLimit,
   getClientIp,
   logSecurityEvent,
-  sanitizeEmailForLog,
 } from '@/lib/auth/registration-security'
+import { verifyPendingRegistration } from '@/lib/server/public-user-registration'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -16,31 +16,6 @@ export const dynamic = 'force-dynamic'
  * - Issues session tokens
  * - Logs all activity
  */
-
-// In-memory OTP store matching request-otp endpoint
-const otpStore = new Map<string, { code: string; expiresAt: number; attempts: number }>()
-
-function verifyOtpCode(email: string, code: string): boolean {
-  const otpData = otpStore.get(email)
-  if (!otpData) return false
-  if (otpData.expiresAt < Date.now()) {
-    otpStore.delete(email)
-    return false
-  }
-  if (otpData.code !== code) {
-    otpData.attempts++
-    if (otpData.attempts >= 5) {
-      otpStore.delete(email)
-      throw new Error('Terlalu banyak percobaan. Silakan minta OTP baru')
-    }
-    return false
-  }
-  return true
-}
-
-function removeOtp(email: string) {
-  otpStore.delete(email)
-}
 
 export async function POST(request: NextRequest) {
   const ipAddress = getClientIp(request)
@@ -86,8 +61,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verify OTP
-    if (!verifyOtpCode(email, otp)) {
+    const user = await verifyPendingRegistration(email, otp)
+    if (!user) {
       logSecurityEvent({
         type: 'otp_verify_failed',
         email,
@@ -96,26 +71,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: false, error: 'Kode OTP tidak valid atau sudah expired' }, { status: 400 })
     }
 
-    // Remove used OTP
-    removeOtp(email)
-
     logSecurityEvent({
       type: 'otp_verify_success',
       email,
       ipAddress,
     })
 
-    // TODO: Create user account with HARDCODED public role
-    // const user = await createPublicUserAccount(request, {...})
-    // Then create session tokens
-    console.log(`[REGISTRATION] User account creation initiated for ${sanitizeEmailForLog(email)} with HARDCODED public role`)
-
-    const redirectTo = next && next.startsWith('/') ? next : '/auth/user-login'
+    const redirectTo = next && next.startsWith('/') && !next.startsWith('//') ? `/auth/user-login?next=${encodeURIComponent(next)}` : '/auth/user-login'
 
     return NextResponse.json({
       ok: true,
       message: 'Akun berhasil dibuat',
       redirectTo,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+      },
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Verifikasi OTP gagal'

@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, ArrowLeft, ArrowRight, Loader2, LockKeyhole, Mail, ShieldCheck } from 'lucide-react'
+import { AuthDebugPanel } from '@/components/auth/AuthDebugPanel'
 import type { AuthRole } from '@/lib/auth/roles'
 import { AUTH_ROLE_CONFIGS, getAuthRoleConfig } from '@/lib/auth/roles'
 import { PasswordInput } from '@/components/auth/PasswordInput'
@@ -253,6 +254,7 @@ export function RoleLoginForm({
           Kembali
         </Link>
         {form}
+        <AuthDebugPanel />
       </div>
     </div>
   )
