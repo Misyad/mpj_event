@@ -7,6 +7,7 @@ import { LoginEntryDialog } from '@/components/auth/LoginEntryDialog'
 import { BrandMark } from '@/components/BrandMark'
 import { AUTH_ROLES } from '@/lib/auth/roles'
 import { getCurrentAdminSession } from '@/lib/server/rbac'
+import { getEventTimestamp } from '@/utils/dateFormatter'
 
 const VISIBLE: EventStatus[] = ['APPROVED', 'FINISHED', 'COMPLETED']
 
@@ -24,7 +25,7 @@ export default async function Home() {
 
   const events = sourceEvents
     .filter((e) => VISIBLE.includes(e.status) || e.status === 'approved' || e.status === 'finished')
-    .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
+    .sort((a, b) => getEventTimestamp(a.start_date) - getEventTimestamp(b.start_date))
 
   const live = events.filter((e) => e.status === 'APPROVED')
   const past = events.filter((e) => e.status !== 'APPROVED')

@@ -7,6 +7,7 @@ import { BadgeStatus } from '@/components/BadgeStatus'
 import { QuotaBadge } from '@/components/QuotaBadge'
 import { CountdownTimer } from '@/components/CountdownTimer'
 import { AlertCircle, ArrowLeft, Calendar, MapPin, RefreshCw, Wallet } from 'lucide-react'
+import { formatEventDateWithWeekday, formatEventTime } from '@/utils/dateFormatter'
 
 export async function getEventForDetail(identifier: string) {
   let dbUnavailable = false
@@ -19,16 +20,6 @@ export async function getEventForDetail(identifier: string) {
     event: event ?? getEventById(identifier) ?? null,
     dbUnavailable,
   }
-}
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString('id-ID', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  })
-}
-
-function formatTime(dateStr: string) {
-  return new Date(dateStr).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB'
 }
 
 export async function EventDetailView({ identifier }: { identifier: string }) {
@@ -119,8 +110,8 @@ export async function EventDetailView({ identifier }: { identifier: string }) {
               <Calendar className="w-4 h-4 text-[#1B4332]" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-gray-800">{formatDate(event.start_date)}</p>
-              <p className="text-xs text-gray-400">{formatTime(event.start_date)}</p>
+              <p className="text-sm font-semibold text-gray-800">{formatEventDateWithWeekday(event.start_date)}</p>
+              <p className="text-xs text-gray-400">{formatEventTime(event.start_date)} WIB</p>
             </div>
           </div>
           <div className="flex gap-3 items-start">

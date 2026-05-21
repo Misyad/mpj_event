@@ -3,16 +3,9 @@ import Image from 'next/image'
 import { Event } from '@/types'
 import { BadgeStatus } from '@/components/BadgeStatus'
 import { MapPin, Calendar } from 'lucide-react'
+import { formatEventDateTime } from '@/utils/dateFormatter'
 
 const DEFAULT_POSTER_URL = 'https://picsum.photos/seed/mpj-event/800/450'
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }) + ', ' + new Date(dateStr).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
-}
 
 export function EventCard({ event }: { event: Event }) {
   const posterUrl = normalizePosterUrl(event.poster_url || event.posterUrl)
@@ -46,7 +39,7 @@ export function EventCard({ event }: { event: Event }) {
             </div>
             <div className="flex items-center gap-2 text-gray-500 text-sm">
               <Calendar className="w-3.5 h-3.5 shrink-0 text-[#C9A227]" />
-              <span>{formatDate(event.start_date)}</span>
+              <span>{formatEventDateTime(event.start_date)}</span>
             </div>
           </div>
         </div>

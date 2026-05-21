@@ -7,6 +7,7 @@ import { createPaymenkuTransaction, normalizePaymenkuStatus, type PaymenkuWebhoo
 import { getGatewayCredentialForEvent } from '@/lib/server/payment-gateway-credentials'
 import { renderCertificatePdf } from '@/lib/server/certificate-renderer'
 import { getStorageAdapter, sanitizePublicUploadUrl } from '@/lib/server/storage'
+import { getEventDateInputParts } from '@/utils/dateFormatter'
 
 const DEFAULT_BANK_ACCOUNT = {
   bank_name: 'BCA',
@@ -236,6 +237,10 @@ type EventPayload = {
   meetingUrl?: string
   start_date?: string
   dateStart?: string
+  event_date?: string
+  eventDate?: string
+  event_time?: string
+  eventTime?: string
   end_date?: string
   dateEnd?: string
   is_open_for_public?: boolean
@@ -378,6 +383,7 @@ function stringifyBankAccount(value: unknown) {
 
 function mapEvent(row: EventRow, customFields: CustomField[] = [], classes: EventClass[] = []): Event {
   const dateStart = toIsoString(row.start_date) ?? new Date().toISOString()
+  const dateStartParts = getEventDateInputParts(dateStart)
   const dateEnd = toIsoString(row.end_date)
   const registrationDeadline = toIsoString(row.registration_deadline)
   const quota = row.max_participants ?? undefined
@@ -406,6 +412,10 @@ function mapEvent(row: EventRow, customFields: CustomField[] = [], classes: Even
     meetingUrl: row.meeting_url ?? undefined,
     start_date: dateStart,
     dateStart,
+    event_date: dateStartParts.date,
+    eventDate: dateStartParts.date,
+    event_time: dateStartParts.time,
+    eventTime: dateStartParts.time,
     dateEnd,
     is_open_for_public: Boolean(row.is_open_for_public),
     allowPublic: Boolean(row.is_open_for_public),

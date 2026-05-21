@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { PosterUploader } from '@/components/PosterUploader'
 import { SpeakerCombobox } from '@/components/SpeakerCombobox'
 import { EventCategory, CustomField, CustomFieldType, EventClass } from '@/types'
+import { toEventDateTimeIso } from '@/utils/dateFormatter'
 
 type EventType = 'Sistem Kelas' | 'Non-Kelas'
 type PaymentMethod = 'manual' | 'gateway'
@@ -294,7 +295,8 @@ export default function NewEventPage() {
       }
 
       const posterUrl = form.posterFile ? await uploadPoster(form.posterFile) : DEFAULT_POSTER_URL
-      const startDate = new Date(`${form.date}T${form.time || '00:00'}`)
+      const eventTime = form.time || '00:00'
+      const startDate = toEventDateTimeIso(form.date, eventTime)
       const response = await fetch('/api/admin/events', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -310,8 +312,12 @@ export default function NewEventPage() {
           location_name: form.location,
           location: form.location,
           locationType: 'offline',
-          start_date: startDate.toISOString(),
-          dateStart: startDate.toISOString(),
+          start_date: startDate,
+          dateStart: startDate,
+          event_date: form.date,
+          eventDate: form.date,
+          event_time: eventTime,
+          eventTime,
           is_open_for_public: form.isOpenForPublic,
           allowPublic: form.isOpenForPublic,
           is_paid: form.isPaid,

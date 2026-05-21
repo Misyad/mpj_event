@@ -69,6 +69,10 @@ export interface Event {
   meetingUrl?: string
   start_date: string
   dateStart?: string
+  event_date?: string
+  eventDate?: string
+  event_time?: string
+  eventTime?: string
   dateEnd?: string
   is_open_for_public: boolean
   allowPublic?: boolean

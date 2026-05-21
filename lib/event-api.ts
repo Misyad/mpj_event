@@ -1,5 +1,6 @@
 import { dummyEvents } from '@/lib/dummy'
 import { DEFAULT_CERTIFICATE_LAYOUT, normalizeCertificateLayout } from '@/components/certificates/certificate-template-layout'
+import { getEventDateInputParts } from '@/utils/dateFormatter'
 import type { Event } from '@/types'
 
 type EventApiResponse<T> = {
@@ -20,6 +21,8 @@ const DEFAULT_BANK_ACCOUNT = {
 }
 
 export function normalizeEvent(event: Partial<Event> & { id: string; title: string }): Event {
+  const startDate = event.start_date ?? event.dateStart ?? new Date().toISOString()
+  const eventDateParts = getEventDateInputParts(startDate)
   return {
     id: event.id,
     title: event.title,
@@ -34,8 +37,12 @@ export function normalizeEvent(event: Partial<Event> & { id: string; title: stri
     location: event.location ?? event.location_name ?? '',
     locationType: event.locationType,
     meetingUrl: event.meetingUrl,
-    start_date: event.start_date ?? event.dateStart ?? new Date().toISOString(),
-    dateStart: event.dateStart ?? event.start_date ?? new Date().toISOString(),
+    start_date: startDate,
+    dateStart: event.dateStart ?? startDate,
+    event_date: event.event_date ?? event.eventDate ?? eventDateParts.date,
+    eventDate: event.eventDate ?? event.event_date ?? eventDateParts.date,
+    event_time: event.event_time ?? event.eventTime ?? eventDateParts.time,
+    eventTime: event.eventTime ?? event.event_time ?? eventDateParts.time,
     dateEnd: event.dateEnd,
     is_open_for_public: Boolean(event.is_open_for_public ?? event.allowPublic),
     allowPublic: Boolean(event.allowPublic ?? event.is_open_for_public),

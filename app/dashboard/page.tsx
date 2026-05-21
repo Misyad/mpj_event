@@ -4,13 +4,9 @@ import { ArrowUpRight, BadgeCheck, CalendarDays, FileBadge2, PencilLine, Ticket,
 import { AUTH_ROLES } from '@/lib/auth/roles'
 import { getUserDashboard } from '@/lib/server/dashboard'
 import { getCurrentAdminSession } from '@/lib/server/rbac'
+import { formatEventDateTime } from '@/utils/dateFormatter'
 
 export const dynamic = 'force-dynamic'
-
-function formatDate(value?: string) {
-  if (!value) return '-'
-  return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
-}
 
 export default async function UserDashboardPage() {
   const session = await getCurrentAdminSession(AUTH_ROLES.user)
@@ -79,7 +75,7 @@ export default async function UserDashboardPage() {
             ) : dashboard.eventHistory.map((item) => (
               <Link key={item.participant.id} href={`/events/${item.event.slug ?? item.event.id}`} className="block px-5 py-4 transition hover:bg-[#f4f7f5]">
                 <p className="truncate text-sm font-bold text-[#1B4332]">{item.event.title}</p>
-                <p className="mt-1 text-xs text-gray-500">{formatDate(item.event.dateStart ?? item.event.start_date)} - {item.participant.payment_status}</p>
+                <p className="mt-1 text-xs text-gray-500">{formatEventDateTime(item.event.dateStart ?? item.event.start_date)} - {item.participant.payment_status}</p>
               </Link>
             ))}
           </div>
@@ -96,7 +92,7 @@ export default async function UserDashboardPage() {
             ) : dashboard.recommendedEvents.map((event) => (
               <Link key={event.id} href={`/events/${event.slug ?? event.id}`} className="block px-5 py-4 transition hover:bg-[#f4f7f5]">
                 <p className="truncate text-sm font-bold text-[#1B4332]">{event.title}</p>
-                <p className="mt-1 text-xs text-gray-500">{formatDate(event.dateStart ?? event.start_date)} - {event.location ?? event.location_name}</p>
+                <p className="mt-1 text-xs text-gray-500">{formatEventDateTime(event.dateStart ?? event.start_date)} - {event.location ?? event.location_name}</p>
               </Link>
             ))}
           </div>

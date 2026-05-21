@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { normalizeEvent } from '@/lib/event-api'
 import { EventFinancePanel } from '@/components/finance/EventFinancePanel'
+import { formatEventDate, formatEventDateTime } from '@/utils/dateFormatter'
 import type { Event, Participant, StaffMember } from '@/types'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -33,12 +34,6 @@ const STATUS_COLORS: Record<string, string> = {
 const PAYMENT_COLORS: Record<string, string> = {
   Free: 'bg-gray-100 text-gray-500', Unpaid: 'bg-red-100 text-red-600',
   Pending_Approval: 'bg-amber-100 text-amber-700', Paid: 'bg-emerald-100 text-emerald-700',
-}
-function formatDate(d: string) {
-  return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
-}
-function formatDateTime(d: string) {
-  return new Date(d).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' })
 }
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
@@ -320,7 +315,7 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
               <Image src={event.poster_url} alt={event.title} fill sizes="(max-width: 768px) 100vw, 720px" className="object-cover" />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <InfoRow icon={<Calendar className="w-4 h-4 text-[#C9A227]" />} label="Tanggal" value={formatDate(event.start_date)} />
+              <InfoRow icon={<Calendar className="w-4 h-4 text-[#C9A227]" />} label="Tanggal" value={formatEventDateTime(event.start_date)} />
               <InfoRow icon={<MapPin className="w-4 h-4 text-[#C9A227]" />} label="Lokasi" value={event.location_name} />
               <InfoRow icon={<Users className="w-4 h-4 text-[#C9A227]" />} label="Jalur Umum" value={event.is_open_for_public ? 'Terbuka' : 'Hanya Anggota'} />
               <InfoRow icon={<CreditCard className="w-4 h-4 text-[#C9A227]" />} label="Biaya" value={event.is_paid ? `NIAM: ${formatCurrency(event.price_niam)} | Umum: ${formatCurrency(event.price_public)}` : 'Gratis'} />
@@ -548,7 +543,7 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
                           <p className="text-sm font-bold text-[#1B4332]">{log.metadata?.nextStatus === 'REJECTED' ? 'Approval ditolak' : 'Approval disetujui'}</p>
                           <p className="text-xs text-gray-500">{log.actorName ?? log.actorEmail ?? 'Admin'} - {log.metadata?.previousStatus ?? '-'} ke {log.metadata?.nextStatus ?? '-'}</p>
                         </div>
-                        <p className="text-xs font-semibold text-gray-400">{formatDateTime(log.createdAt)}</p>
+                        <p className="text-xs font-semibold text-gray-400">{formatEventDate(log.createdAt)}</p>
                       </div>
                       {log.metadata?.reason ? <p className="mt-2 text-sm text-gray-600">{log.metadata.reason}</p> : null}
                     </div>

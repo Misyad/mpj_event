@@ -47,6 +47,7 @@ export async function withDb<T>(callback: (db: Pool) => Promise<T>): Promise<T> 
     waitForConnections: true,
     connectionLimit: 10,
     namedPlaceholders: true,
+    timezone: '+07:00',
   })
 
   try {

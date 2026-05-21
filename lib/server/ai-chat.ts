@@ -9,6 +9,7 @@ import {
   getEventsFromDb,
   getParticipantByTicketCode,
 } from '@/lib/server/events'
+import { formatEventDateTime } from '@/utils/dateFormatter'
 
 export type AiChatMessage = {
   role: 'user' | 'assistant'
@@ -62,13 +63,7 @@ function extractTicketLikeCodes(text: string) {
 }
 
 function formatDate(value: string | undefined) {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('id-ID', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date)
+  return formatEventDateTime(value)
 }
 
 function formatEvent(event: Event) {

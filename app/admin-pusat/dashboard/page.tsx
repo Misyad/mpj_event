@@ -5,13 +5,9 @@ import { BadgeStatus } from '@/components/BadgeStatus'
 import { AUTH_ROLES } from '@/lib/auth/roles'
 import { getAdminPusatDashboard } from '@/lib/server/dashboard'
 import { getCurrentAdminSession } from '@/lib/server/rbac'
+import { formatEventDateTime } from '@/utils/dateFormatter'
 
 export const dynamic = 'force-dynamic'
-
-function formatDate(value?: string) {
-  if (!value) return '-'
-  return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
-}
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value)
@@ -160,7 +156,7 @@ function EventList({ title, empty, events }: { title: string; empty: string; eve
           <Link key={event.id} href={`/admin-pusat/events/${event.id}`} className="flex items-center gap-3 px-5 py-4 transition hover:bg-gray-50">
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-bold text-[#1B4332]">{event.title}</p>
-              <p className="mt-1 truncate text-xs text-gray-500">{formatDate(event.dateStart ?? event.start_date)} - {event.location ?? event.location_name}</p>
+              <p className="mt-1 truncate text-xs text-gray-500">{formatEventDateTime(event.dateStart ?? event.start_date)} - {event.location ?? event.location_name}</p>
             </div>
             <BadgeStatus status={event.status} />
           </Link>

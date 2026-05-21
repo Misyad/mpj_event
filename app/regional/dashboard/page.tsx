@@ -4,17 +4,9 @@ import { BarChart3, CalendarDays, CheckCircle2, Clock, MapPin, Ticket, UserCheck
 import { AUTH_ROLES } from '@/lib/auth/roles'
 import { getRegionalDashboard } from '@/lib/server/dashboard'
 import { getCurrentAdminSession } from '@/lib/server/rbac'
+import { formatEventDateTime } from '@/utils/dateFormatter'
 
 export const dynamic = 'force-dynamic'
-
-function formatDate(value?: string) {
-  if (!value) return '-'
-  return new Intl.DateTimeFormat('id-ID', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  }).format(new Date(value))
-}
 
 export default async function RegionalDashboardPage() {
   const session = await getCurrentAdminSession(AUTH_ROLES.regionalAdmin)
@@ -87,7 +79,7 @@ export default async function RegionalDashboardPage() {
                       <p className="mt-1 line-clamp-2 text-sm text-gray-500">{event.description}</p>
                     </div>
                     <div className="grid gap-2 text-xs font-medium text-gray-500 md:min-w-56">
-                      <span className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-emerald-700" />{formatDate(event.dateStart ?? event.start_date)}</span>
+                      <span className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-emerald-700" />{formatEventDateTime(event.dateStart ?? event.start_date)}</span>
                       <span className="flex items-center gap-2"><MapPin className="h-4 w-4 text-emerald-700" />{event.location ?? event.location_name ?? '-'}</span>
                       <span className="flex items-center gap-2"><Ticket className="h-4 w-4 text-emerald-700" />{event.registeredCount ?? 0}/{event.quota ?? '-'}</span>
                     </div>

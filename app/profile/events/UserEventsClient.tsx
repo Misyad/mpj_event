@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import type { UserEventHistoryItem } from '@/lib/server/events'
 import { cn } from '@/lib/utils'
+import { formatEventDateTime, getEventTimestamp } from '@/utils/dateFormatter'
 
 type FilterKey = 'all' | 'upcoming' | 'finished'
 
@@ -147,7 +148,7 @@ function EventHistoryCard({ item }: { item: UserEventHistoryItem }) {
           </h2>
           <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-slate-500">
             <CalendarDays className="h-4 w-4 shrink-0 text-[#C9A227]" />
-            <span>{formatDate(item.event.start_date)}</span>
+            <span>{formatEventDateTime(item.event.start_date)}</span>
           </p>
         </div>
 
@@ -365,7 +366,7 @@ function getPaymentMeta(value: string) {
 function matchesFilter(item: UserEventHistoryItem, filter: FilterKey) {
   if (filter === 'all') return true
   const status = String(item.participant.status || item.participant.attendance_status || '').toLowerCase()
-  const eventDate = new Date(item.event.start_date).getTime()
+  const eventDate = getEventTimestamp(item.event.start_date)
   const isFinished = status === 'attended' || eventDate < Date.now()
   return filter === 'finished' ? isFinished : !isFinished
 }
@@ -380,13 +381,4 @@ function getDisplayTicketCode(item: UserEventHistoryItem) {
   }
 
   return `#${String(checksum).padStart(4, '0')}`
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat('id-ID', {
-    weekday: 'short',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  }).format(new Date(value))
 }

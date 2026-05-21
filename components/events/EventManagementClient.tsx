@@ -35,6 +35,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { normalizeEvent } from '@/lib/event-api'
+import { formatEventDateTime, getEventDateInputParts, toEventDateEndIso, toEventDateTimeIso } from '@/utils/dateFormatter'
 import { CertificateTemplateEditor } from '@/components/certificates/CertificateTemplateEditor'
 import { DEFAULT_CERTIFICATE_LAYOUT, normalizeCertificateLayout } from '@/components/certificates/certificate-template-layout'
 import type { CertificateReusableTemplate, CertificateStatus, CertificateTemplateFieldKey, CertificateTemplateLayout, Event, EventCategory, EventCertificateRecord, EventStatus, Speaker } from '@/types'
@@ -151,19 +152,6 @@ const EMPTY_FORM: EventForm = {
   speakerId: null,
 }
 
-function formatDate(value?: string) {
-  if (!value) return '-'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '-'
-  return new Intl.DateTimeFormat('id-ID', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date)
-}
-
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -191,18 +179,11 @@ function getEventQuota(event: Event) {
 }
 
 function getEventDateParts(value?: string) {
-  const date = new Date(value ?? '')
-  if (Number.isNaN(date.getTime())) return { date: '', time: '' }
-  return {
-    date: date.toISOString().slice(0, 10),
-    time: date.toTimeString().slice(0, 5),
-  }
+  return getEventDateInputParts(value)
 }
 
 function getDateInputPart(value?: string | null) {
-  const date = new Date(value ?? '')
-  if (Number.isNaN(date.getTime())) return ''
-  return date.toISOString().slice(0, 10)
+  return getEventDateInputParts(value).date
 }
 
 function getEventExtra(event: Event) {
@@ -215,6 +196,8 @@ function getEventExtra(event: Event) {
     registrationDeadline?: string | null
     event_date?: string | null
     eventDate?: string | null
+    event_time?: string | null
+    eventTime?: string | null
     duration?: string | number | null
     duration_days?: string | number | null
     durationDays?: string | number | null
@@ -266,7 +249,7 @@ function buildForm(event: Event): EventForm {
     category: event.category,
     status: event.status,
     date: dateParts.date,
-    time: dateParts.time,
+    time: eventExtra.event_time ?? eventExtra.eventTime ?? dateParts.time,
     registrationOpen: getDateInputPart(eventExtra.registration_open ?? eventExtra.registrationOpen),
     registrationClose: getDateInputPart(registrationClose),
     eventDate: dateParts.date,
@@ -293,6 +276,7 @@ function buildForm(event: Event): EventForm {
 function payloadFromForm(form: EventForm, mode: EventManagementClientProps['mode']) {
   if (!form.title.trim()) throw new Error('Nama event wajib diisi')
   const eventDate = form.eventDate || form.date
+  const eventTime = form.time || '00:00'
   if (!eventDate) throw new Error('Tanggal acara wajib diisi')
   if (form.registrationOpen && form.registrationClose && form.registrationClose < form.registrationOpen) {
     throw new Error('Tanggal tutup pendaftaran tidak boleh sebelum tanggal buka pendaftaran')
@@ -301,8 +285,8 @@ function payloadFromForm(form: EventForm, mode: EventManagementClientProps['mode
     throw new Error('Tanggal acara tidak boleh sebelum tanggal tutup pendaftaran')
   }
   const durationDays = getDurationDays(form)
-  const startDate = new Date(`${eventDate}T${form.time || '00:00'}`)
-  const registrationDeadline = form.registrationClose ? new Date(`${form.registrationClose}T23:59:00`).toISOString() : null
+  const startDate = toEventDateTimeIso(eventDate, eventTime)
+  const registrationDeadline = form.registrationClose ? toEventDateEndIso(form.registrationClose) : null
   const slug = form.title.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
   return {
     title: form.title,
@@ -316,8 +300,8 @@ function payloadFromForm(form: EventForm, mode: EventManagementClientProps['mode
     location: form.location,
     location_gmaps: form.locationMapsUrl,
     locationMapsUrl: form.locationMapsUrl,
-    start_date: startDate.toISOString(),
-    dateStart: startDate.toISOString(),
+    start_date: startDate,
+    dateStart: startDate,
     registration_open: form.registrationOpen || null,
     registrationOpen: form.registrationOpen || null,
     registration_close: form.registrationClose || null,
@@ -326,6 +310,8 @@ function payloadFromForm(form: EventForm, mode: EventManagementClientProps['mode
     registrationDeadline,
     event_date: eventDate,
     eventDate,
+    event_time: eventTime,
+    eventTime,
     duration: durationDays,
     duration_days: durationDays,
     is_open_for_public: form.isOpenForPublic,
@@ -717,7 +703,7 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
       event_name: event.title,
       role: 'Panitia Event',
       signer_name: 'Ketua Panitia',
-      date: formatDate(event.start_date ?? event.dateStart),
+      date: formatEventDateTime(event.start_date ?? event.dateStart),
       qr_code: `${typeof window === 'undefined' ? '' : window.location.origin}/verify/certificate/${encodeURIComponent(sampleCode)}`,
     }
   }
@@ -867,7 +853,7 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
                       </div>
 
                       <div className="grid gap-3 sm:grid-cols-2">
-                        <InfoTile icon={<CalendarDays className="h-4 w-4 text-emerald-700" />} label="Jadwal" value={formatDate(event.start_date ?? event.dateStart)} />
+                        <InfoTile icon={<CalendarDays className="h-4 w-4 text-emerald-700" />} label="Jadwal" value={formatEventDateTime(event.start_date ?? event.dateStart)} />
                         <InfoTile icon={<MapPin className="h-4 w-4 text-emerald-700" />} label="Lokasi" value={event.location_name ?? event.location ?? '-'} />
                       </div>
 

@@ -3,6 +3,7 @@ import { AUTH_ROLES } from '@/lib/auth/roles'
 import { getAdminParticipantsFromDb, getEventsFromDb, getUserCertificatesFromDb, getUserEventHistoryFromDb, type UserEventHistoryItem } from '@/lib/server/events'
 import { getFinanceSummary, listPaymentMonitoring } from '@/lib/server/finance'
 import { getPublicUserProfile, listRegionals, type AdminSession } from '@/lib/server/rbac'
+import { getEventTimestamp } from '@/utils/dateFormatter'
 
 function status(value: unknown) {
   return String(value ?? '').toLowerCase()
@@ -31,11 +32,11 @@ function isUpcomingOrActive(event: Event) {
 }
 
 function byNewestEventDate(a: Event, b: Event) {
-  return new Date(b.dateStart ?? b.start_date).getTime() - new Date(a.dateStart ?? a.start_date).getTime()
+  return getEventTimestamp(b.dateStart ?? b.start_date) - getEventTimestamp(a.dateStart ?? a.start_date)
 }
 
 function bySoonestEventDate(a: Event, b: Event) {
-  return new Date(a.dateStart ?? a.start_date).getTime() - new Date(b.dateStart ?? b.start_date).getTime()
+  return getEventTimestamp(a.dateStart ?? a.start_date) - getEventTimestamp(b.dateStart ?? b.start_date)
 }
 
 function buildParticipantSummary(participants: Participant[]) {

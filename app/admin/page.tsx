@@ -2,12 +2,7 @@ import { dummyAdminStats, dummyEvents } from '@/lib/dummy'
 import { AlertCircle, ArrowUpRight, Calendar, CheckCircle, Database, TrendingUp, Users } from 'lucide-react'
 import Link from 'next/link'
 import { BadgeStatus } from '@/components/BadgeStatus'
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString('id-ID', {
-    day: 'numeric', month: 'short', year: 'numeric',
-  })
-}
+import { formatEventDateTime } from '@/utils/dateFormatter'
 
 export default function AdminDashboardPage() {
   const stats = dummyAdminStats
@@ -84,7 +79,7 @@ export default function AdminDashboardPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-[#1B4332] line-clamp-1 group-hover:text-[#C9A227] transition-colors">{event.title}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{event.category} · {formatDate(event.start_date)}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{event.category} · {formatEventDateTime(event.start_date)}</p>
                   </div>
                   <ArrowUpRight className="w-4 h-4 text-gray-300 group-hover:text-[#C9A227] transition-colors shrink-0" />
                 </div>
@@ -107,7 +102,7 @@ export default function AdminDashboardPage() {
                 <div className="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors cursor-pointer group">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-[#1B4332] line-clamp-1 group-hover:text-[#C9A227] transition-colors">{event.title}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{formatDate(event.start_date)} · {event.location_name}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{formatEventDateTime(event.start_date)} · {event.location_name}</p>
                   </div>
                   <BadgeStatus status={event.status} />
                 </div>

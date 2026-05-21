@@ -4,12 +4,7 @@ import { QRCodeSVG } from 'qrcode.react'
 import Link from 'next/link'
 import { Event, Participant } from '@/types'
 import { Award, Calendar, CheckCircle, MapPin, XCircle } from 'lucide-react'
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString('id-ID', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  })
-}
+import { formatEventDateTime } from '@/utils/dateFormatter'
 
 export function QRTicket({ participant, event }: { participant: Participant; event: Event }) {
   const status = participant.status || participant.attendance_status
@@ -83,7 +78,7 @@ export function QRTicket({ participant, event }: { participant: Participant; eve
           <div className="w-full space-y-2">
             <div className="flex items-start gap-2 text-sm">
               <Calendar className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
-              <span className="text-gray-700">{formatDate(event.start_date)}</span>
+              <span className="text-gray-700">{formatEventDateTime(event.start_date)}</span>
             </div>
             <div className="flex items-start gap-2 text-sm">
               <MapPin className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />

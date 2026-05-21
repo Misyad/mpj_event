@@ -6,14 +6,7 @@ import type { CertificateTemplateFieldKey, CertificateTemplateLayout, Event, Par
 import { Button } from '@/components/ui/button'
 import { CertificateCanvas } from '@/components/certificates/CertificateCanvas'
 import { DEFAULT_CERTIFICATE_LAYOUT, normalizeCertificateLayout } from '@/components/certificates/certificate-template-layout'
-
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  })
-}
+import { formatEventDate } from '@/utils/dateFormatter'
 
 function getParticipantName(participant: Participant) {
   return participant.fullName ?? participant.full_name ?? participant.crew?.full_name ?? participant.guest?.full_name ?? '-'
@@ -28,7 +21,7 @@ function certificateData(participant: Participant, event: Event, certificateNumb
     event_name: event.title,
     role: 'Panitia Event',
     signer_name: 'Ketua Panitia',
-    date: formatDate(event.start_date),
+    date: formatEventDate(event.start_date),
     qr_code: `${appUrl}/certificate/${encodeURIComponent(ticketCode)}`,
   }
 }
