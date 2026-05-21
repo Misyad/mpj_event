@@ -15,7 +15,7 @@ export const dummyEvents: Event[] = [
     is_paid: true,
     price_niam: 25000,
     price_public: 100000,
-    status: 'APPROVED',
+    status: 'published',
     bank_account: { bank_name: 'BCA', account_number: '1234567890', account_name: 'MPJ Indonesia' },
     max_participants: 50,
     current_participants: 42,
@@ -63,7 +63,7 @@ export const dummyEvents: Event[] = [
     is_paid: false,
     price_niam: 0,
     price_public: 0,
-    status: 'APPROVED',
+    status: 'published',
     bank_account: {
       bank_name: 'BNI',
       account_number: '0987654321',
@@ -84,7 +84,7 @@ export const dummyEvents: Event[] = [
     is_paid: false,
     price_niam: 0,
     price_public: 0,
-    status: 'FINISHED',
+    status: 'completed',
     bank_account: {
       bank_name: 'BCA',
       account_number: '1122334455',
@@ -105,7 +105,7 @@ export const dummyEvents: Event[] = [
     is_paid: true,
     price_niam: 50000,
     price_public: 150000,
-    status: 'APPROVED',
+    status: 'published',
     bank_account: { bank_name: 'Mandiri', account_number: '5566778899', account_name: 'MPJ Jawa Timur' },
     max_participants: 30,
     current_participants: 29,
@@ -127,7 +127,7 @@ export const dummyEvents: Event[] = [
     is_paid: true,
     price_niam: 0,
     price_public: 75000,
-    status: 'PENDING',
+    status: 'pending',
     bank_account: {
       bank_name: 'BSI',
       account_number: '7788990011',
@@ -148,7 +148,7 @@ export const dummyEvents: Event[] = [
     is_paid: false,
     price_niam: 0,
     price_public: 0,
-    status: 'PENDING',
+    status: 'pending',
     bank_account: {
       bank_name: 'BCA',
       account_number: '9900112233',
@@ -169,7 +169,7 @@ export const dummyEvents: Event[] = [
     is_paid: true,
     price_niam: 30000,
     price_public: 120000,
-    status: 'COMPLETED',
+    status: 'completed',
     bank_account: {
       bank_name: 'BNI',
       account_number: '3344556677',

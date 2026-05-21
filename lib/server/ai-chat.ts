@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
 import type { NextRequest } from 'next/server'
 import type { Event, EventScope, Participant } from '@/types'
+import { isPublishedStatus, isRegistrationClosedStatus, normalizeEventStatus } from '@/lib/event-status'
 import { AUTH_ROLES } from '@/lib/auth/roles'
 import { hasPermission } from '@/lib/auth/permissions'
 import { getSessionFromRequest, type AdminSession } from '@/lib/server/rbac'
@@ -144,8 +145,8 @@ async function getAiContext(request: NextRequest, messages: AiChatMessage[]): Pr
 }
 
 function isActivePublicEvent(event: Event) {
-  const status = String(event.status ?? '').toUpperCase()
-  if (['FINISHED', 'COMPLETED', 'REJECTED', 'CANCELLED', 'REGISTRATION_CLOSED'].includes(status)) return false
+  const status = normalizeEventStatus(event.status)
+  if (isRegistrationClosedStatus(status) || status === 'rejected') return false
 
   const schedule = event.dateEnd || event.start_date || event.dateStart
   if (schedule) {
@@ -153,7 +154,7 @@ function isActivePublicEvent(event: Event) {
     if (!Number.isNaN(scheduledAt.getTime()) && scheduledAt < new Date()) return false
   }
 
-  return Boolean(event.isPublic && (event.isPublished || ['APPROVED', 'LIVE', 'PUBLISHED'].includes(status)))
+  return Boolean(event.isPublic && (event.isPublished || isPublishedStatus(status)))
 }
 
 function textToStream(text: string) {

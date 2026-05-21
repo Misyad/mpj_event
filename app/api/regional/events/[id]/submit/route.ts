@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { normalizeEventStatus } from '@/lib/event-status'
 import { getEventFromDb, updateEventInDb } from '@/lib/server/events'
 import { recordAdminActivity, requireAdminPermission, requireRegionalScope } from '@/lib/server/rbac'
 
@@ -18,14 +19,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const event = await getEventFromDb(id)
     if (!event) return NextResponse.json({ ok: false, error: 'Event tidak ditemukan' }, { status: 404 })
     if (event.scope !== 'regional' || event.regionId !== regionalId) throw new Error('Regional scope tidak valid')
-    if (!['draft', 'rejected'].includes(String(event.status).toLowerCase())) throw new Error('Event hanya bisa diajukan dari Draft atau Ditolak')
+    if (!['draft', 'rejected'].includes(normalizeEventStatus(event.status))) throw new Error('Event hanya bisa diajukan dari Draft atau Ditolak')
 
-    const updated = await updateEventInDb(event.id, { status: 'PENDING', scope: 'regional', regionId: regionalId, region_id: regionalId })
+    const updated = await updateEventInDb(event.id, { status: 'pending', scope: 'regional', regionId: regionalId, region_id: regionalId })
     await recordAdminActivity(request, {
       action: 'regional_event.submitted',
       entityType: 'event',
       entityId: event.id,
-      metadata: { title: event.title, previousStatus: event.status, nextStatus: 'PENDING', regionalId },
+      metadata: { title: event.title, previousStatus: event.status, nextStatus: 'pending', regionalId },
     })
     return NextResponse.json({ ok: true, data: updated })
   } catch (error) {

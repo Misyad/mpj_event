@@ -14,23 +14,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { normalizeEvent } from '@/lib/event-api'
 import { EventFinancePanel } from '@/components/finance/EventFinancePanel'
+import { BadgeStatus } from '@/components/BadgeStatus'
+import { EVENT_STATUS, eventStatusMeta, isCompletedStatus, normalizeEventStatus } from '@/lib/event-status'
 import { formatEventDate, formatEventDateTime } from '@/utils/dateFormatter'
 import type { Event, Participant, StaffMember } from '@/types'
 
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: 'Draft', PENDING: 'Menunggu Approval', APPROVED: 'Disetujui',
-  REJECTED: 'Ditolak', LIVE: 'Live', FINISHED: 'Selesai', COMPLETED: 'Completed',
-  draft: 'Draft', pending: 'Menunggu Approval', approved: 'Disetujui',
-  rejected: 'Ditolak', registration_closed: 'Pendaftaran Ditutup', finished: 'Selesai',
-}
-const STATUS_COLORS: Record<string, string> = {
-  DRAFT: 'bg-gray-100 text-gray-600', PENDING: 'bg-amber-100 text-amber-700',
-  APPROVED: 'bg-blue-100 text-blue-700', REJECTED: 'bg-red-100 text-red-700', LIVE: 'bg-green-100 text-green-700',
-  FINISHED: 'bg-purple-100 text-purple-700', COMPLETED: 'bg-emerald-100 text-emerald-700',
-  draft: 'bg-gray-100 text-gray-600', pending: 'bg-amber-100 text-amber-700',
-  approved: 'bg-blue-100 text-blue-700', rejected: 'bg-red-100 text-red-700', registration_closed: 'bg-red-100 text-red-600',
-  finished: 'bg-purple-100 text-purple-700',
-}
 const PAYMENT_COLORS: Record<string, string> = {
   Free: 'bg-gray-100 text-gray-500', Unpaid: 'bg-red-100 text-red-600',
   Pending_Approval: 'bg-amber-100 text-amber-700', Paid: 'bg-emerald-100 text-emerald-700',
@@ -91,7 +79,7 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
   const [error, setError] = useState('')
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const [approvalLogs, setApprovalLogs] = useState<ApprovalLog[]>([])
-  const [approvalTarget, setApprovalTarget] = useState<'APPROVED' | 'REJECTED' | null>(null)
+  const [approvalTarget, setApprovalTarget] = useState<'published' | 'rejected' | null>(null)
   const [approvalReason, setApprovalReason] = useState('')
   const [isApproving, setIsApproving] = useState(false)
   const [staffForm, setStaffForm] = useState<StaffForm | null>(null)
@@ -154,9 +142,9 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
     }
   }
 
-  async function updateEventStatus(status: 'APPROVED' | 'REJECTED') {
+  async function updateEventStatus(status: 'published' | 'rejected') {
     if (!event) return
-    if (status === 'REJECTED' && !approvalReason.trim()) {
+    if (status === 'rejected' && !approvalReason.trim()) {
       setError('Alasan penolakan approval wajib diisi')
       return
     }
@@ -263,7 +251,7 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
   }
 
   const attendedCount = participants.filter(p => p.attendance_status === 'Attended').length
-  const eventCompleted = ['finished', 'completed'].includes(String(event.status).toLowerCase())
+  const eventCompleted = isCompletedStatus(event.status)
 
   return (
     <div className="p-4 md:p-8 space-y-5">
@@ -283,9 +271,7 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
         <div className="flex-1 min-w-0">
           <h1 className="text-lg md:text-xl font-extrabold text-[#1B4332] line-clamp-2">{event.title}</h1>
           <div className="flex items-center gap-2 mt-1">
-            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${STATUS_COLORS[event.status]}`}>
-              {STATUS_LABELS[event.status]}
-            </span>
+            <BadgeStatus status={event.status} />
             <span className="text-xs text-gray-400">{event.category}</span>
           </div>
         </div>
@@ -488,15 +474,15 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
             <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4">
               <p className="text-xs font-bold uppercase tracking-wide text-amber-700">Alur Approval Pusat</p>
               <p className="mt-1 text-sm text-gray-600">
-                Approve mengubah event menjadi Disetujui dan siap tampil publik. Tolak membuat event berstatus Ditolak dan menyimpan alasan revisi di riwayat.
+                Approve mengubah event menjadi Published dan siap tampil publik. Tolak membuat event berstatus Ditolak dan menyimpan alasan revisi di riwayat.
               </p>
-              {event.status === 'PENDING' ? (
+              {normalizeEventStatus(event.status) === 'pending' ? (
                 <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                  <Button type="button" className="rounded-xl bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => setApprovalTarget('APPROVED')}>
+                  <Button type="button" className="rounded-xl bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => setApprovalTarget('published')}>
                     <CheckCircle2 className="h-4 w-4" />
                     Approve Event
                   </Button>
-                  <Button type="button" variant="outline" className="rounded-xl border-red-100 text-red-600 hover:bg-red-50" onClick={() => setApprovalTarget('REJECTED')}>
+                  <Button type="button" variant="outline" className="rounded-xl border-red-100 text-red-600 hover:bg-red-50" onClick={() => setApprovalTarget('rejected')}>
                     <XCircle className="h-4 w-4" />
                     Tolak Approval
                   </Button>
@@ -520,11 +506,15 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
             <div className="border-t pt-4 space-y-2">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Ubah Status Event</p>
               <div className="flex flex-wrap gap-2">
-                {['DRAFT', 'PENDING', 'APPROVED', 'REJECTED', 'FINISHED', 'COMPLETED'].map(s => (
-                  <button key={s} type="button" disabled className={`text-xs font-semibold px-3 py-1.5 rounded-xl border-2 transition-colors ${event.status === s ? 'border-[#1B4332] bg-[#1B4332] text-white' : 'border-gray-200 text-gray-600'}`}>
-                    {STATUS_LABELS[s]}
+                {EVENT_STATUS.map((status) => {
+                  const active = normalizeEventStatus(event.status) === status.value
+                  const meta = eventStatusMeta(status.value)
+                  return (
+                  <button key={status.value} type="button" disabled className={`text-xs font-semibold px-3 py-1.5 rounded-xl border-2 transition-colors ${active ? 'border-[#1B4332] bg-[#1B4332] text-white' : `border-gray-200 ${meta.badgeClassName}`}`}>
+                    {meta.label}
                   </button>
-                ))}
+                  )
+                })}
               </div>
             </div>
             <div className="border-t pt-4">
@@ -540,7 +530,7 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
                     <div key={`${log.action}-${log.createdAt}-${index}`} className="p-4">
                       <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                         <div>
-                          <p className="text-sm font-bold text-[#1B4332]">{log.metadata?.nextStatus === 'REJECTED' ? 'Approval ditolak' : 'Approval disetujui'}</p>
+                          <p className="text-sm font-bold text-[#1B4332]">{normalizeEventStatus(log.metadata?.nextStatus) === 'rejected' ? 'Approval ditolak' : 'Approval disetujui'}</p>
                           <p className="text-xs text-gray-500">{log.actorName ?? log.actorEmail ?? 'Admin'} - {log.metadata?.previousStatus ?? '-'} ke {log.metadata?.nextStatus ?? '-'}</p>
                         </div>
                         <p className="text-xs font-semibold text-gray-400">{formatEventDate(log.createdAt)}</p>
@@ -563,16 +553,16 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
       }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{approvalTarget === 'APPROVED' ? 'Approve Event?' : 'Tolak Approval Event?'}</DialogTitle>
+            <DialogTitle>{approvalTarget === 'published' ? 'Approve Event?' : 'Tolak Approval Event?'}</DialogTitle>
             <DialogDescription>
-              {approvalTarget === 'APPROVED'
-                ? 'Event akan menjadi Disetujui dan siap tampil di publik sesuai pengaturan event.'
+              {approvalTarget === 'published'
+                ? 'Event akan menjadi Published dan siap tampil di publik sesuai pengaturan event.'
                 : 'Event akan berstatus Ditolak dan alasan penolakan tersimpan di riwayat approval.'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             <p className="text-sm font-bold text-[#1B4332]">{event.title}</p>
-            {approvalTarget === 'REJECTED' ? (
+            {approvalTarget === 'rejected' ? (
               <div className="space-y-1.5">
                 <Label>Alasan Penolakan</Label>
                 <Textarea value={approvalReason} onChange={(changeEvent) => setApprovalReason(changeEvent.target.value)} placeholder="Tuliskan revisi yang perlu dilakukan..." />
@@ -581,8 +571,8 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setApprovalTarget(null)} disabled={isApproving}>Batal</Button>
-            <Button type="button" className={approvalTarget === 'APPROVED' ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-red-600 text-white hover:bg-red-700'} onClick={() => approvalTarget && updateEventStatus(approvalTarget)} disabled={isApproving}>
-              {isApproving ? 'Memproses...' : approvalTarget === 'APPROVED' ? 'Approve' : 'Tolak'}
+            <Button type="button" className={approvalTarget === 'published' ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-red-600 text-white hover:bg-red-700'} onClick={() => approvalTarget && updateEventStatus(approvalTarget)} disabled={isApproving}>
+              {isApproving ? 'Memproses...' : approvalTarget === 'published' ? 'Approve' : 'Tolak'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -4,6 +4,7 @@ import { getEventById } from '@/lib/dummy'
 import { getEventFromDb } from '@/lib/server/events'
 import { RegisterForm } from '@/components/RegisterForm'
 import { AUTH_ROLES } from '@/lib/auth/roles'
+import { isRegistrationOpenStatus } from '@/lib/event-status'
 import { getCurrentAdminSession, getPublicUserProfile } from '@/lib/server/rbac'
 
 export const metadata: Metadata = {
@@ -20,7 +21,7 @@ export default async function RegisterPage({ params }: { params: Promise<{ id: s
   ])
   const profile = session ? await getPublicUserProfile(session.userId).catch(() => null) : null
   const resolvedEvent = event ?? getEventById(id)
-  if (!resolvedEvent || (resolvedEvent.status !== 'APPROVED' && resolvedEvent.status !== 'approved')) notFound()
+  if (!resolvedEvent || !isRegistrationOpenStatus(resolvedEvent.status)) notFound()
 
   return (
     <RegisterForm

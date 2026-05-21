@@ -1,15 +1,13 @@
 import { EventCard } from '@/components/EventCard'
-import { EventStatus } from '@/types'
 import { Calendar } from 'lucide-react'
 import { dummyEvents } from '@/lib/dummy'
 import { getEventsFromDb } from '@/lib/server/events'
 import { LoginEntryDialog } from '@/components/auth/LoginEntryDialog'
 import { BrandMark } from '@/components/BrandMark'
 import { AUTH_ROLES } from '@/lib/auth/roles'
+import { isCompletedStatus, isPublishedStatus, normalizeEventStatus } from '@/lib/event-status'
 import { getCurrentAdminSession } from '@/lib/server/rbac'
 import { getEventTimestamp } from '@/utils/dateFormatter'
-
-const VISIBLE: EventStatus[] = ['APPROVED', 'FINISHED', 'COMPLETED']
 
 export const dynamic = 'force-dynamic'
 
@@ -24,11 +22,11 @@ export default async function Home() {
   }
 
   const events = sourceEvents
-    .filter((e) => VISIBLE.includes(e.status) || e.status === 'approved' || e.status === 'finished')
+    .filter((event) => isPublishedStatus(event.status))
     .sort((a, b) => getEventTimestamp(a.start_date) - getEventTimestamp(b.start_date))
 
-  const live = events.filter((e) => e.status === 'APPROVED')
-  const past = events.filter((e) => e.status !== 'APPROVED')
+  const live = events.filter((event) => ['published', 'registration_closed', 'ongoing'].includes(normalizeEventStatus(event.status)))
+  const past = events.filter((event) => isCompletedStatus(event.status))
 
   return (
     <div className="flex flex-col min-h-screen">

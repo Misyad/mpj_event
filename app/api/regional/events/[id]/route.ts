@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { normalizeEventStatus } from '@/lib/event-status'
 import { getEventFromDb, updateEventInDb } from '@/lib/server/events'
 import { recordAdminActivity, requireAdminPermission, requireRegionalScope } from '@/lib/server/rbac'
 
@@ -29,7 +30,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
   try {
     const { event, regionalId } = await assertRegionalEvent(request, id)
-    const status = String(event.status).toLowerCase()
+    const status = normalizeEventStatus(event.status)
     if (!['draft', 'rejected'].includes(status)) throw new Error('Event hanya bisa diedit saat Draft atau Ditolak')
 
     const payload = await request.json()

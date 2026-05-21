@@ -6,7 +6,7 @@ import { formatEventDateTime } from '@/utils/dateFormatter'
 
 export default function AdminDashboardPage() {
   const stats = dummyAdminStats
-  const pendingEvents = dummyEvents.filter(e => e.status === 'PENDING').slice(0, 3)
+  const pendingEvents = dummyEvents.filter(e => e.status === 'pending').slice(0, 3)
   const recentEvents = [...dummyEvents].slice(0, 5)
 
   return (

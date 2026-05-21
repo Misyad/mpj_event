@@ -6,6 +6,7 @@ import { getEventFromDb } from '@/lib/server/events'
 import { BadgeStatus } from '@/components/BadgeStatus'
 import { QuotaBadge } from '@/components/QuotaBadge'
 import { CountdownTimer } from '@/components/CountdownTimer'
+import { isRegistrationOpenStatus } from '@/lib/event-status'
 import { AlertCircle, ArrowLeft, Calendar, MapPin, RefreshCw, Wallet } from 'lucide-react'
 import { formatEventDateWithWeekday, formatEventTime } from '@/utils/dateFormatter'
 
@@ -56,7 +57,7 @@ export async function EventDetailView({ identifier }: { identifier: string }) {
   }
   if (!event) notFound()
 
-  const isOpen = event.status === 'APPROVED' || event.status === 'approved'
+  const isOpen = isRegistrationOpenStatus(event.status) && event.status_pendaftaran !== 'closed' && event.status_pendaftaran !== 'full'
 
   return (
     <div className="flex flex-col min-h-screen pb-24">

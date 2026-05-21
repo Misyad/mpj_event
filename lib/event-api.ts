@@ -1,5 +1,6 @@
 import { dummyEvents } from '@/lib/dummy'
 import { DEFAULT_CERTIFICATE_LAYOUT, normalizeCertificateLayout } from '@/components/certificates/certificate-template-layout'
+import { normalizeEventStatus } from '@/lib/event-status'
 import { getEventDateInputParts } from '@/utils/dateFormatter'
 import type { Event } from '@/types'
 
@@ -58,7 +59,7 @@ export function normalizeEvent(event: Partial<Event> & { id: string; title: stri
     priceNiam: Number(event.priceNiam ?? event.price_niam ?? 0),
     price_public: Number(event.price_public ?? event.priceUmum ?? 0),
     priceUmum: Number(event.priceUmum ?? event.price_public ?? 0),
-    status: event.status ?? 'PENDING',
+    status: normalizeEventStatus(event.status),
     scope: event.scope,
     regionId: event.regionId,
     isPublished: event.isPublished,

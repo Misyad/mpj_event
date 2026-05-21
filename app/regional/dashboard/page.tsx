@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { BarChart3, CalendarDays, CheckCircle2, Clock, MapPin, Ticket, UserCheck, Wallet } from 'lucide-react'
+import { BadgeStatus } from '@/components/BadgeStatus'
 import { AUTH_ROLES } from '@/lib/auth/roles'
 import { getRegionalDashboard } from '@/lib/server/dashboard'
 import { getCurrentAdminSession } from '@/lib/server/rbac'
@@ -72,7 +73,7 @@ export default async function RegionalDashboardPage() {
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap gap-2">
-                        <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold uppercase text-emerald-700">{event.status}</span>
+                        <BadgeStatus status={event.status} />
                         <span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] font-bold text-gray-600">{event.category}</span>
                       </div>
                       <h3 className="mt-2 text-base font-extrabold text-[#1B4332]">{event.title}</h3>

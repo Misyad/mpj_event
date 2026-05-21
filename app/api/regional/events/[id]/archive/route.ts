@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isPublishedStatus } from '@/lib/event-status'
 import { getEventFromDb, updateEventInDb } from '@/lib/server/events'
 import { recordAdminActivity, requireAdminPermission, requireRegionalScope } from '@/lib/server/rbac'
 
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const event = await getEventFromDb(id)
     if (!event) return NextResponse.json({ ok: false, error: 'Event tidak ditemukan' }, { status: 404 })
     if (event.scope !== 'regional' || event.regionId !== regionalId) throw new Error('Regional scope tidak valid')
-    if (['approved', 'live'].includes(String(event.status).toLowerCase())) throw new Error('Event yang sudah published tidak bisa diarsipkan oleh regional')
+    if (isPublishedStatus(event.status)) throw new Error('Event yang sudah published tidak bisa diarsipkan oleh regional')
 
     const updated = await updateEventInDb(event.id, {
       status: 'registration_closed',

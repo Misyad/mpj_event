@@ -3,6 +3,7 @@ import { AUTH_ROLES } from '@/lib/auth/roles'
 import { getAdminParticipantsFromDb, getEventsFromDb, getUserCertificatesFromDb, getUserEventHistoryFromDb, type UserEventHistoryItem } from '@/lib/server/events'
 import { getFinanceSummary, listPaymentMonitoring } from '@/lib/server/finance'
 import { getPublicUserProfile, listRegionals, type AdminSession } from '@/lib/server/rbac'
+import { isCompletedStatus, isPublishedStatus, isRegistrationClosedStatus, normalizeEventStatus } from '@/lib/event-status'
 import { getEventTimestamp } from '@/utils/dateFormatter'
 
 function status(value: unknown) {
@@ -22,13 +23,11 @@ function isAttended(participant: Participant) {
 }
 
 function isOpenEvent(event: Event) {
-  const eventStatus = status(event.status)
-  return event.status_pendaftaran !== 'closed' && !['finished', 'completed', 'rejected'].includes(eventStatus)
+  return event.status_pendaftaran !== 'closed' && !isRegistrationClosedStatus(event.status) && normalizeEventStatus(event.status) !== 'rejected'
 }
 
 function isUpcomingOrActive(event: Event) {
-  const eventStatus = status(event.status)
-  return event.isPublished && event.isPublic && !['finished', 'completed', 'rejected'].includes(eventStatus)
+  return event.isPublished && event.isPublic && isPublishedStatus(event.status) && !isCompletedStatus(event.status)
 }
 
 function byNewestEventDate(a: Event, b: Event) {
@@ -57,8 +56,8 @@ function buildEventSummary(events: Event[]) {
     total: events.length,
     pendingApproval: events.filter((event) => status(event.status) === 'pending').length,
     published: events.filter((event) => event.isPublished).length,
-    live: events.filter((event) => status(event.status) === 'live' || status(event.status) === 'approved').length,
-    finished: events.filter((event) => ['finished', 'completed'].includes(status(event.status))).length,
+    live: events.filter((event) => normalizeEventStatus(event.status) === 'ongoing' || normalizeEventStatus(event.status) === 'published').length,
+    finished: events.filter((event) => isCompletedStatus(event.status)).length,
     open: events.filter(isOpenEvent).length,
   }
 }
@@ -152,7 +151,7 @@ export async function getUserDashboard(session: AdminSession) {
   ])
 
   const profileComplete = Boolean(profile?.fullName && profile.whatsapp && profile.institution)
-  const activeHistory = eventHistory.filter((item) => !['finished', 'completed', 'cancelled'].includes(status(item.event.status)))
+  const activeHistory = eventHistory.filter((item) => !isCompletedStatus(item.event.status) && status(item.event.status) !== 'cancelled')
   const recommendedEvents = publicEvents
     .filter(isUpcomingOrActive)
     .filter((event) => !eventHistory.some((item) => item.event.id === event.id))

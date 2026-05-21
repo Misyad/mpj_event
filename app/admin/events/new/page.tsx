@@ -377,7 +377,7 @@ export default function NewEventPage() {
         </div>
         <div>
           <p className="font-extrabold text-[#1B4332] text-xl">Event Berhasil Dibuat!</p>
-          <p className="text-gray-400 text-sm mt-1">Status: DRAFT · Mengarahkan ke daftar event...</p>
+          <p className="text-gray-400 text-sm mt-1">Status: Draft - Mengarahkan ke daftar event...</p>
         </div>
       </div>
     )
@@ -394,7 +394,7 @@ export default function NewEventPage() {
         </Link>
         <div>
           <h1 className="text-xl font-extrabold text-[#1B4332]">Buat Event Baru</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Event akan tersimpan sebagai DRAFT terlebih dahulu</p>
+          <p className="text-sm text-gray-400 mt-0.5">Event akan tersimpan sebagai Draft terlebih dahulu</p>
         </div>
       </div>
 

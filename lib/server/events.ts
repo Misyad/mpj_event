@@ -7,6 +7,13 @@ import { createPaymenkuTransaction, normalizePaymenkuStatus, type PaymenkuWebhoo
 import { getGatewayCredentialForEvent } from '@/lib/server/payment-gateway-credentials'
 import { renderCertificatePdf } from '@/lib/server/certificate-renderer'
 import { getStorageAdapter, sanitizePublicUploadUrl } from '@/lib/server/storage'
+import {
+  isCompletedStatus,
+  isPublishedStatus,
+  isRegistrationClosedStatus,
+  isRegistrationOpenStatus,
+  normalizeEventStatus,
+} from '@/lib/event-status'
 import { getEventDateInputParts } from '@/utils/dateFormatter'
 
 const DEFAULT_BANK_ACCOUNT = {
@@ -306,24 +313,8 @@ function slugify(value: string) {
     .slice(0, 80)
 }
 
-function toLegacyEventStatus(status: string) {
-  const normalized = status.toLowerCase()
-  if (normalized === 'draft') return 'DRAFT'
-  if (normalized === 'pending') return 'PENDING'
-  if (normalized === 'approved') return 'APPROVED'
-  if (normalized === 'registration_closed') return 'APPROVED'
-  if (normalized === 'finished') return 'FINISHED'
-  return status.toUpperCase()
-}
-
 function toV4EventStatus(status: string) {
-  const normalized = status.toLowerCase()
-  if (normalized === 'draft') return 'draft'
-  if (normalized === 'pending') return 'pending'
-  if (normalized === 'approved' || normalized === 'live') return 'approved'
-  if (normalized === 'registration_closed') return 'registration_closed'
-  if (normalized === 'finished' || normalized === 'completed') return 'finished'
-  return 'draft'
+  return normalizeEventStatus(status)
 }
 
 function toBooleanInt(value: unknown, fallback = false) {
@@ -389,8 +380,7 @@ function mapEvent(row: EventRow, customFields: CustomField[] = [], classes: Even
   const quota = row.max_participants ?? undefined
   const registeredCount = row.current_participants ?? 0
   const attendedCount = row.attended_count ?? 0
-  const status = toLegacyEventStatus(row.status)
-  const v4Status = toV4EventStatus(row.status)
+  const status = toV4EventStatus(row.status)
   const slug = row.slug || slugify(row.title)
   const paymentMethod = normalizePaymentMethod(row.payment_method)
   const gatewayConfig = normalizeGatewayConfig(row.gateway_config)
@@ -443,7 +433,7 @@ function mapEvent(row: EventRow, customFields: CustomField[] = [], classes: Even
     current_participants: registeredCount,
     registeredCount,
     attendedCount,
-    status_pendaftaran: row.status_pendaftaran ?? (v4Status === 'registration_closed' ? 'closed' : 'open'),
+    status_pendaftaran: row.status_pendaftaran ?? (isRegistrationClosedStatus(status) ? 'closed' : 'open'),
     registration_deadline: registrationDeadline,
     registrationDeadline,
     custom_fields: customFields,
@@ -992,7 +982,7 @@ export async function ensureEventV4Schema(connection: PoolConnection) {
   await connection.query(`
     UPDATE mpj_event_events
     SET
-      is_published = CASE WHEN UPPER(status) IN ('APPROVED', 'LIVE', 'FINISHED', 'COMPLETED') THEN 1 ELSE is_published END,
+      is_published = CASE WHEN LOWER(status) IN ('approved', 'published', 'live', 'ongoing', 'finished', 'completed') THEN 1 ELSE is_published END,
       is_public = CASE WHEN is_public IS NULL THEN 1 ELSE is_public END
   `)
 
@@ -1433,7 +1423,7 @@ async function createUniqueVerificationCode(connection: PoolConnection) {
 function isCertificateEligible(event: Event, participant: Participant) {
   const participantStatus = String(participant.status || participant.attendance_status).toLowerCase()
   const eventStatus = String(event.status).toLowerCase()
-  return Boolean(event.certificateEnabled) && participantStatus === 'attended' && (eventStatus === 'finished' || eventStatus === 'completed')
+  return Boolean(event.certificateEnabled) && participantStatus === 'attended' && isCompletedStatus(eventStatus)
 }
 
 function mapCertificateRecord(row: CertificateRow): EventCertificateRecord {
@@ -1964,7 +1954,7 @@ export async function createAdminParticipantInDb(eventIdentifier: string, payloa
       }
 
       const event = mapEvent(eventRow)
-      if (['finished', 'completed', 'registration_closed'].includes(toV4EventStatus(eventRow.status))) {
+      if (isRegistrationClosedStatus(eventRow.status)) {
         throw new Error('Event tidak menerima input peserta baru')
       }
       if (event.status_pendaftaran === 'closed' || event.status_pendaftaran === 'full') throw new Error('Pendaftaran event sudah ditutup')
@@ -2290,7 +2280,7 @@ export async function createEventInDb(payload: EventPayload) {
 
       const id = randomUUID()
       const slug = getString(payload.slug) || slugify(title)
-      const status = payload.status || 'draft'
+      const status = normalizeEventStatus(payload.status || 'draft')
       const isPublished = Boolean(payload.isPublished ?? payload.is_published ?? false)
       const paymentMethod = normalizePaymentMethod(payload.paymentMethod ?? payload.payment_method)
       const gatewayProvider = paymentMethod === 'gateway' ? getString(payload.gatewayProvider ?? payload.gateway_provider) || 'paymenku' : null
@@ -2344,7 +2334,7 @@ export async function createEventInDb(payload: EventPayload) {
           isPublished: toBooleanInt(isPublished),
           isPublic: toBooleanInt(payload.isPublic ?? payload.is_public, true),
           quota: toNullableInteger(payload.quota ?? payload.max_participants),
-          registrationStatus: status === 'registration_closed' ? 'closed' : 'open',
+          registrationStatus: isRegistrationClosedStatus(status) ? 'closed' : 'open',
           registrationDeadline: toNullableDate(payload.registrationDeadline ?? payload.registration_deadline),
         },
       )
@@ -2376,7 +2366,7 @@ export async function updateEventInDb(identifier: string, payload: EventPayload)
 
       const assignments: string[] = []
       const values: Record<string, unknown> = { id: existing.id }
-      const published = Boolean(existing.is_published) || toV4EventStatus(existing.status) === 'approved'
+      const published = Boolean(existing.is_published) || isPublishedStatus(existing.status)
 
       function setField(column: string, key: string, value: unknown) {
         assignments.push(`${column} = :${key}`)
@@ -2425,19 +2415,19 @@ export async function updateEventInDb(identifier: string, payload: EventPayload)
         setField('price_public', 'priceUmum', toNullableInteger(payload.priceUmum ?? payload.price_public) ?? 0)
       }
       if (payload.status !== undefined) {
-        const status = payload.status
+        const status = normalizeEventStatus(payload.status)
         setField('status', 'status', status)
-        if (status === 'approved' || status === 'APPROVED') setField('is_published', 'publishedFromStatus', 1)
-        if (status === 'rejected' || status === 'REJECTED') setField('is_published', 'rejectedIsNotPublished', 0)
-        if (status === 'registration_closed') setField('status_pendaftaran', 'registrationStatusFromStatus', 'closed')
-        if (status === 'finished' || status === 'FINISHED') setField('status_pendaftaran', 'registrationStatusFinished', 'closed')
+        if (isPublishedStatus(status)) setField('is_published', 'publishedFromStatus', 1)
+        if (status === 'rejected' || status === 'draft') setField('is_published', 'notPublishedFromStatus', 0)
+        if (isRegistrationClosedStatus(status)) setField('status_pendaftaran', 'registrationStatusClosedFromStatus', 'closed')
+        if (isRegistrationOpenStatus(status)) setField('status_pendaftaran', 'registrationStatusOpenFromStatus', 'open')
       }
       if (payload.speakerId !== undefined || payload.speaker_id !== undefined) setField('speaker_id', 'speakerId', getString(payload.speakerId ?? payload.speaker_id) || null)
       if (payload.scope !== undefined) setField('scope', 'scope', payload.scope)
       if (payload.regionId !== undefined || payload.region_id !== undefined) setField('region_id', 'regionId', payload.regionId ?? payload.region_id ?? null)
       if (payload.isPublished !== undefined || payload.is_published !== undefined) {
-        if ((payload.isPublished ?? payload.is_published) && toV4EventStatus(existing.status) !== 'approved') {
-          throw new Error('Event harus approved sebelum publish')
+        if ((payload.isPublished ?? payload.is_published) && !isPublishedStatus(existing.status)) {
+          throw new Error('Event harus Published sebelum publish')
         }
         setField('is_published', 'isPublished', toBooleanInt(payload.isPublished ?? payload.is_published))
       }
@@ -2745,8 +2735,7 @@ export async function registerEventParticipant(eventIdentifier: string, payload:
       if (!eventRow) throw new Error('Event tidak ditemukan')
 
       const event = mapEvent(eventRow)
-      const v4Status = toV4EventStatus(eventRow.status)
-      if (v4Status !== 'approved') throw new Error('Pendaftaran event belum dibuka')
+      if (!isRegistrationOpenStatus(eventRow.status)) throw new Error('Pendaftaran event belum dibuka')
       if (event.status_pendaftaran === 'closed') throw new Error('Pendaftaran event sudah ditutup')
       if (event.status_pendaftaran === 'full') throw new Error('Kuota event sudah penuh')
       if (event.registrationDeadline && new Date(event.registrationDeadline).getTime() < Date.now()) {

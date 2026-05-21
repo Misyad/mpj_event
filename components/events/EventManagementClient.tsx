@@ -10,11 +10,14 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  CircleDashed,
   Eye,
   History,
+  Lock,
   Loader2,
   MapPin,
   Pencil,
+  PlayCircle,
   Plus,
   Search,
   Send,
@@ -34,6 +37,18 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  EVENT_STATUS,
+  eventStatusMeta,
+  isApprovalStatus,
+  isCompletedStatus,
+  isLifecycleStatus,
+  isPublishedStatus,
+  isRegistrationClosedStatus,
+  isRegistrationOpenStatus,
+  normalizeEventStatus,
+  type EventLifecycleStatus,
+} from '@/lib/event-status'
 import { normalizeEvent } from '@/lib/event-api'
 import { formatEventDateTime, getEventDateInputParts, toEventDateEndIso, toEventDateTimeIso } from '@/utils/dateFormatter'
 import { CertificateTemplateEditor } from '@/components/certificates/CertificateTemplateEditor'
@@ -105,24 +120,7 @@ type EventManagementClientProps = {
   regionalId?: string
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: 'Draft',
-  PENDING: 'Menunggu',
-  APPROVED: 'Published',
-  REJECTED: 'Ditolak',
-  LIVE: 'Berjalan',
-  FINISHED: 'Selesai',
-  COMPLETED: 'Completed',
-  draft: 'Draft',
-  pending: 'Menunggu',
-  approved: 'Published',
-  rejected: 'Ditolak',
-  registration_closed: 'Pendaftaran Ditutup',
-  finished: 'Selesai',
-}
-
 const CATEGORY_OPTIONS: EventCategory[] = ['Pelatihan', 'Seremonial', 'Rapat']
-const STATUS_OPTIONS: EventStatus[] = ['DRAFT', 'PENDING', 'APPROVED', 'REJECTED', 'LIVE', 'FINISHED', 'COMPLETED', 'draft', 'pending', 'approved', 'rejected', 'registration_closed', 'finished']
 const PAGE_SIZE = 8
 const EMPTY_FORM: EventForm = {
   title: '',
@@ -228,7 +226,62 @@ function getCrewNeeds(event: Event) {
 }
 
 function isOpenEvent(event: Event) {
-  return event.status_pendaftaran !== 'closed' && !['finished', 'completed', 'FINISHED', 'COMPLETED'].includes(String(event.status))
+  return event.status_pendaftaran !== 'closed' && !isRegistrationClosedStatus(event.status) && normalizeEventStatus(event.status) !== 'rejected'
+}
+
+const STATUS_ICONS: Record<EventLifecycleStatus, typeof CircleDashed> = {
+  draft: CircleDashed,
+  published: CheckCircle2,
+  registration_closed: Lock,
+  ongoing: PlayCircle,
+  completed: Award,
+}
+
+function EventStatusOption({ status }: { status: EventLifecycleStatus }) {
+  const Icon = STATUS_ICONS[status]
+  const meta = eventStatusMeta(status)
+
+  return (
+    <span className="flex w-full items-center gap-2">
+      <span className={`flex h-6 w-6 items-center justify-center rounded-lg ring-1 ${meta.badgeClassName}`}>
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+      <span className="font-semibold">{meta.label}</span>
+    </span>
+  )
+}
+
+function EventStatusSelect({
+  value,
+  onChange,
+  disabled,
+  triggerClassName,
+}: {
+  value?: EventStatus
+  onChange: (status: EventLifecycleStatus) => void
+  disabled?: boolean
+  triggerClassName?: string
+}) {
+  const lifecycleValue = isLifecycleStatus(value) ? normalizeEventStatus(value) as EventLifecycleStatus : undefined
+
+  return (
+    <Select value={lifecycleValue} onValueChange={(next) => onChange(next as EventLifecycleStatus)} disabled={disabled}>
+      <SelectTrigger className={triggerClassName}>
+        <SelectValue placeholder={isApprovalStatus(value) ? eventStatusMeta(value).label : 'Pilih status'} />
+      </SelectTrigger>
+      <SelectContent className="rounded-xl border border-gray-100 bg-white p-1 shadow-xl">
+        {EVENT_STATUS.map((status) => (
+          <SelectItem
+            key={status.value}
+            value={status.value}
+            className="min-h-10 rounded-lg px-2 py-2 transition-colors duration-150 hover:bg-gray-50 focus:bg-gray-50"
+          >
+            <EventStatusOption status={status.value} />
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
 }
 
 function publicHref(event: Event) {
@@ -360,7 +413,7 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
   const [categoryFilter, setCategoryFilter] = useState<EventCategory | 'ALL'>('ALL')
   const [page, setPage] = useState(1)
   const [approvalLogs, setApprovalLogs] = useState<Record<string, ApprovalLog[]>>({})
-  const [approvalTarget, setApprovalTarget] = useState<{ event: Event; status: 'APPROVED' | 'REJECTED' } | null>(null)
+  const [approvalTarget, setApprovalTarget] = useState<{ event: Event; status: 'published' | 'rejected' } | null>(null)
   const [approvalReason, setApprovalReason] = useState('')
   const [isApproving, setIsApproving] = useState(false)
   const [editingEvent, setEditingEvent] = useState<Event | null>(null)
@@ -427,7 +480,7 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
         event.title.toLowerCase().includes(keyword) ||
         (event.location_name ?? event.location ?? '').toLowerCase().includes(keyword) ||
         event.description.toLowerCase().includes(keyword)
-      const matchesStatus = statusFilter === 'ALL' || event.status === statusFilter
+      const matchesStatus = statusFilter === 'ALL' || normalizeEventStatus(event.status) === statusFilter
       const matchesCategory = categoryFilter === 'ALL' || event.category === categoryFilter
       return matchesSearch && matchesStatus && matchesCategory
     })
@@ -436,7 +489,7 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
   const stats = useMemo(() => ({
     total: events.length,
     open: events.filter(isOpenEvent).length,
-    published: events.filter((event) => ['approved', 'APPROVED', 'live', 'LIVE'].includes(String(event.status))).length,
+    published: events.filter((event) => isPublishedStatus(event.status)).length,
     participants: events.reduce((sum, event) => sum + (event.registeredCount ?? event.current_participants ?? 0), 0),
   }), [events])
 
@@ -478,7 +531,7 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
       if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal mengubah status event')
       const updated = normalizeEvent(payload.data)
       setEvents((current) => current.map((event) => (event.id === eventId ? updated : event)))
-      if (String(status).toUpperCase() === 'APPROVED' || String(status).toUpperCase() === 'REJECTED') {
+      if (status === 'published' || status === 'rejected') {
         const logsResponse = await fetch(`/api/admin/events/${eventId}/approval-logs`, { cache: 'no-store' })
         const logsPayload = await logsResponse.json()
         if (logsResponse.ok && logsPayload.ok) setApprovalLogs((current) => ({ ...current, [eventId]: logsPayload.data ?? [] }))
@@ -493,7 +546,7 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
 
   async function confirmApproval() {
     if (!approvalTarget) return
-    if (approvalTarget.status === 'REJECTED' && !approvalReason.trim()) {
+    if (approvalTarget.status === 'rejected' && !approvalReason.trim()) {
       setError('Alasan penolakan approval wajib diisi')
       return
     }
@@ -503,7 +556,7 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
       await updateEventStatus(approvalTarget.event.id, approvalTarget.status, approvalReason)
       setApprovalTarget(null)
       setApprovalReason('')
-      toast.success(approvalTarget.status === 'APPROVED' ? 'Event berhasil disetujui' : 'Event berhasil ditolak')
+      toast.success(approvalTarget.status === 'published' ? 'Event berhasil disetujui' : 'Event berhasil ditolak')
     } finally {
       setIsApproving(false)
     }
@@ -780,7 +833,11 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">Semua status</SelectItem>
-              {STATUS_OPTIONS.map((status) => <SelectItem key={status} value={status}>{STATUS_LABELS[status] ?? status}</SelectItem>)}
+              {EVENT_STATUS.map((status) => (
+                <SelectItem key={status.value} value={status.value}>
+                  <EventStatusOption status={status.value} />
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Select
@@ -831,8 +888,9 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
                 const quota = getEventQuota(event)
                 const quotaPercent = Math.min(100, Math.round((participantCount / Math.max(quota, 1)) * 100))
                 const eventSpeakers = speakers.filter((speaker) => speaker.id === event.speaker_id)
-                const readOnly = ['FINISHED', 'COMPLETED', 'finished', 'completed'].includes(String(event.status))
-                const regionalEditable = ['draft', 'rejected'].includes(String(event.status).toLowerCase())
+                const normalizedStatus = normalizeEventStatus(event.status)
+                const readOnly = isCompletedStatus(event.status)
+                const regionalEditable = ['draft', 'rejected'].includes(normalizedStatus)
                 const latestApprovalLog = approvalLogs[event.id]?.[0]
 
                 return (
@@ -873,11 +931,11 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
                           <div>
                             <p className="text-xs font-bold uppercase tracking-wide text-amber-700">{isAdminPusat ? 'Approval Pusat' : 'Status Pengajuan'}</p>
                             <p className="mt-1 text-sm font-semibold text-[#1B4332]">
-                              {String(event.status).toUpperCase() === 'APPROVED'
-                                ? 'Disetujui dan siap publikasi'
-                                : String(event.status).toUpperCase() === 'REJECTED'
+                              {normalizedStatus === 'published'
+                                ? 'Published dan siap tampil publik'
+                                : normalizedStatus === 'rejected'
                                   ? 'Ditolak, menunggu revisi'
-                                  : String(event.status).toUpperCase() === 'PENDING'
+                                  : normalizedStatus === 'pending'
                                     ? 'Menunggu keputusan pusat'
                                     : 'Belum masuk approval aktif'}
                             </p>
@@ -926,35 +984,25 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
                         </Button>
                         {isAdminPusat ? (
                           <>
-                            <Select
+                            <EventStatusSelect
                               value={event.status}
-                              onValueChange={(value) => {
-                                if (value === 'REJECTED') {
-                                  setApprovalTarget({ event, status: 'REJECTED' })
+                              onChange={(value) => {
+                                if (value === 'published' && normalizedStatus === 'pending') {
+                                  setApprovalTarget({ event, status: 'published' })
                                   return
                                 }
-                                if (value === 'APPROVED' && event.status === 'PENDING') {
-                                  setApprovalTarget({ event, status: 'APPROVED' })
-                                  return
-                                }
-                                updateEventStatus(event.id, value as EventStatus)
+                                updateEventStatus(event.id, value)
                               }}
                               disabled={readOnly}
-                            >
-                              <SelectTrigger className="h-9 rounded-xl sm:w-[180px]">
-                                <SelectValue placeholder="Ganti status" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {STATUS_OPTIONS.map((status) => <SelectItem key={status} value={status}>{STATUS_LABELS[status] ?? status}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                            {event.status === 'PENDING' ? (
+                              triggerClassName="h-9 rounded-xl border-gray-200 bg-white transition-colors hover:bg-gray-50 sm:w-[210px]"
+                            />
+                            {normalizedStatus === 'pending' ? (
                               <>
-                                <Button type="button" className="w-full rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto" onClick={() => setApprovalTarget({ event, status: 'APPROVED' })}>
+                                <Button type="button" className="w-full rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto" onClick={() => setApprovalTarget({ event, status: 'published' })}>
                                   <CheckCircle2 className="h-4 w-4" />
                                   Approve
                                 </Button>
-                                <Button type="button" variant="outline" className="w-full rounded-xl border-red-100 text-red-600 hover:bg-red-50 sm:w-auto" onClick={() => setApprovalTarget({ event, status: 'REJECTED' })}>
+                                <Button type="button" variant="outline" className="w-full rounded-xl border-red-100 text-red-600 hover:bg-red-50 sm:w-auto" onClick={() => setApprovalTarget({ event, status: 'rejected' })}>
                                   <XCircle className="h-4 w-4" />
                                   Tolak
                                 </Button>
@@ -969,7 +1017,7 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
                                 Ajukan
                               </Button>
                             ) : null}
-                            {!['approved', 'live', 'finished', 'completed'].includes(String(event.status).toLowerCase()) ? (
+                            {!isPublishedStatus(event.status) ? (
                               <Button type="button" variant="outline" onClick={() => runRegionalAction(event, 'archive')} className="w-full rounded-xl border-red-100 text-red-600 hover:bg-red-50 sm:w-auto">
                                 <Archive className="h-4 w-4" />
                                 Arsipkan
@@ -1183,14 +1231,14 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
       }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{approvalTarget?.status === 'APPROVED' ? 'Approve Event?' : 'Tolak Approval Event?'}</DialogTitle>
+            <DialogTitle>{approvalTarget?.status === 'published' ? 'Approve Event?' : 'Tolak Approval Event?'}</DialogTitle>
             <DialogDescription>
-              {approvalTarget?.status === 'APPROVED' ? 'Event akan menjadi Published dan dapat tampil di publik sesuai pengaturan event.' : 'Event akan berstatus Ditolak dan alasan penolakan tersimpan di riwayat approval.'}
+              {approvalTarget?.status === 'published' ? 'Event akan menjadi Published dan dapat tampil di publik sesuai pengaturan event.' : 'Event akan berstatus Ditolak dan alasan penolakan tersimpan di riwayat approval.'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             <p className="text-sm font-bold text-[#1B4332]">{approvalTarget?.event.title}</p>
-            {approvalTarget?.status === 'REJECTED' ? (
+            {approvalTarget?.status === 'rejected' ? (
               <div className="space-y-1.5">
                 <Label>Alasan Penolakan</Label>
                 <Textarea value={approvalReason} onChange={(event) => setApprovalReason(event.target.value)} placeholder="Tuliskan revisi yang perlu dilakukan..." />
@@ -1199,8 +1247,8 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setApprovalTarget(null)} disabled={isApproving}>Batal</Button>
-            <Button type="button" className={approvalTarget?.status === 'APPROVED' ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-red-600 text-white hover:bg-red-700'} onClick={confirmApproval} disabled={isApproving}>
-              {isApproving ? 'Memproses...' : approvalTarget?.status === 'APPROVED' ? 'Approve' : 'Tolak'}
+            <Button type="button" className={approvalTarget?.status === 'published' ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-red-600 text-white hover:bg-red-700'} onClick={confirmApproval} disabled={isApproving}>
+              {isApproving ? 'Memproses...' : approvalTarget?.status === 'published' ? 'Approve' : 'Tolak'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1241,10 +1289,15 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold text-gray-600">Status</Label>
-                <Select value={form.status} onValueChange={(value) => setForm((current) => current ? { ...current, status: value as EventStatus } : current)} disabled={!isAdminPusat}>
-                  <SelectTrigger className="h-11 rounded-2xl border-gray-200 bg-white/90 focus:ring-emerald-500 disabled:opacity-100"><SelectValue placeholder="Status" /></SelectTrigger>
-                  <SelectContent>{STATUS_OPTIONS.map((status) => <SelectItem key={status} value={status}>{STATUS_LABELS[status] ?? status}</SelectItem>)}</SelectContent>
-                </Select>
+                <EventStatusSelect
+                  value={form.status}
+                  onChange={(value) => setForm((current) => current ? { ...current, status: value } : current)}
+                  disabled={!isAdminPusat}
+                  triggerClassName="h-11 rounded-xl border-gray-200 bg-white/90 transition-colors hover:bg-white focus:ring-emerald-500 disabled:opacity-100"
+                />
+                {isApprovalStatus(form.status) ? (
+                  <p className="text-xs font-semibold text-amber-700">Status approval saat ini: {eventStatusMeta(form.status).label}. Pilih lifecycle status hanya jika ingin mengubah status event.</p>
+                ) : null}
               </div>
               <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4 shadow-sm md:col-span-2">
                 <div className="flex items-center gap-2 text-sm font-extrabold text-[#1B4332]">

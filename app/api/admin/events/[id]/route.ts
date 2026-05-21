@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { AUTH_ROLES } from '@/lib/auth/roles'
+import { normalizeEventStatus } from '@/lib/event-status'
 import { archiveEventInDb, getEventFromDb, getParticipantsByEventFromDb, getPaymentRecordsByEventFromDb, updateEventInDb } from '@/lib/server/events'
 import { recordAdminActivity, requireAdminPermission, requireRegionalScope } from '@/lib/server/rbac'
 
@@ -22,8 +23,8 @@ async function scopedUpdate(request: NextRequest, id: string) {
   if (!existing) return NextResponse.json({ ok: false, error: 'Event tidak ditemukan' }, { status: 404 })
 
   const payload = await request.json()
-  const requestedStatus = payload.status ? String(payload.status).toUpperCase() : ''
-  if (requestedStatus === 'REJECTED' && !String(payload.approvalReason || payload.reason || '').trim()) {
+  const requestedStatus = payload.status ? normalizeEventStatus(payload.status) : ''
+  if (requestedStatus === 'rejected' && !String(payload.approvalReason || payload.reason || '').trim()) {
     throw new Error('Alasan penolakan approval wajib diisi')
   }
   if (session.role === AUTH_ROLES.regionalAdmin && (existing.scope !== 'regional' || existing.regionId !== session.regionalId)) {
@@ -43,11 +44,11 @@ async function scopedUpdate(request: NextRequest, id: string) {
   const event = await updateEventInDb(id, eventPayload)
   if (!event) return NextResponse.json({ ok: false, error: 'Event tidak ditemukan' }, { status: 404 })
 
-  const previousStatus = String(existing.status).toUpperCase()
-  const nextStatus = String(event.status).toUpperCase()
-  if (previousStatus !== nextStatus && (nextStatus === 'APPROVED' || nextStatus === 'REJECTED')) {
+  const previousStatus = normalizeEventStatus(existing.status)
+  const nextStatus = normalizeEventStatus(event.status)
+  if (previousStatus !== nextStatus && (nextStatus === 'published' || nextStatus === 'rejected')) {
     await recordAdminActivity(request, {
-      action: nextStatus === 'APPROVED' ? 'event.approval_approved' : 'event.approval_rejected',
+      action: nextStatus === 'published' ? 'event.approval_approved' : 'event.approval_rejected',
       entityType: 'event',
       entityId: event.id,
       metadata: {
