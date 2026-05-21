@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS speakers (
   keahlian JSON NOT NULL DEFAULT (JSON_ARRAY()),
   no_telp VARCHAR(20) NULL,
   portfolio_url VARCHAR(500) NULL,
-  kategori ENUM('Tech','Bisnis','Desain','Jurnalistik','Keagamaan','Lainnya') NOT NULL DEFAULT 'Lainnya',
+  kategori VARCHAR(100) NOT NULL DEFAULT 'Lainnya',
   foto_path VARCHAR(500) NULL,
   bio TEXT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

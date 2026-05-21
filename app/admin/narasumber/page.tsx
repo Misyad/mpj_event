@@ -10,9 +10,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { getSpeakerCategorySuggestions } from '@/lib/speaker-categories'
 import type { Speaker, SpeakerCategory } from '@/types'
 
-const CATEGORY_COLORS: Record<SpeakerCategory, string> = {
+const CATEGORY_COLORS: Record<string, string> = {
   Tech: 'bg-blue-100 text-blue-700',
   Bisnis: 'bg-amber-100 text-amber-700',
   Desain: 'bg-purple-100 text-purple-700',
@@ -21,7 +22,9 @@ const CATEGORY_COLORS: Record<SpeakerCategory, string> = {
   Lainnya: 'bg-gray-100 text-gray-600',
 }
 
-const CATEGORIES: SpeakerCategory[] = ['Tech', 'Bisnis', 'Desain', 'Jurnalistik', 'Keagamaan', 'Lainnya']
+function getCategoryColor(category: string) {
+  return CATEGORY_COLORS[category] ?? 'bg-gray-100 text-gray-600'
+}
 
 type SpeakerForm = {
   nama_lengkap: string
@@ -95,6 +98,7 @@ export default function NarasumberPage() {
     () => Array.from(new Set(speakers.flatMap((speaker) => speaker.keahlian))).sort(),
     [speakers],
   )
+  const allCategories = useMemo(() => getSpeakerCategorySuggestions(speakers), [speakers])
 
   const filtered = useMemo(() => {
     const keyword = search.trim().toLowerCase()
@@ -205,7 +209,7 @@ export default function NarasumberPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">Semua Kategori</SelectItem>
-            {CATEGORIES.map((category) => (
+            {allCategories.map((category) => (
               <SelectItem key={category} value={category}>{category}</SelectItem>
             ))}
           </SelectContent>
@@ -246,7 +250,7 @@ export default function NarasumberPage() {
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-[#1B4332] text-sm line-clamp-1">{speaker.nama_lengkap}</p>
                   <p className="text-xs text-gray-400 mt-0.5 truncate">{speaker.alamat || 'Alamat belum diisi'}</p>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full mt-1 inline-block ${CATEGORY_COLORS[speaker.kategori]}`}>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full mt-1 inline-block ${getCategoryColor(speaker.kategori)}`}>
                     {speaker.kategori}
                   </span>
                 </div>
@@ -326,14 +330,15 @@ export default function NarasumberPage() {
               </div>
               <div className="space-y-1.5">
                 <Label>Kategori</Label>
-                <Select value={editForm.kategori} onValueChange={(value) => setEditForm((current) => current ? { ...current, kategori: value as SpeakerCategory } : current)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Kategori" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CATEGORIES.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <Input
+                  list="speaker-edit-category-options"
+                  value={editForm.kategori}
+                  onChange={(event) => setEditForm((current) => current ? { ...current, kategori: event.target.value } : current)}
+                  placeholder="Contoh: Public Speaking"
+                />
+                <datalist id="speaker-edit-category-options">
+                  {allCategories.map((category) => <option key={category} value={category} />)}
+                </datalist>
               </div>
               <div className="space-y-1.5">
                 <Label>Alamat</Label>

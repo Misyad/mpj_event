@@ -771,13 +771,13 @@ export default function NewEventPage() {
         <div className="space-y-3">
           {form.speakers.length === 0 ? (
             <div className="text-center py-6 text-gray-400 text-sm bg-gray-50 rounded-xl">
-              Belum ada narasumber. Klik tombol di bawah untuk menambahkan.
+              Belum ada narasumber tambahan atau sesi khusus.
             </div>
           ) : (
             form.speakers.map((speaker, idx) => (
               <div key={speaker.id} className="p-4 bg-gray-50 rounded-xl space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs font-bold text-gray-500">Narasumber #{idx + 1}</p>
+                  <p className="text-xs font-bold text-gray-500">Narasumber Tambahan / Sesi #{idx + 1}</p>
                   <button type="button" onClick={() => removeSpeaker(speaker.id)} className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg transition-colors">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -807,7 +807,7 @@ export default function NewEventPage() {
 
           <button type="button" onClick={addSpeaker}
             className="w-full py-2.5 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-400 hover:border-[#1B4332] hover:text-[#1B4332] transition-colors flex items-center justify-center gap-2">
-            <Plus className="w-4 h-4" /> Tambah Narasumber
+            <Plus className="w-4 h-4" /> Tambah Narasumber Tambahan / Sesi
           </button>
         </div>
       </div>

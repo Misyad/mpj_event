@@ -1,18 +1,16 @@
 'use client'
 
 import type { FormEvent } from 'react'
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import type { SpeakerCategory } from '@/types'
-
-const CATEGORIES: SpeakerCategory[] = ['Tech', 'Bisnis', 'Desain', 'Jurnalistik', 'Keagamaan', 'Lainnya']
+import { getSpeakerCategorySuggestions } from '@/lib/speaker-categories'
+import type { Speaker, SpeakerCategory } from '@/types'
 
 interface FormData {
   nama_lengkap: string
@@ -42,6 +40,27 @@ export default function NewSpeakerPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState('')
+  const [existingSpeakers, setExistingSpeakers] = useState<Speaker[]>([])
+
+  useEffect(() => {
+    let active = true
+    async function loadSpeakers() {
+      try {
+        const response = await fetch('/api/admin/speakers', { cache: 'no-store' })
+        const payload = await response.json()
+        if (active && response.ok && payload.ok) setExistingSpeakers(payload.data ?? [])
+      } catch {
+        if (active) setExistingSpeakers([])
+      }
+    }
+
+    loadSpeakers()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const categorySuggestions = useMemo(() => getSpeakerCategorySuggestions(existingSpeakers), [existingSpeakers])
 
   function update<K extends keyof FormData>(key: K, value: FormData[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -140,12 +159,18 @@ export default function NewSpeakerPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold text-gray-600">Kategori <span className="text-red-400">*</span></Label>
-            <Select value={form.kategori} onValueChange={(value) => update('kategori', value as SpeakerCategory)}>
-              <SelectTrigger className="rounded-xl text-sm h-10"><SelectValue placeholder="Pilih kategori" /></SelectTrigger>
-              <SelectContent>
-                {CATEGORIES.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <Input
+              required
+              list="speaker-category-options"
+              value={form.kategori}
+              onChange={(event) => update('kategori', event.target.value)}
+              placeholder="Contoh: Public Speaking"
+              className="rounded-xl text-sm"
+            />
+            <datalist id="speaker-category-options">
+              {categorySuggestions.map((category) => <option key={category} value={category} />)}
+            </datalist>
+            <p className="text-[10px] text-gray-400">Bisa pilih kategori lama atau ketik kategori baru.</p>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold text-gray-600">No. Telepon / WhatsApp</Label>

@@ -2,8 +2,8 @@ import { randomUUID } from 'crypto'
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise'
 import { withDb } from '@/lib/server/db'
 import type { Speaker, SpeakerCategory } from '@/types'
+import { normalizeSpeakerCategory } from '@/lib/speaker-categories'
 
-const SPEAKER_CATEGORIES: SpeakerCategory[] = ['Tech', 'Bisnis', 'Desain', 'Jurnalistik', 'Keagamaan', 'Lainnya']
 const DEFAULT_SPEAKER_PHOTO = '/mpj-logo.jpeg'
 
 type SpeakerRow = RowDataPacket & {
@@ -39,7 +39,7 @@ async function ensureSpeakerSchema(connection: PoolConnection) {
       keahlian JSON NOT NULL DEFAULT (JSON_ARRAY()),
       no_telp VARCHAR(20) NULL,
       portfolio_url VARCHAR(500) NULL,
-      kategori ENUM('Tech','Bisnis','Desain','Jurnalistik','Keagamaan','Lainnya') NOT NULL DEFAULT 'Lainnya',
+      kategori VARCHAR(100) NOT NULL DEFAULT 'Lainnya',
       foto_path VARCHAR(500) NULL,
       bio TEXT NULL,
       created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -51,13 +51,31 @@ async function ensureSpeakerSchema(connection: PoolConnection) {
   await ensureColumn(connection, 'speakers', 'keahlian', 'JSON NOT NULL DEFAULT (JSON_ARRAY())')
   await ensureColumn(connection, 'speakers', 'no_telp', 'VARCHAR(20) NULL')
   await ensureColumn(connection, 'speakers', 'portfolio_url', 'VARCHAR(500) NULL')
-  await ensureColumn(connection, 'speakers', 'kategori', "ENUM('Tech','Bisnis','Desain','Jurnalistik','Keagamaan','Lainnya') NOT NULL DEFAULT 'Lainnya'")
+  await ensureColumn(connection, 'speakers', 'kategori', "VARCHAR(100) NOT NULL DEFAULT 'Lainnya'")
+  await ensureSpeakerCategoryColumn(connection)
   await ensureColumn(connection, 'speakers', 'foto_path', 'VARCHAR(500) NULL')
   await ensureColumn(connection, 'speakers', 'bio', 'TEXT NULL')
   await ensureColumn(connection, 'speakers', 'created_at', 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP')
   await ensureColumn(connection, 'speakers', 'updated_at', 'TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP')
   await ensureIndex(connection, 'speakers', 'speakers_name_idx', 'nama_lengkap')
   await ensureIndex(connection, 'speakers', 'speakers_category_idx', 'kategori')
+}
+
+async function ensureSpeakerCategoryColumn(connection: PoolConnection) {
+  const [rows] = await connection.query<RowDataPacket[]>(
+    `
+      SELECT DATA_TYPE AS dataType
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'speakers'
+        AND COLUMN_NAME = 'kategori'
+      LIMIT 1
+    `,
+  )
+
+  if (rows[0]?.dataType !== 'varchar') {
+    await connection.query("ALTER TABLE speakers MODIFY kategori VARCHAR(100) NOT NULL DEFAULT 'Lainnya'")
+  }
 }
 
 async function ensureColumn(connection: PoolConnection, tableName: string, columnName: string, definition: string) {
@@ -109,7 +127,7 @@ function parseSkills(value: SpeakerRow['keahlian']): string[] {
 }
 
 function normalizeCategory(value: unknown): SpeakerCategory {
-  return SPEAKER_CATEGORIES.includes(value as SpeakerCategory) ? (value as SpeakerCategory) : 'Lainnya'
+  return normalizeSpeakerCategory(value)
 }
 
 function normalizeSkills(value: unknown): string[] {
