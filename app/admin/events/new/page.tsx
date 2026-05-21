@@ -75,6 +75,35 @@ const defaultForm: FormData = {
 }
 
 const DEFAULT_POSTER_URL = 'https://picsum.photos/seed/mpj-event-new/800/450'
+const CHOICE_FIELD_TYPES: CustomFieldType[] = ['radio', 'dropdown', 'checkbox']
+const CUSTOM_FIELD_TYPE_OPTIONS: Array<{ value: CustomFieldType; label: string; description: string }> = [
+  { value: 'short_text', label: 'Jawaban Pendek', description: 'Untuk jawaban singkat seperti nama panggilan atau asal kota.' },
+  { value: 'long_text', label: 'Paragraf', description: 'Untuk jawaban panjang seperti alasan mengikuti event.' },
+  { value: 'radio', label: 'Pilihan Tunggal', description: 'Peserta memilih satu opsi yang terlihat langsung.' },
+  { value: 'dropdown', label: 'Dropdown', description: 'Peserta memilih satu opsi dari daftar ringkas.' },
+  { value: 'checkbox', label: 'Pilihan Banyak', description: 'Peserta bisa memilih lebih dari satu opsi.' },
+]
+
+function isChoiceFieldType(type: CustomFieldType) {
+  return CHOICE_FIELD_TYPES.includes(type)
+}
+
+function normalizeOptions(value: string | string[]) {
+  const source = Array.isArray(value) ? value.join(',') : value
+  const seen = new Set<string>()
+  return source
+    .split(',')
+    .map((option) => option.trim())
+    .filter((option) => {
+      if (!option || seen.has(option.toLowerCase())) return false
+      seen.add(option.toLowerCase())
+      return true
+    })
+}
+
+function getCustomFieldTypeDescription(type: CustomFieldType) {
+  return CUSTOM_FIELD_TYPE_OPTIONS.find((option) => option.value === type)?.description ?? ''
+}
 
 function SectionHeader({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
   return (
@@ -115,6 +144,7 @@ export default function NewEventPage() {
   const [submitError, setSubmitError] = useState('')
   const [paymenkuChannels, setPaymenkuChannels] = useState<PaymenkuChannel[]>([])
   const [isLoadingChannels, setIsLoadingChannels] = useState(false)
+  const [customFieldOptionText, setCustomFieldOptionText] = useState<Record<string, string>>({})
 
   function update(key: keyof FormData, value: FormData[typeof key]) {
     setForm(prev => ({ ...prev, [key]: value }))
@@ -170,14 +200,34 @@ export default function NewEventPage() {
 
   function removeCustomField(id: string) {
     update('customFields', form.customFields.filter(f => f.id !== id))
+    setCustomFieldOptionText((current) => {
+      const next = { ...current }
+      delete next[id]
+      return next
+    })
   }
 
   function updateCustomField(id: string, field: keyof CustomField, value: CustomField[keyof CustomField]) {
     update('customFields', form.customFields.map(f => f.id === id ? { ...f, [field]: value } : f))
   }
 
+  function updateCustomFieldType(id: string, type: CustomFieldType) {
+    update('customFields', form.customFields.map(f => {
+      if (f.id !== id) return f
+      return { ...f, type, options: isChoiceFieldType(type) ? f.options : [] }
+    }))
+    if (!isChoiceFieldType(type)) {
+      setCustomFieldOptionText((current) => {
+        const next = { ...current }
+        delete next[id]
+        return next
+      })
+    }
+  }
+
   function handleOptionsChange(id: string, value: string) {
-    const options = value.split(',').map(s => s.trim()).filter(Boolean)
+    setCustomFieldOptionText((current) => ({ ...current, [id]: value }))
+    const options = normalizeOptions(value)
     updateCustomField(id, 'options', options)
   }
 
@@ -214,13 +264,13 @@ export default function NewEventPage() {
         .map((field, index) => ({
           ...field,
           label: field.label.trim(),
-          options: field.options.map((option) => option.trim()).filter(Boolean),
+          options: normalizeOptions(field.options),
           order: index,
         }))
         .filter((field) => field.label)
-      const invalidChoiceField = customFields.find((field) => ['radio', 'dropdown', 'checkbox'].includes(field.type) && field.options.length === 0)
+      const invalidChoiceField = customFields.find((field) => isChoiceFieldType(field.type) && field.options.length < 2)
       if (invalidChoiceField) {
-        throw new Error(`Opsi wajib diisi untuk pertanyaan "${invalidChoiceField.label}"`)
+        throw new Error(`Minimal 2 opsi wajib diisi untuk pertanyaan "${invalidChoiceField.label}"`)
       }
       const classes = form.eventType === 'Sistem Kelas'
         ? form.classes
@@ -538,29 +588,30 @@ export default function NewEventPage() {
                         </div>
                         <div className="space-y-1.5">
                           <Label className="text-xs text-gray-500">Tipe Jawaban</Label>
-                          <Select value={field.type} onValueChange={v => v !== null && updateCustomField(field.id, 'type', v as CustomFieldType)}>
+                          <Select value={field.type} onValueChange={v => v !== null && updateCustomFieldType(field.id, v as CustomFieldType)}>
                             <SelectTrigger className="rounded-lg text-sm h-9">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="short_text">Jawaban Pendek</SelectItem>
-                              <SelectItem value="long_text">Paragraf</SelectItem>
-                              <SelectItem value="radio">Pilihan Ganda (Satu)</SelectItem>
-                              <SelectItem value="dropdown">Dropdown</SelectItem>
-                              <SelectItem value="checkbox">Kotak Centang (Banyak)</SelectItem>
+                              {CUSTOM_FIELD_TYPE_OPTIONS.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                  {option.label}
+                                </SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
+                          <p className="text-[10px] leading-relaxed text-gray-400">{getCustomFieldTypeDescription(field.type)}</p>
                         </div>
                       </div>
 
-                      {['radio', 'dropdown', 'checkbox'].includes(field.type) && (
+                      {isChoiceFieldType(field.type) && (
                         <div className="space-y-1.5 bg-gray-50 p-3 rounded-lg border border-gray-100">
-                          <Label className="text-xs text-gray-500">Opsi Pilihan (Pisahkan dengan koma)</Label>
+                          <Label className="text-xs text-gray-500">Opsi Pilihan</Label>
                           <Input 
-                            value={field.options.join(', ')} 
+                            value={customFieldOptionText[field.id] ?? field.options.join(', ')} 
                             onChange={e => handleOptionsChange(field.id, e.target.value)}
                             placeholder="S, M, L, XL, XXL" className="rounded-lg text-sm h-9 bg-white" />
-                          <p className="text-[10px] text-gray-400">Pastikan gunakan koma. Contoh: S, M, L</p>
+                          <p className="text-[10px] text-gray-400">Pisahkan opsi dengan koma. Minimal 2 opsi. Contoh: S, M, L</p>
                         </div>
                       )}
 

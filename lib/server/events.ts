@@ -580,9 +580,18 @@ function normalizeCustomFieldPayload(field: CustomField, order: number) {
   if (!label) return null
 
   const type = field.type
-  const options = Array.isArray(field.options) ? field.options.map(getString).filter(Boolean) : []
-  if (['radio', 'dropdown', 'checkbox'].includes(type) && options.length === 0) {
-    throw new Error(`Opsi wajib diisi untuk pertanyaan "${label}"`)
+  const optionKeys = new Set<string>()
+  const options = Array.isArray(field.options)
+    ? field.options
+        .map(getString)
+        .filter((option) => {
+          if (!option || optionKeys.has(option.toLowerCase())) return false
+          optionKeys.add(option.toLowerCase())
+          return true
+        })
+    : []
+  if (['radio', 'dropdown', 'checkbox'].includes(type) && options.length < 2) {
+    throw new Error(`Minimal 2 opsi wajib diisi untuk pertanyaan "${label}"`)
   }
 
   return {
