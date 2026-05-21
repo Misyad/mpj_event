@@ -7,6 +7,7 @@ import { AUTH_ROLES, getAuthRoleConfig } from '@/lib/auth/roles'
 import { ADMIN_PERMISSIONS, ADMIN_REGIONAL_DEFAULT_PERMISSIONS, type AdminPermission, hasPermission } from '@/lib/auth/permissions'
 import { createAccessToken, verifyAccessToken, type AccessTokenPayload } from '@/lib/auth/token'
 import { withDb } from '@/lib/server/db'
+import { ensureEventV4Schema } from '@/lib/server/events'
 
 type UserRow = RowDataPacket & {
   id: string
@@ -40,6 +41,20 @@ type RegionalRow = RowDataPacket & {
   status: string
 }
 
+type PublicAccountRow = RowDataPacket & {
+  id: string
+  full_name: string
+  email: string
+  whatsapp: string | null
+  niam: string | null
+  status: string
+  email_verified_at: Date | string | null
+  last_login_at: Date | string | null
+  created_at: Date | string
+  roles: string | null
+  total_events: number
+}
+
 export type AdminSession = AccessTokenPayload & {
   email?: string
   fullName?: string
@@ -52,6 +67,33 @@ export type PublicUserProfile = {
   whatsapp: string | null
   institution: string | null
   niam: string | null
+}
+
+export type PublicAccountUser = {
+  id: string
+  fullName: string
+  email: string
+  whatsapp: string | null
+  niam: string | null
+  status: string
+  roles: string[]
+  emailVerifiedAt: string | null
+  lastLoginAt: string | null
+  createdAt: string | null
+  totalEvents: number
+}
+
+export type PublicAccountSummary = {
+  total: number
+  active: number
+  suspended: number
+  inactive: number
+  newestUser: PublicAccountUser | null
+}
+
+export type PublicAccountList = {
+  summary: PublicAccountSummary
+  items: PublicAccountUser[]
 }
 
 export function hashPassword(password: string) {
@@ -866,6 +908,115 @@ export function requireRegionalScope(session: AdminSession, requestedRegionalId:
   if (!session.regionalId) throw new Error('Admin Regional tidak memiliki regional_id')
   if (requestedRegionalId && requestedRegionalId !== session.regionalId) throw new Error('Regional scope tidak valid')
   return session.regionalId
+}
+
+function toIsoString(value: Date | string | null | undefined) {
+  if (!value) return null
+  return value instanceof Date ? value.toISOString() : String(value)
+}
+
+function mapPublicAccountUser(row: PublicAccountRow): PublicAccountUser {
+  return {
+    id: row.id,
+    fullName: row.full_name,
+    email: row.email,
+    whatsapp: row.whatsapp,
+    niam: row.niam,
+    status: row.status,
+    roles: row.roles ? row.roles.split(',').filter(Boolean) : [],
+    emailVerifiedAt: toIsoString(row.email_verified_at),
+    lastLoginAt: toIsoString(row.last_login_at),
+    createdAt: toIsoString(row.created_at),
+    totalEvents: Number(row.total_events || 0),
+  }
+}
+
+export async function listPublicUserAccounts(filters: { search?: string; status?: string; limit?: number } = {}): Promise<PublicAccountList> {
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+    try {
+      await ensureRbacSchema(connection)
+      await ensureEventV4Schema(connection)
+
+      const search = filters.search?.trim() ?? ''
+      const status = filters.status && ['active', 'suspended', 'inactive'].includes(filters.status) ? filters.status : ''
+      const limit = Math.min(Math.max(Number(filters.limit || 100), 1), 250)
+      const searchLike = `%${search}%`
+
+      const baseWhere = `
+        EXISTS (
+          SELECT 1
+          FROM user_roles role_filter_ur
+          JOIN roles role_filter_r ON role_filter_r.id = role_filter_ur.role_id
+          WHERE role_filter_ur.user_id = u.id
+            AND role_filter_r.code = :roleCode
+        )
+        AND (:status = '' OR u.status = :status)
+        AND (
+          :search = ''
+          OR u.full_name LIKE :searchLike
+          OR u.email LIKE :searchLike
+          OR COALESCE(u.whatsapp, '') LIKE :searchLike
+          OR COALESCE(u.niam, '') LIKE :searchLike
+        )
+      `
+
+      const [rows] = await connection.query<PublicAccountRow[]>(
+        `
+          SELECT
+            u.id,
+            u.full_name,
+            u.email,
+            u.whatsapp,
+            u.niam,
+            u.status,
+            u.email_verified_at,
+            u.last_login_at,
+            u.created_at,
+            GROUP_CONCAT(DISTINCT r.code ORDER BY r.code SEPARATOR ',') AS roles,
+            COUNT(DISTINCT p.id) AS total_events
+          FROM users u
+          JOIN user_roles ur ON ur.user_id = u.id
+          JOIN roles r ON r.id = ur.role_id
+          LEFT JOIN mpj_event_participants p ON p.user_id = u.id
+          WHERE ${baseWhere}
+          GROUP BY u.id, u.full_name, u.email, u.whatsapp, u.niam, u.status, u.email_verified_at, u.last_login_at, u.created_at
+          ORDER BY u.created_at DESC
+          LIMIT :limit
+        `,
+        { roleCode: AUTH_ROLES.user, status, search, searchLike, limit },
+      )
+
+      const [summaryRows] = await connection.query<RowDataPacket[]>(
+        `
+          SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN u.status = 'active' THEN 1 ELSE 0 END) AS active,
+            SUM(CASE WHEN u.status = 'suspended' THEN 1 ELSE 0 END) AS suspended,
+            SUM(CASE WHEN u.status = 'inactive' THEN 1 ELSE 0 END) AS inactive
+          FROM users u
+          WHERE ${baseWhere}
+        `,
+        { roleCode: AUTH_ROLES.user, status, search, searchLike },
+      )
+
+      const items = rows.map(mapPublicAccountUser)
+      const summaryRow = summaryRows[0] ?? {}
+
+      return {
+        summary: {
+          total: Number(summaryRow.total || 0),
+          active: Number(summaryRow.active || 0),
+          suspended: Number(summaryRow.suspended || 0),
+          inactive: Number(summaryRow.inactive || 0),
+          newestUser: items[0] ?? null,
+        },
+        items,
+      }
+    } finally {
+      connection.release()
+    }
+  })
 }
 
 export async function listRegionalAdmins() {
