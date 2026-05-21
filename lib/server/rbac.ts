@@ -1405,3 +1405,129 @@ export async function updateRolePermissions(request: NextRequest, roleId: string
     }
   })
 }
+
+/**
+ * SECURITY: Create public user account with hardcoded 'user' role
+ * Role MUST NEVER be taken from request body to prevent role escalation
+ * This function is ONLY for public self-registration
+ */
+export async function createPublicUserAccount(
+  request: NextRequest,
+  payload: { fullName: string; email: string; password: string; whatsapp?: string },
+) {
+  // Validate input - reject if role is provided in attempt to exploit
+  const rawBody = await request.text()
+  if (rawBody.includes('"role"') || rawBody.includes("'role'")) {
+    console.warn(`[SECURITY] Role injection attempt detected in registration payload from ${requestMeta(request).ipAddress}`)
+    throw new Error('Payload format tidak valid')
+  }
+
+  return withDb(async (db) => {
+    const connection = await db.getConnection()
+    try {
+      await ensureRbacSchema(connection)
+      const fullName = payload.fullName.trim()
+      const email = payload.email.trim().toLowerCase()
+      const password = payload.password.trim()
+      const whatsapp = payload.whatsapp?.trim() || null
+
+      // Validation
+      if (!fullName || fullName.length < 3) throw new Error('Nama lengkap minimal 3 karakter')
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('Format email tidak valid')
+      if (!password || password.length < 8) throw new Error('Password minimal 8 karakter')
+      if (whatsapp && !/^[0-9+\-\s()]{10,}$/.test(whatsapp)) throw new Error('Format WhatsApp tidak valid')
+
+      // Check if email already exists
+      const [existingUsers] = await connection.query<RowDataPacket[]>('SELECT id FROM users WHERE email = :email LIMIT 1', { email })
+      if (existingUsers.length > 0) throw new Error('Email sudah terdaftar')
+
+      // HARDCODED: Always assign 'user' role for public registration - NEVER take from request
+      const [roleRows] = await connection.query<RowDataPacket[]>('SELECT id FROM roles WHERE code = :code LIMIT 1', { code: AUTH_ROLES.user })
+      const userRoleId = roleRows[0]?.id as string | undefined
+      if (!userRoleId) throw new Error('Role publik belum tersedia')
+
+      const userId = randomUUID()
+      const passwordHash = hashPassword(password)
+
+      await connection.query<ResultSetHeader>(
+        `
+          INSERT INTO users (id, full_name, email, password_hash, whatsapp, status, email_verified_at)
+          VALUES (:userId, :fullName, :email, :passwordHash, :whatsapp, 'active', NOW())
+        `,
+        { userId, fullName, email, passwordHash, whatsapp },
+      )
+
+      // SECURITY: Insert with hardcoded user role - NOT from request
+      await connection.query('INSERT INTO user_roles (user_id, role_id) VALUES (:userId, :roleId)', {
+        userId,
+        roleId: userRoleId,
+      })
+
+      // Log registration
+      await writeActivityLog(connection, {
+        userId,
+        action: 'user.registered',
+        entityType: 'user',
+        entityId: userId,
+        metadata: { email, registrationPath: 'public_registration' },
+        request,
+      })
+
+      console.log(`[REGISTRATION] ROLE ASSIGNED: public | Email: ${email} | UserID: ${userId} | Role: ${AUTH_ROLES.user}`)
+
+      return {
+        id: userId,
+        fullName,
+        email,
+        role: AUTH_ROLES.user,
+      }
+    } finally {
+      connection.release()
+    }
+  })
+}
+
+/**
+ * Generate OTP for email verification during registration
+ * OTP is stored in-memory with expiration (production should use Redis)
+ */
+const otpStore = new Map<string, { code: string; expiresAt: number; attempts: number }>()
+
+function generateOtpCode(): string {
+  return Math.random().toString().slice(2, 8).padStart(6, '0')
+}
+
+function storeOtp(email: string, code: string, validityMinutes = 10) {
+  // Clean expired entries
+  for (const [key, value] of otpStore.entries()) {
+    if (value.expiresAt < Date.now()) {
+      otpStore.delete(key)
+    }
+  }
+
+  const expiresAt = Date.now() + validityMinutes * 60 * 1000
+  otpStore.set(email, { code, expiresAt, attempts: 0 })
+  return { expiresAt, code }
+}
+
+function verifyOtpCode(email: string, code: string): boolean {
+  const otpData = otpStore.get(email)
+  if (!otpData) return false
+  if (otpData.expiresAt < Date.now()) {
+    otpStore.delete(email)
+    return false
+  }
+  if (otpData.code !== code) {
+    otpData.attempts++
+    if (otpData.attempts >= 5) {
+      otpStore.delete(email)
+      throw new Error('Terlalu banyak percobaan. Silakan minta OTP baru')
+    }
+    return false
+  }
+  return true
+}
+
+function removeOtp(email: string) {
+  otpStore.delete(email)
+}
