@@ -1,7 +1,6 @@
 'use client'
 
 import { use, useEffect, useState } from 'react'
-import Image from 'next/image'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ArrowLeft, Award, Building2, Calendar, CheckCircle, CheckCircle2, CreditCard, ExternalLink, History, Info, Loader2, MapPin, Pencil, Plus, QrCode, ScanLine, Trash2, Users, XCircle } from 'lucide-react'
 import Link from 'next/link'
@@ -15,6 +14,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { normalizeEvent } from '@/lib/event-api'
 import { EventFinancePanel } from '@/components/finance/EventFinancePanel'
 import { BadgeStatus } from '@/components/BadgeStatus'
+import { EventPosterImage } from '@/components/EventPosterImage'
 import { EVENT_STATUS, eventStatusMeta, isCompletedStatus, normalizeEventStatus } from '@/lib/event-status'
 import { formatEventDate, formatEventDateTime } from '@/utils/dateFormatter'
 import type { Event, Participant, StaffMember } from '@/types'
@@ -103,6 +103,10 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
         if (!staffResponse.ok || !staffPayload.ok) throw new Error(staffPayload.error || 'Gagal memuat panitia event')
 
         const loadedEvent = normalizeEvent(payload.data)
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('EVENT DETAIL', loadedEvent)
+          console.log('EVENT IMAGE', loadedEvent.poster_url || loadedEvent.posterUrl)
+        }
         if (!active) return
         setEvent(loadedEvent)
         setParticipants(payload.participants ?? [])
@@ -297,9 +301,7 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
         {/* Tab 1: Info & Acara */}
         <TabsContent value="info" className="mt-4">
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
-            <div className="relative aspect-video w-full overflow-hidden rounded-xl">
-              <Image src={event.poster_url} alt={event.title} fill sizes="(max-width: 768px) 100vw, 720px" className="object-cover" />
-            </div>
+            <EventPosterImage src={event.poster_url || event.posterUrl} alt={event.title} sizes="(max-width: 768px) 100vw, 720px" className="relative aspect-video w-full overflow-hidden rounded-xl" />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <InfoRow icon={<Calendar className="w-4 h-4 text-[#C9A227]" />} label="Tanggal" value={formatEventDateTime(event.start_date)} />
               <InfoRow icon={<MapPin className="w-4 h-4 text-[#C9A227]" />} label="Lokasi" value={event.location_name} />

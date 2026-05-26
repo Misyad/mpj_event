@@ -7,7 +7,7 @@ import { requireAdminPermission } from '@/lib/server/rbac'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-const MAX_SIZE_BYTES = 100 * 1024
+const MAX_SIZE_BYTES = 500 * 1024
 const ALLOWED_TYPES: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
@@ -40,13 +40,17 @@ export async function POST(request: NextRequest) {
       throw new Error('File poster wajib diupload')
     }
 
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('UPLOAD FILE', { name: file.name, type: file.type, size: file.size })
+    }
+
     const extension = ALLOWED_TYPES[file.type]
     if (!extension) {
-      throw new Error('Format poster harus JPG, PNG, atau WebP')
+      throw new Error('Format file tidak didukung')
     }
 
     if (file.size > MAX_SIZE_BYTES) {
-      throw new Error('Ukuran poster maksimal 100KB')
+      throw new Error('Ukuran gambar maksimal 500KB')
     }
 
     const buffer = Buffer.from(await file.arrayBuffer())

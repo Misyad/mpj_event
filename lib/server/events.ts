@@ -7,6 +7,7 @@ import { createPaymenkuTransaction, normalizePaymenkuStatus, type PaymenkuWebhoo
 import { getGatewayCredentialForEvent } from '@/lib/server/payment-gateway-credentials'
 import { renderCertificatePdf } from '@/lib/server/certificate-renderer'
 import { getStorageAdapter, sanitizePublicUploadUrl } from '@/lib/server/storage'
+import { normalizeEventPosterUrl } from '@/lib/event-poster'
 import {
   isCompletedStatus,
   isPublishedStatus,
@@ -391,8 +392,8 @@ function mapEvent(row: EventRow, customFields: CustomField[] = [], classes: Even
     title: row.title,
     slug,
     category: row.category,
-    poster_url: row.poster_url || 'https://picsum.photos/seed/mpj-event/800/450',
-    posterUrl: row.poster_url || 'https://picsum.photos/seed/mpj-event/800/450',
+    poster_url: normalizeEventPosterUrl(row.poster_url),
+    posterUrl: normalizeEventPosterUrl(row.poster_url),
     description: row.description ?? '',
     location_gmaps: row.location_gmaps ?? '',
     locationMapsUrl: row.location_gmaps ?? '',
@@ -2281,6 +2282,8 @@ export async function createEventInDb(payload: EventPayload) {
       const id = randomUUID()
       const slug = getString(payload.slug) || slugify(title)
       const status = normalizeEventStatus(payload.status || 'draft')
+      const posterUrl = getString(payload.poster_url || payload.posterUrl)
+      if (!posterUrl) throw new Error('Poster event wajib diupload')
       const isPublished = Boolean(payload.isPublished ?? payload.is_published ?? false)
       const paymentMethod = normalizePaymentMethod(payload.paymentMethod ?? payload.payment_method)
       const gatewayProvider = paymentMethod === 'gateway' ? getString(payload.gatewayProvider ?? payload.gateway_provider) || 'paymenku' : null
@@ -2311,7 +2314,7 @@ export async function createEventInDb(payload: EventPayload) {
           title,
           slug,
           category: payload.category || 'Pelatihan',
-          posterUrl: getString(payload.poster_url || payload.posterUrl) || null,
+          posterUrl,
           description: getString(payload.description),
           locationMapsUrl: getString(payload.location_gmaps || payload.locationMapsUrl),
           locationName: getString(payload.location_name || payload.location),
@@ -2381,7 +2384,11 @@ export async function updateEventInDb(identifier: string, payload: EventPayload)
       }
       if (payload.slug !== undefined) setField('slug', 'slugPayload', getString(payload.slug) || slugify(existing.title))
       if (payload.category !== undefined) setField('category', 'category', payload.category)
-      if (payload.poster_url !== undefined || payload.posterUrl !== undefined) setField('poster_url', 'posterUrl', getString(payload.poster_url || payload.posterUrl) || null)
+      if (payload.poster_url !== undefined || payload.posterUrl !== undefined) {
+        const posterUrl = getString(payload.poster_url || payload.posterUrl)
+        if (!posterUrl) throw new Error('Poster event wajib diupload')
+        setField('poster_url', 'posterUrl', posterUrl)
+      }
       if (payload.description !== undefined) setField('description', 'description', getString(payload.description))
       if (payload.location_gmaps !== undefined || payload.locationMapsUrl !== undefined) setField('location_gmaps', 'locationMapsUrl', getString(payload.location_gmaps || payload.locationMapsUrl))
       if (payload.location_name !== undefined || payload.location !== undefined) setField('location_name', 'locationName', getString(payload.location_name || payload.location))

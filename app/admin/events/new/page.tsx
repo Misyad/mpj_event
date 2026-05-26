@@ -75,7 +75,6 @@ const defaultForm: FormData = {
   speakerId: null, speakers: [], customFields: [], classes: [],
 }
 
-const DEFAULT_POSTER_URL = 'https://picsum.photos/seed/mpj-event-new/800/450'
 const CHOICE_FIELD_TYPES: CustomFieldType[] = ['radio', 'dropdown', 'checkbox']
 const CUSTOM_FIELD_TYPE_OPTIONS: Array<{ value: CustomFieldType; label: string; description: string }> = [
   { value: 'short_text', label: 'Jawaban Pendek', description: 'Untuk jawaban singkat seperti nama panggilan atau asal kota.' },
@@ -258,6 +257,11 @@ export default function NewEventPage() {
       return
     }
 
+    if (!form.posterFile) {
+      setSubmitError('Poster event wajib diupload.')
+      return
+    }
+
     setIsSubmitting(true)
 
     try {
@@ -294,7 +298,7 @@ export default function NewEventPage() {
         throw new Error(`Kuota kelas "${invalidClass.name}" harus berupa angka positif`)
       }
 
-      const posterUrl = form.posterFile ? await uploadPoster(form.posterFile) : DEFAULT_POSTER_URL
+      const posterUrl = await uploadPoster(form.posterFile)
       const eventTime = form.time || '00:00'
       const startDate = toEventDateTimeIso(form.date, eventTime)
       const response = await fetch('/api/admin/events', {
@@ -501,8 +505,9 @@ export default function NewEventPage() {
 
         {/* Poster upload */}
         <div className="space-y-1.5">
-          <Label className="text-xs font-semibold text-gray-600">Poster Event</Label>
+          <Label className="text-xs font-semibold text-gray-600">Poster Event <span className="text-red-400">*</span></Label>
           <PosterUploader
+            required
             onFileSelect={(file, previewUrl) => {
               update('posterFile', file)
               update('posterPreview', previewUrl)

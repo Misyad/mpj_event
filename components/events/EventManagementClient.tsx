@@ -1,6 +1,5 @@
 'use client'
 
-import Image from 'next/image'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import {
@@ -28,6 +27,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { BadgeStatus } from '@/components/BadgeStatus'
+import { EventPosterImage } from '@/components/EventPosterImage'
 import { PosterUploader } from '@/components/PosterUploader'
 import { SpeakerCombobox } from '@/components/SpeakerCombobox'
 import { Button } from '@/components/ui/button'
@@ -328,6 +328,8 @@ function buildForm(event: Event): EventForm {
 
 function payloadFromForm(form: EventForm, mode: EventManagementClientProps['mode']) {
   if (!form.title.trim()) throw new Error('Nama event wajib diisi')
+  const posterUrl = form.posterUrl.trim()
+  if (!posterUrl) throw new Error('Poster event wajib diupload')
   const eventDate = form.eventDate || form.date
   const eventTime = form.time || '00:00'
   if (!eventDate) throw new Error('Tanggal acara wajib diisi')
@@ -346,8 +348,8 @@ function payloadFromForm(form: EventForm, mode: EventManagementClientProps['mode
     slug,
     category: form.category,
     status: mode === 'admin-pusat' ? form.status : undefined,
-    poster_url: form.posterUrl || 'https://picsum.photos/seed/mpj-regional-event/800/450',
-    posterUrl: form.posterUrl || 'https://picsum.photos/seed/mpj-regional-event/800/450',
+    poster_url: posterUrl,
+    posterUrl,
     description: form.description,
     location_name: form.location,
     location: form.location,
@@ -567,6 +569,7 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
     try {
       setIsSaving(true)
       setError('')
+      if (!form.posterFile && !form.posterUrl.trim()) throw new Error('Poster event wajib diupload')
       const posterUrl = form.posterFile ? await uploadPoster(form.posterFile) : form.posterUrl
       const eventPayload = payloadFromForm({ ...form, posterUrl }, mode)
       const endpoint = isAdminPusat
@@ -896,7 +899,7 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
                 return (
                   <Card key={event.id} className="overflow-hidden rounded-3xl border-gray-100 bg-white py-0 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg">
                     <div className="relative h-48 w-full overflow-hidden bg-emerald-50">
-                      <Image src={event.poster_url || event.posterUrl || 'https://picsum.photos/seed/mpj-event/800/450'} alt={event.title} fill sizes="(max-width: 1280px) 100vw, 50vw" className="object-cover" />
+                      <EventPosterImage src={event.poster_url || event.posterUrl} alt={event.title} sizes="(max-width: 1280px) 100vw, 50vw" className="relative h-full w-full" />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
                       <div className="absolute left-4 top-4 flex flex-wrap items-center gap-2">
                         <BadgeStatus status={event.status} />
@@ -1351,10 +1354,11 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
               </div>
               <div className="space-y-2 md:col-span-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <Label className="text-xs font-semibold text-gray-600">Poster Event</Label>
-                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-700">Upload Poster / Ganti Poster / Hapus Poster</span>
+                  <Label className="text-xs font-semibold text-gray-600">Poster Event <span className="text-red-400">*</span></Label>
+                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold text-emerald-700">Wajib upload - Maks 500KB</span>
                 </div>
                 <PosterUploader
+                  required
                   key={`${editingEvent?.id ?? 'new'}-${form.posterUrl || 'empty'}`}
                   currentUrl={form.posterPreview || form.posterUrl}
                   onFileSelect={(file, previewUrl) => {

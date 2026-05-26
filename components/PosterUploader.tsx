@@ -8,12 +8,13 @@ interface PosterUploaderProps {
   onFileSelect?: (file: File, previewUrl: string) => void
   onClear?: () => void
   currentUrl?: string
+  required?: boolean
 }
 
-const MAX_SIZE_KB = 100
+const MAX_SIZE_KB = 500
 const ALLOWED = ['image/jpeg', 'image/webp', 'image/png']
 
-export function PosterUploader({ onFileSelect, onClear, currentUrl }: PosterUploaderProps) {
+export function PosterUploader({ onFileSelect, onClear, currentUrl, required }: PosterUploaderProps) {
   const inputId = useId()
   const [preview, setPreview] = useState<string | null>(currentUrl ?? null)
   const [imageRatio, setImageRatio] = useState<number | null>(null)
@@ -24,12 +25,15 @@ export function PosterUploader({ onFileSelect, onClear, currentUrl }: PosterUplo
   const processFile = useCallback((file: File) => {
     setError(null)
     if (!ALLOWED.includes(file.type)) {
-      setError('Format harus JPG, WebP, atau PNG')
+      setError('Format file tidak didukung')
       return
     }
     if (file.size > MAX_SIZE_KB * 1024) {
-      setError(`Ukuran maks ${MAX_SIZE_KB}KB. File Anda: ${Math.round(file.size / 1024)}KB`)
+      setError('Ukuran gambar maksimal 500KB')
       return
+    }
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('UPLOAD FILE', { name: file.name, type: file.type, size: file.size })
     }
     const reader = new FileReader()
     reader.onload = (event) => {
@@ -133,8 +137,8 @@ export function PosterUploader({ onFileSelect, onClear, currentUrl }: PosterUplo
             <p className="text-sm font-semibold text-gray-600">{isDragging ? 'Lepaskan file di sini' : 'Drag & drop poster'}</p>
             <p className="mt-0.5 text-xs text-gray-400">atau <span className="font-semibold text-emerald-700">klik untuk Upload Poster</span></p>
           </div>
-          <span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-semibold text-emerald-700">Upload Poster</span>
-          <p className="text-[10px] text-gray-400">JPG / WebP / PNG - Rasio mengikuti gambar - Maks 100KB</p>
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-semibold text-emerald-700">{required ? 'Upload Poster Wajib' : 'Upload Poster'}</span>
+          <p className="text-[10px] text-gray-400">JPG / JPEG / PNG / WebP - Rasio mengikuti gambar - Maks 500KB</p>
           <input id={inputId} type="file" accept=".jpg,.jpeg,.webp,.png" className="hidden" onChange={handleChange} />
         </label>
       )}

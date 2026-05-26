@@ -1,28 +1,16 @@
 import Link from 'next/link'
-import Image from 'next/image'
 import { Event } from '@/types'
 import { BadgeStatus } from '@/components/BadgeStatus'
+import { EventPosterImage } from '@/components/EventPosterImage'
 import { MapPin, Calendar } from 'lucide-react'
 import { formatEventDateTime } from '@/utils/dateFormatter'
 
-const DEFAULT_POSTER_URL = 'https://picsum.photos/seed/mpj-event/800/450'
-
 export function EventCard({ event }: { event: Event }) {
-  const posterUrl = normalizePosterUrl(event.poster_url || event.posterUrl)
-
   return (
     <Link href={`/events/${event.id}`}>
       <div className="bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-200">
         {/* Poster */}
-        <div className="relative w-full aspect-video">
-          <Image
-            src={posterUrl}
-            alt={event.title}
-            fill
-            className="object-cover"
-            sizes="430px"
-          />
-        </div>
+        <EventPosterImage src={event.poster_url || event.posterUrl} alt={event.title} sizes="430px" />
 
         {/* Info */}
         <div className="px-4 py-4 space-y-2">
@@ -46,13 +34,4 @@ export function EventCard({ event }: { event: Event }) {
       </div>
     </Link>
   )
-}
-
-function normalizePosterUrl(value?: string | null) {
-  if (!value) return DEFAULT_POSTER_URL
-
-  const legacyUploadMatch = value.match(/^\/uploads\/posters\/([^/?#]+)$/)
-  if (legacyUploadMatch) return `/api/uploads/posters/${legacyUploadMatch[1]}`
-
-  return value
 }

@@ -1,9 +1,9 @@
 import { notFound } from 'next/navigation'
-import Image from 'next/image'
 import Link from 'next/link'
 import { getEventById } from '@/lib/dummy'
 import { getEventFromDb } from '@/lib/server/events'
 import { BadgeStatus } from '@/components/BadgeStatus'
+import { EventPosterImage } from '@/components/EventPosterImage'
 import { QuotaBadge } from '@/components/QuotaBadge'
 import { CountdownTimer } from '@/components/CountdownTimer'
 import { isRegistrationOpenStatus } from '@/lib/event-status'
@@ -69,9 +69,7 @@ export async function EventDetailView({ identifier }: { identifier: string }) {
       </div>
 
       {/* Poster */}
-      <div className="relative w-full aspect-video">
-        <Image src={event.poster_url} alt={event.title} fill className="object-cover" priority sizes="430px" />
-      </div>
+      <EventPosterImage src={event.poster_url || event.posterUrl} alt={event.title} priority sizes="430px" />
 
       {/* Content */}
       <div className="px-4 py-5 space-y-4">
