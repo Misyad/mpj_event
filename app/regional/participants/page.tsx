@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { UserListSkeleton } from '@/components/skeletons/UserListSkeleton'
 import type { AttendanceStatus, Event, EventStatus, PaymentStatus, RegistrationPath } from '@/types'
 
 type RegionalParticipant = {
@@ -399,10 +400,7 @@ export default function RegionalParticipantsPage() {
 
         <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
           {isLoading ? (
-            <div className="flex items-center justify-center gap-2 py-16 text-sm font-semibold text-[#1B4332]">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Memuat peserta regional...
-            </div>
+            <UserListSkeleton />
           ) : (
             <>
               <div className="hidden overflow-x-auto md:block">

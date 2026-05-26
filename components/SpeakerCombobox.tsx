@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { AsyncSelectSkeleton } from '@/components/skeletons/AsyncSelectSkeleton'
 import { Textarea } from '@/components/ui/textarea'
 import { getSpeakerCategorySuggestions } from '@/lib/speaker-categories'
 import type { Speaker } from '@/types'
@@ -216,7 +217,7 @@ export function SpeakerCombobox({ value, onChange, placeholder = 'Cari narasumbe
 
             <div className="max-h-64 overflow-y-auto">
               {isLoading ? (
-                <div className="py-8 text-center text-sm text-gray-400">Memuat narasumber...</div>
+                <AsyncSelectSkeleton />
               ) : error ? (
                 <div className="py-8 px-4 text-center text-sm text-red-500">{error}</div>
               ) : filtered.length === 0 ? (

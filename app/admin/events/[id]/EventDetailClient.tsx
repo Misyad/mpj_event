@@ -15,6 +15,7 @@ import { normalizeEvent } from '@/lib/event-api'
 import { EventFinancePanel } from '@/components/finance/EventFinancePanel'
 import { BadgeStatus } from '@/components/BadgeStatus'
 import { EventPosterImage } from '@/components/EventPosterImage'
+import { EventDetailSkeleton } from '@/components/skeletons/EventDetailSkeleton'
 import { EVENT_STATUS, eventStatusMeta, isCompletedStatus, normalizeEventStatus } from '@/lib/event-status'
 import { formatEventDate, formatEventDateTime } from '@/utils/dateFormatter'
 import type { Event, Participant, StaffMember } from '@/types'
@@ -237,12 +238,7 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
   }
 
   if (isLoading) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center p-8 text-sm font-semibold text-[#1B4332]">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Memuat detail event...
-      </div>
-    )
+    return <EventDetailSkeleton />
   }
 
   if (!event) {

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Image from 'next/image'
 import { ImageIcon } from 'lucide-react'
+import { Skeleton } from '@/components/ui/skeleton'
 import { normalizeEventPosterUrl } from '@/lib/event-poster'
 
 interface EventPosterImageProps {
@@ -47,7 +48,7 @@ export function EventPosterImage({
   return (
     <div className={`${className} bg-slate-100`}>
       {!isLoaded ? (
-        <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-slate-100 via-slate-200 to-slate-100" />
+        <Skeleton className="absolute inset-0 rounded-none bg-gradient-to-r from-slate-100 via-slate-200 to-slate-100" />
       ) : null}
       <Image
         src={normalizedSrc}

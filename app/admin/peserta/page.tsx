@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { UserListSkeleton } from '@/components/skeletons/UserListSkeleton'
 
 type AdminParticipant = {
   id: string
@@ -332,10 +333,7 @@ export default function MasterPesertaPage() {
       {/* Table */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         {isLoading ? (
-          <div className="flex items-center justify-center gap-2 py-16 text-sm font-semibold text-[#1B4332]">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Memuat data peserta...
-          </div>
+          <UserListSkeleton />
         ) : (
         <>
         {/* Desktop Table */}

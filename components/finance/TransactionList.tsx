@@ -1,6 +1,7 @@
 import { ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTableSkeleton'
 import type { FinanceTransaction } from '@/components/finance/types'
 
 function formatCurrency(value: number) {
@@ -23,7 +24,7 @@ export function TransactionList({
   onVoid: (transactionId: string) => void
 }) {
   if (isLoading) {
-    return <div className="p-8 text-center text-sm font-semibold text-gray-500">Memuat transaksi...</div>
+    return <TransactionTableSkeleton />
   }
 
   if (transactions.length === 0) {

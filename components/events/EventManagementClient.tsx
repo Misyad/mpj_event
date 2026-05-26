@@ -30,6 +30,8 @@ import { BadgeStatus } from '@/components/BadgeStatus'
 import { EventPosterImage } from '@/components/EventPosterImage'
 import { PosterUploader } from '@/components/PosterUploader'
 import { SpeakerCombobox } from '@/components/SpeakerCombobox'
+import { EventCardSkeleton } from '@/components/skeletons/EventCardSkeleton'
+import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTableSkeleton'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -902,7 +904,7 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
 
         {isLoading ? (
           <div className="grid gap-4 xl:grid-cols-2">
-            {Array.from({ length: 4 }).map((_, index) => <EventSkeleton key={index} />)}
+            {Array.from({ length: 4 }).map((_, index) => <EventCardSkeleton key={index} />)}
           </div>
         ) : filteredEvents.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-gray-200 bg-white p-10 text-center shadow-sm">
@@ -1114,10 +1116,7 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
               </div>
 
               {isCertificateLoading ? (
-                <div className="rounded-2xl border border-gray-100 bg-white p-8 text-center text-sm font-semibold text-gray-500">
-                  <Loader2 className="mx-auto mb-2 h-4 w-4 animate-spin" />
-                  Memuat pengaturan sertifikat...
-                </div>
+                <TransactionTableSkeleton rows={4} columns={5} />
               ) : (
                 <>
                   <div className="flex items-center justify-between gap-4 rounded-2xl border border-gray-100 p-4">
@@ -1523,22 +1522,6 @@ function SummaryBox({ label, value }: { label: string; value: string }) {
     <div className="rounded-2xl border border-gray-100 p-3">
       <p className="text-xs text-gray-400">{label}</p>
       <p className="mt-1 line-clamp-2 text-sm font-semibold text-[#1B4332]">{value}</p>
-    </div>
-  )
-}
-
-function EventSkeleton() {
-  return (
-    <div className="overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-sm">
-      <div className="h-48 animate-pulse bg-gray-100" />
-      <div className="space-y-4 p-5">
-        <div className="h-5 w-2/3 animate-pulse rounded bg-gray-100" />
-        <div className="h-4 w-full animate-pulse rounded bg-gray-100" />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="h-14 animate-pulse rounded-2xl bg-gray-100" />
-          <div className="h-14 animate-pulse rounded-2xl bg-gray-100" />
-        </div>
-      </div>
     </div>
   )
 }

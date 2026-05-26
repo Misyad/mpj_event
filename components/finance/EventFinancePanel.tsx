@@ -18,6 +18,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { FinanceStatsSkeleton } from '@/components/skeletons/FinanceStatsSkeleton'
+import { Skeleton } from '@/components/ui/skeleton'
 
 function isDirtyForm(form: TransactionFormState, proofFile: File | null) {
   return Boolean(
@@ -215,7 +217,7 @@ export function EventFinancePanel({ eventId }: { eventId: string }) {
     <div className="space-y-4">
       {error ? <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</div> : null}
 
-      <FinanceStatsCards summary={summary} />
+      {isLoading && !data ? <FinanceStatsSkeleton /> : <FinanceStatsCards summary={summary} />}
 
       <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
         <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
@@ -241,32 +243,41 @@ export function EventFinancePanel({ eventId }: { eventId: string }) {
           </div>
         </div>
 
-        <div className="mb-4 rounded-2xl border border-gray-100 bg-gray-50/60 p-3">
-          <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-400">Filter Transaksi</p>
-          <div className="grid gap-2 md:grid-cols-4">
-            <Select value={typeFilter} onValueChange={(value) => value !== null && setTypeFilter(value)}>
-              <SelectTrigger className="h-10 rounded-xl bg-white"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">Semua Jenis</SelectItem>
-                <SelectItem value="income">Pemasukan</SelectItem>
-                <SelectItem value="expense">Pengeluaran</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={categoryFilter} onValueChange={(value) => value !== null && setCategoryFilter(value)}>
-              <SelectTrigger className="h-10 rounded-xl bg-white"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">Semua Kategori</SelectItem>
-                {categories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Input type="date" value={dateStart} onChange={(event) => setDateStart(event.target.value)} className="h-10 rounded-xl bg-white" />
-            <Input type="date" value={dateEnd} onChange={(event) => setDateEnd(event.target.value)} className="h-10 rounded-xl bg-white" />
+        {isLoading && !data ? (
+          <div className="mb-4 rounded-2xl border border-gray-100 bg-gray-50/60 p-3">
+            <Skeleton className="mb-3 h-3 w-28" />
+            <div className="grid gap-2 md:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-10 rounded-xl" />)}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="mb-4 rounded-2xl border border-gray-100 bg-gray-50/60 p-3">
+            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-400">Filter Transaksi</p>
+            <div className="grid gap-2 md:grid-cols-4">
+              <Select value={typeFilter} onValueChange={(value) => value !== null && setTypeFilter(value)}>
+                <SelectTrigger className="h-10 rounded-xl bg-white"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Semua Jenis</SelectItem>
+                  <SelectItem value="income">Pemasukan</SelectItem>
+                  <SelectItem value="expense">Pengeluaran</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={categoryFilter} onValueChange={(value) => value !== null && setCategoryFilter(value)}>
+                <SelectTrigger className="h-10 rounded-xl bg-white"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Semua Kategori</SelectItem>
+                  {categories.map((category) => <SelectItem key={category.id} value={category.id}>{category.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Input type="date" value={dateStart} onChange={(event) => setDateStart(event.target.value)} className="h-10 rounded-xl bg-white" />
+              <Input type="date" value={dateEnd} onChange={(event) => setDateEnd(event.target.value)} className="h-10 rounded-xl bg-white" />
+            </div>
+          </div>
+        )}
 
         <TransactionList
           transactions={transactions}
-          isLoading={isLoading}
+          isLoading={isLoading && !data}
           onEdit={openEditDialog}
           onVoid={voidTransaction}
         />

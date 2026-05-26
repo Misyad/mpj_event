@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTableSkeleton'
 
 type PaymentRow = {
   paymentId: string
@@ -118,7 +119,7 @@ export function FinancePaymentsClient({ title, description }: { title: string; d
 
         <div className="rounded-2xl border border-gray-100 bg-white shadow-sm">
           {isLoading ? (
-            <div className="p-10 text-center text-sm font-semibold text-gray-500">Memuat payment...</div>
+            <TransactionTableSkeleton rows={6} columns={8} />
           ) : filteredRows.length === 0 ? (
             <div className="p-10 text-center text-sm font-semibold text-gray-500">Tidak ada payment yang cocok.</div>
           ) : (

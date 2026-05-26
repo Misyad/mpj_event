@@ -5,6 +5,8 @@ import { Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { FinanceStatsSkeleton } from '@/components/skeletons/FinanceStatsSkeleton'
+import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTableSkeleton'
 
 type Summary = {
   totalIncome: number
@@ -103,14 +105,18 @@ export function FinanceRecapClient({ title, description }: { title: string; desc
 
         {error ? <div className="rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</div> : null}
 
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-          {cards.map((card) => (
-            <div key={card.label} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-              <p className="text-xs font-semibold text-gray-400">{card.label}</p>
-              <p className={`mt-2 text-xl font-extrabold ${card.color}`}>{card.value}</p>
-            </div>
-          ))}
-        </div>
+        {isLoading && !summary ? (
+          <FinanceStatsSkeleton />
+        ) : (
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+            {cards.map((card) => (
+              <div key={card.label} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                <p className="text-xs font-semibold text-gray-400">{card.label}</p>
+                <p className={`mt-2 text-xl font-extrabold ${card.color}`}>{card.value}</p>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="grid gap-3 sm:grid-cols-2 lg:w-[420px] lg:grid-cols-2">
           <div className="space-y-1.5">
@@ -125,7 +131,7 @@ export function FinanceRecapClient({ title, description }: { title: string; desc
 
         <div className="rounded-2xl border border-gray-100 bg-white shadow-sm">
           {isLoading ? (
-            <div className="p-10 text-center text-sm font-semibold text-gray-500">Memuat rekap...</div>
+            <TransactionTableSkeleton rows={6} columns={6} />
           ) : rows.length === 0 ? (
             <div className="p-10 text-center text-sm font-semibold text-gray-500">Belum ada transaksi keuangan.</div>
           ) : (
