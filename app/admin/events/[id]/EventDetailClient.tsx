@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ArrowLeft, Award, Building2, Calendar, CheckCircle, CheckCircle2, CreditCard, ExternalLink, History, Info, Loader2, MapPin, Pencil, Plus, QrCode, ScanLine, Trash2, Users, XCircle } from 'lucide-react'
+import { ArrowLeft, Award, Building2, Calendar, CheckCircle, CheckCircle2, CreditCard, Download, ExternalLink, Eye, FileText, History, Info, Loader2, MapPin, Pencil, Plus, QrCode, ScanLine, Trash2, Users, XCircle } from 'lucide-react'
 import Link from 'next/link'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
@@ -24,6 +24,15 @@ const PAYMENT_COLORS: Record<string, string> = {
   Free: 'bg-gray-100 text-gray-500', Unpaid: 'bg-red-100 text-red-600',
   Pending_Approval: 'bg-amber-100 text-amber-700', Paid: 'bg-emerald-100 text-emerald-700',
 }
+const PAYMENT_LABELS: Record<string, string> = {
+  Free: 'Gratis',
+  Unpaid: 'Unpaid',
+  Pending_Approval: 'Waiting Verification',
+  Paid: 'Paid',
+  paid_unverified: 'Waiting Verification',
+  verified: 'Confirmed Manual Payment',
+  rejected: 'Rejected',
+}
 function formatCurrency(n: number) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
 }
@@ -39,6 +48,29 @@ function isConfirmed(participant: Participant) {
 }
 function isAttended(participant: Participant) {
   return String(participant.status || participant.attendance_status).toLowerCase() === 'attended'
+}
+function getPaymentProof(participant: Participant) {
+  if (participant.payment?.paymentProof) return participant.payment.paymentProof
+  if (!participant.payment_proof_url) return null
+  return {
+    url: participant.payment_proof_url,
+    name: participant.payment_proof_name ?? null,
+    mimeType: participant.payment_proof_mime ?? null,
+    size: participant.payment_proof_size ?? null,
+    uploadedAt: participant.payment_proof_uploaded_at ?? null,
+  }
+}
+function formatFileSize(size?: number | null) {
+  if (!size) return null
+  if (size < 1024 * 1024) return `${Math.ceil(size / 1024)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+function isPdfProof(mimeType?: string | null, url?: string) {
+  return mimeType === 'application/pdf' || Boolean(url?.toLowerCase().endsWith('.pdf'))
+}
+function paymentLabel(participant: Participant) {
+  const status = participant.payment?.status ?? participant.payment_status
+  return PAYMENT_LABELS[status] ?? PAYMENT_LABELS[participant.payment_status] ?? participant.payment_status
 }
 
 type ApprovalLog = {
@@ -86,6 +118,10 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
   const [staffForm, setStaffForm] = useState<StaffForm | null>(null)
   const [staffSaving, setStaffSaving] = useState(false)
   const [staffDeletingId, setStaffDeletingId] = useState<string | null>(null)
+  const [proofPreview, setProofPreview] = useState<{
+    participant: Participant
+    proof: NonNullable<ReturnType<typeof getPaymentProof>>
+  } | null>(null)
 
   useEffect(() => {
     let active = true
@@ -109,6 +145,12 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
           console.log('EVENT IMAGE', loadedEvent.poster_url || loadedEvent.posterUrl)
         }
         if (!active) return
+        if (process.env.NODE_ENV !== 'production') {
+          for (const participant of payload.participants ?? []) {
+            console.log('PARTICIPANT PAYMENT', participant.payment)
+            console.log('PAYMENT PROOF', participant.payment?.paymentProof)
+          }
+        }
         setEvent(loadedEvent)
         setParticipants(payload.participants ?? [])
         setStaff(staffPayload.data ?? [])
@@ -381,46 +423,89 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
                   <TableHead className="font-bold text-[#1B4332]">Nama</TableHead>
                   <TableHead className="font-bold text-[#1B4332]">Jalur</TableHead>
                   <TableHead className="font-bold text-[#1B4332]">Pembayaran</TableHead>
+                  <TableHead className="font-bold text-[#1B4332]">Bukti Transfer</TableHead>
                   <TableHead className="font-bold text-[#1B4332]">Kehadiran</TableHead>
                   <TableHead className="font-bold text-[#1B4332]">Aksi</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
-                  {participants.map(p => (
-                    <TableRow key={p.id} className="hover:bg-green-50/40">
-                      <TableCell>
-                        <p className="font-semibold text-[#1B4332] text-sm">{participantName(p)}</p>
-                        <p className="text-xs text-gray-400">{participantInstitution(p)}</p>
-                      </TableCell>
-                      <TableCell><span className={`text-xs font-semibold px-2 py-1 rounded-full ${p.registration_path === 'NIAM' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>{p.registration_path}</span></TableCell>
-                      <TableCell><span className={`text-xs font-semibold px-2 py-1 rounded-full ${PAYMENT_COLORS[p.payment_status]}`}>{p.payment_status}</span></TableCell>
-                      <TableCell><span className={`text-xs font-semibold px-2 py-1 rounded-full ${p.attendance_status === 'Attended' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>{p.attendance_status}</span></TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1.5">
-                          {!isConfirmed(p) && (
-                            <button
-                              type="button"
-                              onClick={() => confirmParticipant(p.id)}
-                              disabled={confirmingId === p.id}
-                              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
-                            >
-                              {confirmingId === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
-                              Confirm
-                            </button>
+                  {participants.map((p) => {
+                    const proof = getPaymentProof(p)
+                    return (
+                      <TableRow key={p.id} className="hover:bg-green-50/40">
+                        <TableCell>
+                          <p className="font-semibold text-[#1B4332] text-sm">{participantName(p)}</p>
+                          <p className="text-xs text-gray-400">{participantInstitution(p)}</p>
+                        </TableCell>
+                        <TableCell><span className={`text-xs font-semibold px-2 py-1 rounded-full ${p.registration_path === 'NIAM' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>{p.registration_path}</span></TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <span className={`text-xs font-semibold px-2 py-1 rounded-full ${PAYMENT_COLORS[p.payment_status] ?? 'bg-gray-100 text-gray-600'}`}>{paymentLabel(p)}</span>
+                            {p.payment?.method ? <p className="text-[11px] text-gray-400">{p.payment.method} {p.payment.channel ? `- ${p.payment.channel}` : ''}</p> : null}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {proof ? (
+                            <div className="min-w-[180px] space-y-2">
+                              <div className="flex items-center gap-2">
+                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#e8f0ec] text-[#1B4332]">
+                                  <FileText className="h-4 w-4" />
+                                </span>
+                                <div className="min-w-0">
+                                  <p className="truncate text-xs font-bold text-[#1B4332]">{proof.name || 'Bukti transfer'}</p>
+                                  <p className="text-[11px] text-gray-400">
+                                    {[isPdfProof(proof.mimeType, proof.url) ? 'PDF' : 'Image', formatFileSize(proof.size)].filter(Boolean).join(' - ')}
+                                  </p>
+                                </div>
+                              </div>
+                              {proof.uploadedAt ? <p className="text-[11px] text-gray-400">Upload: {formatEventDate(proof.uploadedAt)}</p> : null}
+                              <div className="flex flex-wrap gap-1.5">
+                                <Button type="button" size="sm" variant="outline" className="h-8 rounded-lg px-2 text-xs" onClick={() => setProofPreview({ participant: p, proof })}>
+                                  <Eye className="h-3.5 w-3.5" />
+                                  Preview
+                                </Button>
+                                <a href={proof.url} target="_blank" rel="noopener noreferrer" className="inline-flex h-8 items-center gap-1 rounded-lg border border-gray-200 px-2 text-xs font-semibold text-gray-600 transition-colors hover:border-[#1B4332] hover:text-[#1B4332]">
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                  Buka
+                                </a>
+                                <a href={proof.url} download className="inline-flex h-8 items-center gap-1 rounded-lg border border-gray-200 px-2 text-xs font-semibold text-gray-600 transition-colors hover:border-[#1B4332] hover:text-[#1B4332]">
+                                  <Download className="h-3.5 w-3.5" />
+                                  Download
+                                </a>
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-xs font-semibold text-gray-400">Belum upload bukti</span>
                           )}
-                          <Link href={`/ticket/${encodeURIComponent(p.ticketCode || p.qr_token)}`} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-600 transition-colors hover:border-[#1B4332] hover:text-[#1B4332]">
-                            <ExternalLink className="h-3 w-3" />
-                            Tiket
-                          </Link>
-                          {isAttended(p) && eventCompleted ? (
-                            <span className="inline-flex items-center gap-1 rounded-lg border border-[#C9A227]/50 px-2.5 py-1 text-xs font-semibold text-[#8a6d16]">
-                              <Award className="h-3 w-3" />
-                              Generated via Event Card
-                            </span>
-                          ) : null}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                        </TableCell>
+                        <TableCell><span className={`text-xs font-semibold px-2 py-1 rounded-full ${p.attendance_status === 'Attended' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>{p.attendance_status}</span></TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1.5">
+                            {!isConfirmed(p) && (
+                              <button
+                                type="button"
+                                onClick={() => confirmParticipant(p.id)}
+                                disabled={confirmingId === p.id}
+                                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-60"
+                              >
+                                {confirmingId === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle className="h-3 w-3" />}
+                                Confirm
+                              </button>
+                            )}
+                            <Link href={`/ticket/${encodeURIComponent(p.ticketCode || p.qr_token)}`} className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-semibold text-gray-600 transition-colors hover:border-[#1B4332] hover:text-[#1B4332]">
+                              <ExternalLink className="h-3 w-3" />
+                              Tiket
+                            </Link>
+                            {isAttended(p) && eventCompleted ? (
+                              <span className="inline-flex items-center gap-1 rounded-lg border border-[#C9A227]/50 px-2.5 py-1 text-xs font-semibold text-[#8a6d16]">
+                                <Award className="h-3 w-3" />
+                                Generated via Event Card
+                              </span>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
                 </TableBody>
               </Table>
             )}
@@ -609,6 +694,47 @@ export default function EventDetailClient({ params }: { params: Promise<{ id: st
             <Button type="button" className="bg-[#1B4332] text-white hover:bg-[#14532d]" onClick={saveStaff} disabled={staffSaving}>
               {staffSaving ? 'Menyimpan...' : 'Simpan'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(proofPreview)} onOpenChange={(open) => {
+        if (!open) setProofPreview(null)
+      }}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Bukti Transfer</DialogTitle>
+            <DialogDescription>
+              {proofPreview ? `${participantName(proofPreview.participant)} - ${proofPreview.proof.name || 'Bukti transfer'}` : 'Preview bukti pembayaran peserta'}
+            </DialogDescription>
+          </DialogHeader>
+          {proofPreview ? (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-gray-100 bg-gray-50 p-3 text-xs text-gray-500">
+                <p className="font-semibold text-[#1B4332]">{proofPreview.proof.name || 'Bukti transfer'}</p>
+                <p>{[proofPreview.proof.mimeType, formatFileSize(proofPreview.proof.size), proofPreview.proof.uploadedAt ? formatEventDate(proofPreview.proof.uploadedAt) : null].filter(Boolean).join(' - ')}</p>
+              </div>
+              <div className="overflow-hidden rounded-2xl border border-gray-100 bg-gray-50">
+                {isPdfProof(proofPreview.proof.mimeType, proofPreview.proof.url) ? (
+                  <iframe title="Preview bukti transfer PDF" src={proofPreview.proof.url} className="h-[70vh] w-full bg-white" />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={proofPreview.proof.url} alt={`Bukti transfer ${participantName(proofPreview.participant)}`} className="max-h-[70vh] w-full object-contain" />
+                )}
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            {proofPreview ? (
+              <>
+                <a href={proofPreview.proof.url} target="_blank" rel="noopener noreferrer" className="inline-flex h-8 items-center justify-center rounded-lg border border-gray-200 px-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">
+                  Buka Tab Baru
+                </a>
+                <a href={proofPreview.proof.url} download className="inline-flex h-8 items-center justify-center rounded-lg bg-[#1B4332] px-3 text-sm font-medium text-white transition-colors hover:bg-[#14532d]">
+                  Download
+                </a>
+              </>
+            ) : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>

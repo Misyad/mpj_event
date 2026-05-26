@@ -129,6 +129,15 @@ type ParticipantRow = RowDataPacket & {
   ticket_code: string | null
   attended_at: Date | string | null
   payment_id: string | null
+  payment_proof_url: string | null
+  payment_proof_name: string | null
+  payment_proof_mime: string | null
+  payment_proof_size: number | null
+  payment_proof_uploaded_at: Date | string | null
+  payment_core_id?: string | null
+  payment_core_method?: string | null
+  payment_core_channel?: string | null
+  payment_core_status?: string | null
   custom_answers: string | Record<string, unknown> | null
   created_at?: Date | string | null
 }
@@ -207,6 +216,10 @@ type RegisterPayload = {
   email?: string
   final_amount?: number
   class_id?: string
+  payment_proof_url?: string
+  payment_proof_name?: string
+  payment_proof_mime?: string
+  payment_proof_size?: number
   custom_responses?: Record<string, unknown>
   customAnswers?: Record<string, unknown>
 }
@@ -341,6 +354,36 @@ function toNullableInteger(value: unknown) {
 
 function normalizePaymentMethod(value: unknown): EventPaymentMethod {
   return value === 'gateway' ? 'gateway' : 'manual'
+}
+
+function normalizePaymentProofPayload(payload: RegisterPayload, event: Event) {
+  if (!event.isPaidEvent || event.payment_method === 'gateway') {
+    return {
+      url: null,
+      name: null,
+      mime: null,
+      size: null,
+    }
+  }
+
+  const url = getString(payload.payment_proof_url)
+  if (!url) throw new Error('Bukti transfer wajib diupload')
+  if (!url.startsWith('/uploads/payment-proofs/')) throw new Error('URL bukti transfer tidak valid')
+
+  const mime = getString(payload.payment_proof_mime)
+  if (!['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(mime)) {
+    throw new Error('Format bukti transfer tidak didukung')
+  }
+
+  const size = Number(payload.payment_proof_size ?? 0)
+  if (!Number.isFinite(size) || size <= 0) throw new Error('Ukuran bukti transfer tidak valid')
+
+  return {
+    url,
+    name: getString(payload.payment_proof_name) || 'bukti-transfer',
+    mime,
+    size,
+  }
 }
 
 function normalizeGatewayConfig(value: unknown): Event['gateway_config'] {
@@ -666,6 +709,16 @@ function mapParticipant(row: ParticipantRow): Participant {
   const status = (row.status || row.attendance_status || 'registered') as NonNullable<Participant['status']>
   const ticketCode = row.ticket_code || row.qr_token
   const attendedAt = toIsoString(row.attended_at) ?? toIsoString(row.checked_in_at) ?? null
+  const proofUploadedAt = toIsoString(row.payment_proof_uploaded_at) ?? null
+  const paymentProof = row.payment_proof_url
+    ? {
+        url: row.payment_proof_url,
+        name: row.payment_proof_name,
+        mimeType: row.payment_proof_mime,
+        size: row.payment_proof_size,
+        uploadedAt: proofUploadedAt,
+      }
+    : null
 
   return {
     id: row.id,
@@ -675,12 +728,23 @@ function mapParticipant(row: ParticipantRow): Participant {
     type: row.registration_path === 'NIAM' ? 'niam' : 'umum',
     payment_status: row.payment_status as Participant['payment_status'],
     unique_amount: 0,
-    payment_proof_url: null,
+    payment_proof_url: row.payment_proof_url,
+    payment_proof_name: row.payment_proof_name,
+    payment_proof_mime: row.payment_proof_mime,
+    payment_proof_size: row.payment_proof_size,
+    payment_proof_uploaded_at: proofUploadedAt,
     attendance_status: status as Participant['attendance_status'],
     status,
     qr_token: ticketCode,
     ticketCode,
     paymentId: row.payment_id,
+    payment: {
+      id: row.payment_core_id ?? row.payment_id,
+      method: row.payment_core_method ?? null,
+      channel: row.payment_core_channel ?? null,
+      status: row.payment_core_status ?? row.payment_status,
+      paymentProof,
+    },
     classId: row.class_id,
     full_name: row.full_name ?? crew?.full_name ?? guest?.full_name,
     fullName: row.full_name ?? crew?.full_name ?? guest?.full_name,
@@ -788,6 +852,11 @@ export async function ensureEventV4Schema(connection: PoolConnection) {
   await ensureColumn(connection, 'mpj_event_participants', 'ticket_code', 'VARCHAR(120) NULL')
   await ensureColumn(connection, 'mpj_event_participants', 'attended_at', 'DATETIME NULL')
   await ensureColumn(connection, 'mpj_event_participants', 'payment_id', 'VARCHAR(120) NULL')
+  await ensureColumn(connection, 'mpj_event_participants', 'payment_proof_url', 'VARCHAR(700) NULL')
+  await ensureColumn(connection, 'mpj_event_participants', 'payment_proof_name', 'VARCHAR(255) NULL')
+  await ensureColumn(connection, 'mpj_event_participants', 'payment_proof_mime', 'VARCHAR(120) NULL')
+  await ensureColumn(connection, 'mpj_event_participants', 'payment_proof_size', 'INT NULL')
+  await ensureColumn(connection, 'mpj_event_participants', 'payment_proof_uploaded_at', 'DATETIME NULL')
   await ensureColumn(connection, 'mpj_event_participants', 'custom_answers', 'JSON NULL')
 
   await connection.query(`
@@ -1314,10 +1383,18 @@ export async function getParticipantsByEventFromDb(eventIdentifier: string) {
 
       const [rows] = await connection.query<ParticipantRow[]>(
         `
-          SELECT *
-          FROM mpj_event_participants
-          WHERE event_id = :eventId
-          ORDER BY created_at DESC
+          SELECT
+            p.*,
+            pc.id AS payment_core_id,
+            pc.payment_method AS payment_core_method,
+            pc.payment_channel AS payment_core_channel,
+            pc.status AS payment_core_status
+          FROM mpj_event_participants p
+          LEFT JOIN mpj_payment_core_payments pc
+            ON pc.source_type = 'event_registration'
+            AND pc.source_id = p.id
+          WHERE p.event_id = :eventId
+          ORDER BY p.created_at DESC
         `,
         { eventId: event.id },
       )
@@ -2843,7 +2920,8 @@ export async function registerEventParticipant(eventIdentifier: string, payload:
           ? requestedAmount
           : baseAmount
       const participantStatus = event.isPaidEvent ? 'registered' : 'confirmed'
-      const paymentStatus = event.isPaidEvent ? 'Unpaid' : 'Free'
+      const paymentStatus = event.isPaidEvent ? (usesGateway ? 'Unpaid' : 'Pending_Approval') : 'Free'
+      const paymentProof = normalizePaymentProofPayload(payload, event)
       const customAnswers = payload.customAnswers ?? payload.custom_responses ?? {}
       await validateCustomResponses(connection, event.id, customAnswers)
       const classId = await resolveRegistrationClassId(connection, event.id, getString(payload.class_id))
@@ -2870,12 +2948,16 @@ export async function registerEventParticipant(eventIdentifier: string, payload:
             id, event_id, registration_path, payment_status,
             attendance_status, qr_token, crew_json, guest_json,
             full_name, institution_name, whatsapp, user_id, niam, email,
-            class_id, status, ticket_code, payment_id, custom_answers
+            class_id, status, ticket_code, payment_id,
+            payment_proof_url, payment_proof_name, payment_proof_mime,
+            payment_proof_size, payment_proof_uploaded_at, custom_answers
           ) VALUES (
             :participantId, :eventId, :registrationPath, :paymentStatus,
             :attendanceStatus, :ticketCode, :crewJson, :guestJson,
             :fullName, :institution, :whatsapp, :userId, :niam, :email,
-            :classId, :participantStatus, :ticketCode, :paymentId, CAST(:customAnswers AS JSON)
+            :classId, :participantStatus, :ticketCode, :paymentId,
+            :paymentProofUrl, :paymentProofName, :paymentProofMime,
+            :paymentProofSize, :paymentProofUploadedAt, CAST(:customAnswers AS JSON)
           )
         `,
         {
@@ -2896,6 +2978,11 @@ export async function registerEventParticipant(eventIdentifier: string, payload:
           classId,
           participantStatus,
           paymentId: null,
+          paymentProofUrl: paymentProof.url,
+          paymentProofName: paymentProof.name,
+          paymentProofMime: paymentProof.mime,
+          paymentProofSize: paymentProof.size,
+          paymentProofUploadedAt: paymentProof.url ? new Date() : null,
           customAnswers: JSON.stringify(customAnswers),
         },
       )
@@ -2914,6 +3001,29 @@ export async function registerEventParticipant(eventIdentifier: string, payload:
           'UPDATE mpj_event_participants SET payment_id = :paymentId WHERE id = :participantId',
           { participantId, paymentId: paymentRequest.paymentId },
         )
+        if (paymentProof.url) {
+          await connection.query<ResultSetHeader>(
+            `
+              UPDATE mpj_payment_core_payments
+              SET status = 'paid_unverified',
+                  external_status = 'paid_unverified',
+                  payment_info = CAST(:paymentInfo AS JSON)
+              WHERE id = :paymentId
+            `,
+            {
+              paymentId: paymentRequest.paymentId,
+              paymentInfo: JSON.stringify({
+                ...(paymentRequest.paymentInfo ?? {}),
+                paymentProof: {
+                  url: paymentProof.url,
+                  name: paymentProof.name,
+                  mimeType: paymentProof.mime,
+                  size: paymentProof.size,
+                },
+              }),
+            },
+          )
+        }
       }
 
       await connection.query<ResultSetHeader>(
@@ -2922,7 +3032,20 @@ export async function registerEventParticipant(eventIdentifier: string, payload:
       )
 
       const [participantRows] = await connection.query<ParticipantRow[]>(
-        'SELECT * FROM mpj_event_participants WHERE id = :participantId LIMIT 1',
+        `
+          SELECT
+            p.*,
+            pc.id AS payment_core_id,
+            pc.payment_method AS payment_core_method,
+            pc.payment_channel AS payment_core_channel,
+            pc.status AS payment_core_status
+          FROM mpj_event_participants p
+          LEFT JOIN mpj_payment_core_payments pc
+            ON pc.source_type = 'event_registration'
+            AND pc.source_id = p.id
+          WHERE p.id = :participantId
+          LIMIT 1
+        `,
         { participantId },
       )
 

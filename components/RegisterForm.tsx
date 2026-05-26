@@ -56,6 +56,10 @@ type SubmittedPayment = {
 
 type RegisterErrorState = '' | 'submit-unavailable'
 
+const MAX_PAYMENT_PROOF_SIZE = 2 * 1024 * 1024
+const PAYMENT_PROOF_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
+const PAYMENT_PROOF_ACCEPT = PAYMENT_PROOF_TYPES.join(',')
+
 function generateUniqueCode() {
   return Math.floor(Math.random() * 900) + 100
 }
@@ -244,12 +248,52 @@ export function RegisterForm({
     setInstitutionOpen(false)
   }
 
+  function handleProofFile(file: File | null) {
+    setSubmitError('')
+    if (!file) {
+      setForm((current) => ({ ...current, proofFile: null }))
+      return
+    }
+    if (!PAYMENT_PROOF_TYPES.includes(file.type)) {
+      setForm((current) => ({ ...current, proofFile: null }))
+      setSubmitError('Format bukti transfer harus JPG, PNG, WebP, atau PDF')
+      return
+    }
+    if (file.size > MAX_PAYMENT_PROOF_SIZE) {
+      setForm((current) => ({ ...current, proofFile: null }))
+      setSubmitError('Ukuran bukti transfer maksimal 2MB')
+      return
+    }
+    setForm((current) => ({ ...current, proofFile: file }))
+  }
+
+  async function uploadPaymentProof(file: File) {
+    const body = new FormData()
+    body.append('file', file)
+    if (process.env.NODE_ENV !== 'production') console.log('UPLOAD FILE', file)
+    const response = await fetch(`/api/events/${event.id}/payment-proof`, {
+      method: 'POST',
+      body,
+    })
+    const payload = await response.json()
+    if (!response.ok || !payload.ok) throw new Error(payload.error || 'Upload bukti transfer gagal')
+    return payload.data as {
+      url: string
+      name: string
+      mimeType: string
+      size: number
+    }
+  }
+
   async function submitRegistration() {
     setSubmitError('')
     setErrorState('')
     setIsSubmitting(true)
 
     try {
+      const proof = event.is_paid && !usesGateway && form.proofFile
+        ? await uploadPaymentProof(form.proofFile)
+        : null
       const identityPayload = isLoggedIn
         ? {}
         : {
@@ -269,7 +313,10 @@ export function RegisterForm({
           ...identityPayload,
           final_amount: totalAmount,
           class_id: form.selectedClassId,
-          payment_proof_name: form.proofFile?.name,
+          payment_proof_url: proof?.url,
+          payment_proof_name: proof?.name,
+          payment_proof_mime: proof?.mimeType,
+          payment_proof_size: proof?.size,
           custom_responses: form.customResponses,
         }),
       })
@@ -635,10 +682,10 @@ export function RegisterForm({
                       <Upload className="h-5 w-5 text-[#1B4332]" />
                     </div>
                     <p className="text-sm font-semibold text-[#1B4332]">
-                      {form.proofFile ? form.proofFile.name : 'Tap untuk upload foto'}
+                      {form.proofFile ? form.proofFile.name : 'Tap untuk upload bukti'}
                     </p>
-                    <p className="mt-0.5 text-xs text-gray-400">JPG, PNG, max 2MB</p>
-                    <input type="file" accept="image/*" className="hidden" onChange={(eventValue) => setForm((current) => ({ ...current, proofFile: eventValue.target.files?.[0] ?? null }))} />
+                    <p className="mt-0.5 text-xs text-gray-400">JPG, PNG, WebP, PDF, max 2MB</p>
+                    <input type="file" accept={PAYMENT_PROOF_ACCEPT} className="hidden" onChange={(eventValue) => handleProofFile(eventValue.target.files?.[0] ?? null)} />
                   </label>
                 </div>
 

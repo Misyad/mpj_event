@@ -193,11 +193,28 @@ export interface Participant {
   payment_status: PaymentStatus
   unique_amount: number
   payment_proof_url: string | null
+  payment_proof_name?: string | null
+  payment_proof_mime?: string | null
+  payment_proof_size?: number | null
+  payment_proof_uploaded_at?: string | null
   attendance_status: AttendanceStatus
   status?: AttendanceStatus
   qr_token: string
   ticketCode?: string
   paymentId?: string | null
+  payment?: {
+    id?: string | null
+    method?: EventPaymentMethod | string | null
+    channel?: string | null
+    status?: string | null
+    paymentProof?: {
+      url: string
+      name?: string | null
+      mimeType?: string | null
+      size?: number | null
+      uploadedAt?: string | null
+    } | null
+  } | null
   classId?: string | null
   full_name?: string
   fullName?: string
