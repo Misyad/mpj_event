@@ -2376,6 +2376,27 @@ export async function updateEventInDb(identifier: string, payload: EventPayload)
         values[key] = value
       }
 
+      function assertPublishedPricingUnchanged(field: 'price_niam' | 'price_public' | 'is_paid', currentValue: unknown, nextValue: unknown) {
+        if (!published) return
+        const currentNumber = Number(currentValue ?? 0)
+        const nextNumber = Number(nextValue ?? 0)
+        const changed = currentNumber !== nextNumber
+
+        if (process.env.NODE_ENV !== 'production') {
+          console.log('EVENT STATUS', existing.status)
+          console.log('IS PUBLISHED', published)
+          console.log('PRICE CHANGED', { field, currentValue: currentNumber, nextValue: nextNumber, changed })
+        }
+
+        if (changed) {
+          throw new Error(
+            field === 'is_paid'
+              ? 'Status event berbayar tidak boleh diubah setelah publish'
+              : 'Harga tidak boleh diubah setelah publish',
+          )
+        }
+      }
+
       if (payload.title !== undefined) {
         const title = getString(payload.title)
         if (!title) throw new Error('Nama event wajib diisi')
@@ -2397,7 +2418,11 @@ export async function updateEventInDb(identifier: string, payload: EventPayload)
       if (payload.start_date !== undefined || payload.dateStart !== undefined) setField('start_date', 'startDate', toNullableDate(payload.start_date ?? payload.dateStart))
       if (payload.end_date !== undefined || payload.dateEnd !== undefined) setField('end_date', 'endDate', toNullableDate(payload.end_date ?? payload.dateEnd))
       if (payload.is_open_for_public !== undefined || payload.allowPublic !== undefined) setField('is_open_for_public', 'allowPublic', toBooleanInt(payload.allowPublic ?? payload.is_open_for_public))
-      if (payload.is_paid !== undefined || payload.isPaidEvent !== undefined) setField('is_paid', 'isPaid', toBooleanInt(payload.isPaidEvent ?? payload.is_paid))
+      if (payload.is_paid !== undefined || payload.isPaidEvent !== undefined) {
+        const nextIsPaid = toBooleanInt(payload.isPaidEvent ?? payload.is_paid)
+        assertPublishedPricingUnchanged('is_paid', existing.is_paid, nextIsPaid)
+        setField('is_paid', 'isPaid', nextIsPaid)
+      }
       if (payload.payment_method !== undefined || payload.paymentMethod !== undefined) {
         const paymentMethod = normalizePaymentMethod(payload.paymentMethod ?? payload.payment_method)
         setField('payment_method', 'paymentMethod', paymentMethod)
@@ -2414,12 +2439,14 @@ export async function updateEventInDb(identifier: string, payload: EventPayload)
         setField('bank_account_json', 'bankAccount', stringifyBankAccount(payload.bankAccount ?? payload.bank_account))
       }
       if (payload.price_niam !== undefined || payload.priceNiam !== undefined) {
-        if (published) throw new Error('Harga tidak boleh diubah setelah publish')
-        setField('price_niam', 'priceNiam', toNullableInteger(payload.priceNiam ?? payload.price_niam) ?? 0)
+        const nextPriceNiam = toNullableInteger(payload.priceNiam ?? payload.price_niam) ?? 0
+        assertPublishedPricingUnchanged('price_niam', existing.price_niam, nextPriceNiam)
+        setField('price_niam', 'priceNiam', nextPriceNiam)
       }
       if (payload.price_public !== undefined || payload.priceUmum !== undefined) {
-        if (published) throw new Error('Harga tidak boleh diubah setelah publish')
-        setField('price_public', 'priceUmum', toNullableInteger(payload.priceUmum ?? payload.price_public) ?? 0)
+        const nextPricePublic = toNullableInteger(payload.priceUmum ?? payload.price_public) ?? 0
+        assertPublishedPricingUnchanged('price_public', existing.price_public, nextPricePublic)
+        setField('price_public', 'priceUmum', nextPricePublic)
       }
       if (payload.status !== undefined) {
         const status = normalizeEventStatus(payload.status)

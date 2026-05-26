@@ -292,6 +292,19 @@ function registerHref(event: Event) {
   return `/register/${encodeURIComponent(event.slug || event.id)}`
 }
 
+function isEventPricingLocked(event?: Event | null) {
+  if (!event) return false
+  return Boolean(event.isPublished) || isPublishedStatus(event.status)
+}
+
+function getLockedPricingForm(event: Event) {
+  return {
+    isPaid: Boolean(event.is_paid ?? event.isPaidEvent),
+    priceNiam: String(event.price_niam ?? event.priceNiam ?? 0),
+    pricePublic: String(event.price_public ?? event.priceUmum ?? 0),
+  }
+}
+
 function buildForm(event: Event): EventForm {
   const eventExtra = getEventExtra(event)
   const dateParts = getEventDateParts(eventExtra.event_date ?? eventExtra.eventDate ?? event.start_date ?? event.dateStart)
@@ -571,7 +584,22 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
       setError('')
       if (!form.posterFile && !form.posterUrl.trim()) throw new Error('Poster event wajib diupload')
       const posterUrl = form.posterFile ? await uploadPoster(form.posterFile) : form.posterUrl
-      const eventPayload = payloadFromForm({ ...form, posterUrl }, mode)
+      const lockedPricing = editingEvent ? isEventPricingLocked(editingEvent) : false
+      if (process.env.NODE_ENV !== 'production' && editingEvent) {
+        const lockedForm = getLockedPricingForm(editingEvent)
+        console.log('EVENT STATUS', editingEvent.status)
+        console.log('IS PUBLISHED', lockedPricing)
+        console.log('PRICE CHANGED', {
+          isPaid: lockedForm.isPaid !== form.isPaid,
+          priceNiam: Number(lockedForm.priceNiam || 0) !== Number(form.priceNiam || 0),
+          pricePublic: Number(lockedForm.pricePublic || 0) !== Number(form.pricePublic || 0),
+        })
+      }
+      const eventPayload = payloadFromForm({
+        ...form,
+        posterUrl,
+        ...(editingEvent && lockedPricing ? getLockedPricingForm(editingEvent) : {}),
+      }, mode)
       const endpoint = isAdminPusat
         ? `/api/admin/events/${editingEvent?.id}`
         : editingEvent
@@ -763,6 +791,8 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
       qr_code: `${typeof window === 'undefined' ? '' : window.location.origin}/verify/certificate/${encodeURIComponent(sampleCode)}`,
     }
   }
+
+  const editingPricingLocked = isEventPricingLocked(editingEvent)
 
   return (
     <main className="min-h-screen bg-[#F4F7F5] p-4 md:p-8">
@@ -1387,22 +1417,40 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
                   <Input type="number" min="1" value={form.maxParticipants} onChange={(event) => setForm((current) => current ? { ...current, maxParticipants: event.target.value } : current)} className="h-11 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500" placeholder="Tidak dibatasi" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-gray-600">Harga NIAM</Label>
-                  <Input type="number" min="0" value={form.priceNiam} onChange={(event) => setForm((current) => current ? { ...current, priceNiam: event.target.value } : current)} className="h-11 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500" />
+                  <Label className="flex items-center gap-1.5 text-xs font-semibold text-gray-600">
+                    Harga NIAM
+                    {editingPricingLocked ? <Lock className="h-3 w-3 text-amber-600" /> : null}
+                  </Label>
+                  <Input type="number" min="0" value={form.priceNiam} disabled={editingPricingLocked} onChange={(event) => setForm((current) => current ? { ...current, priceNiam: event.target.value } : current)} className="h-11 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500 disabled:bg-gray-100 disabled:text-gray-500" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-gray-600">Harga Umum</Label>
-                  <Input type="number" min="0" value={form.pricePublic} onChange={(event) => setForm((current) => current ? { ...current, pricePublic: event.target.value } : current)} className="h-11 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500" />
+                  <Label className="flex items-center gap-1.5 text-xs font-semibold text-gray-600">
+                    Harga Umum
+                    {editingPricingLocked ? <Lock className="h-3 w-3 text-amber-600" /> : null}
+                  </Label>
+                  <Input type="number" min="0" value={form.pricePublic} disabled={editingPricingLocked} onChange={(event) => setForm((current) => current ? { ...current, pricePublic: event.target.value } : current)} className="h-11 rounded-2xl border-gray-200 bg-white/90 focus-visible:ring-emerald-500 disabled:bg-gray-100 disabled:text-gray-500" />
                 </div>
               </div>
+              {editingPricingLocked ? (
+                <div className="flex items-start gap-2 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800 md:col-span-2">
+                  <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <div>
+                    <p>Harga dikunci setelah event dipublish</p>
+                    <p className="mt-0.5 font-medium text-amber-700">Harga tidak dapat diubah setelah event dipublish.</p>
+                  </div>
+                </div>
+              ) : null}
               <div className="grid gap-3 md:col-span-2 sm:grid-cols-2">
                 <label className="flex items-center justify-between rounded-2xl border border-gray-100 bg-white/80 px-4 py-3 text-sm font-semibold text-[#1B4332] shadow-sm">
                   Jalur umum
                   <input type="checkbox" checked={form.isOpenForPublic} onChange={(event) => setForm((current) => current ? { ...current, isOpenForPublic: event.target.checked } : current)} />
                 </label>
-                <label className="flex items-center justify-between rounded-2xl border border-gray-100 bg-white/80 px-4 py-3 text-sm font-semibold text-[#1B4332] shadow-sm">
-                  Event berbayar
-                  <input type="checkbox" checked={form.isPaid} onChange={(event) => setForm((current) => current ? { ...current, isPaid: event.target.checked } : current)} />
+                <label className={`flex items-center justify-between rounded-2xl border px-4 py-3 text-sm font-semibold shadow-sm ${editingPricingLocked ? 'border-amber-100 bg-amber-50/70 text-amber-800' : 'border-gray-100 bg-white/80 text-[#1B4332]'}`}>
+                  <span className="flex items-center gap-2">
+                    Event berbayar
+                    {editingPricingLocked ? <Lock className="h-3.5 w-3.5" /> : null}
+                  </span>
+                  <input type="checkbox" checked={form.isPaid} disabled={editingPricingLocked} onChange={(event) => setForm((current) => current ? { ...current, isPaid: event.target.checked } : current)} />
                 </label>
               </div>
               {form.isPaid ? (
