@@ -1,14 +1,13 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
 import { Participant } from '@/types'
 import { CheckCircle, LogIn, ScanLine, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { checkInAttendanceAction } from '@/lib/api-event/actions'
 
 type ScanResult = { success: true; participant: Participant } | { success: false; message: string } | null
-
-const API_URL = '/api'
 
 export function ScanPage() {
   const [loggedIn, setLoggedIn] = useState(false)
@@ -23,27 +22,22 @@ export function ScanPage() {
     if (username && password) setLoggedIn(true)
   }
 
-  async function checkIn(decodedText: string) {
+  const checkIn = useCallback(async (decodedText: string) => {
     try {
-      const response = await fetch(`${API_URL}/tickets/check-in`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ qr_token: decodedText }),
-      })
-      const payload = await response.json()
+      const payload = await checkInAttendanceAction(decodedText, username || null, 'web-scanner')
 
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || 'QR tidak dikenali atau tidak valid.')
+      if (!payload.ok || !payload.data.success || !payload.data.participant) {
+        throw new Error(payload.ok ? payload.data.message : payload.error || 'QR tidak dikenali atau tidak valid.')
       }
 
-      setResult({ success: true, participant: payload.data })
+      setResult({ success: true, participant: payload.data.participant })
     } catch (error) {
       setResult({
         success: false,
         message: error instanceof Error ? error.message : 'QR tidak dikenali atau tidak valid.',
       })
     }
-  }
+  }, [username])
 
   async function startScanner() {
     setResult(null)
@@ -80,7 +74,7 @@ export function ScanPage() {
     return () => {
       scanner.stop().catch(() => {})
     }
-  }, [scanning])
+  }, [checkIn, scanning])
 
   if (!loggedIn) {
     return (

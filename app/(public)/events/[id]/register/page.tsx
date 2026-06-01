@@ -1,7 +1,6 @@
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
-import { getEventById } from '@/lib/dummy'
-import { getEventFromDb } from '@/lib/server/events'
+import { getEventFromApiEvent } from '@/lib/api-event/events'
 import { RegisterForm } from '@/components/RegisterForm'
 import { AUTH_ROLES } from '@/lib/auth/roles'
 import { isRegistrationOpenStatus } from '@/lib/event-status'
@@ -16,11 +15,11 @@ export const dynamic = 'force-dynamic'
 export default async function RegisterPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const [event, session] = await Promise.all([
-    getEventFromDb(id).catch(() => null),
+    getEventFromApiEvent(id).catch(() => null),
     getCurrentAdminSession(AUTH_ROLES.user),
   ])
   const profile = session ? await getPublicUserProfile(session.userId).catch(() => null) : null
-  const resolvedEvent = event ?? getEventById(id)
+  const resolvedEvent = event
   if (!resolvedEvent || !isRegistrationOpenStatus(resolvedEvent.status)) notFound()
 
   return (

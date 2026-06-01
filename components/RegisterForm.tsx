@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import type { InstitutionOption } from '@/lib/institution-options'
 import type { Event } from '@/types'
+import { registerEventAction, uploadPaymentProofAction, validateNiamAction } from '@/lib/api-event/actions'
 
 type Step = 1 | 2
 
@@ -56,8 +57,8 @@ type SubmittedPayment = {
 
 type RegisterErrorState = '' | 'submit-unavailable'
 
-const MAX_PAYMENT_PROOF_SIZE = 2 * 1024 * 1024
-const PAYMENT_PROOF_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']
+const MAX_PAYMENT_PROOF_SIZE = 4 * 1024 * 1024
+const PAYMENT_PROOF_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const PAYMENT_PROOF_ACCEPT = PAYMENT_PROOF_TYPES.join(',')
 
 function generateUniqueCode() {
@@ -193,11 +194,10 @@ export function RegisterForm({
     setIsCheckingMember(true)
     setSubmitError('')
     try {
-      const response = await fetch(`/api/members/niam?value=${encodeURIComponent(value)}`, { cache: 'no-store' })
-      const payload = await response.json()
-      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Validasi NIAM gagal')
+      const payload = await validateNiamAction(value)
+      if (!payload.ok) throw new Error(payload.error || 'Validasi NIAM gagal')
 
-      const nextMember = payload.valid ? payload.data : null
+      const nextMember = payload.data.valid ? payload.data.data : null
       setMember(nextMember)
 
       if (nextMember) {
@@ -256,33 +256,23 @@ export function RegisterForm({
     }
     if (!PAYMENT_PROOF_TYPES.includes(file.type)) {
       setForm((current) => ({ ...current, proofFile: null }))
-      setSubmitError('Format bukti transfer harus JPG, PNG, WebP, atau PDF')
+      setSubmitError('Format bukti transfer harus JPG, PNG, atau WebP')
       return
     }
     if (file.size > MAX_PAYMENT_PROOF_SIZE) {
       setForm((current) => ({ ...current, proofFile: null }))
-      setSubmitError('Ukuran bukti transfer maksimal 2MB')
+      setSubmitError('Ukuran bukti transfer maksimal 4MB')
       return
     }
     setForm((current) => ({ ...current, proofFile: file }))
   }
 
-  async function uploadPaymentProof(file: File) {
+  async function uploadPaymentProof(qrToken: string, file: File) {
     const body = new FormData()
-    body.append('file', file)
-    if (process.env.NODE_ENV !== 'production') console.log('UPLOAD FILE', file)
-    const response = await fetch(`/api/events/${event.id}/payment-proof`, {
-      method: 'POST',
-      body,
-    })
-    const payload = await response.json()
-    if (!response.ok || !payload.ok) throw new Error(payload.error || 'Upload bukti transfer gagal')
-    return payload.data as {
-      url: string
-      name: string
-      mimeType: string
-      size: number
-    }
+    body.append('payment_proof', file)
+    const payload = await uploadPaymentProofAction(qrToken, body)
+    if (!payload.ok) throw new Error(payload.error || 'Upload bukti transfer gagal')
+    return payload.data
   }
 
   async function submitRegistration() {
@@ -291,38 +281,30 @@ export function RegisterForm({
     setIsSubmitting(true)
 
     try {
-      const proof = event.is_paid && !usesGateway && form.proofFile
-        ? await uploadPaymentProof(form.proofFile)
-        : null
+      const registrationPath = isNiamRegistration ? 'NIAM' : 'UMUM'
       const identityPayload = isLoggedIn
-        ? {}
+        ? {
+            registration_path: registrationPath,
+            niam: registrationPath === 'NIAM' ? profileNiam : undefined,
+            full_name: registrationPath === 'UMUM' ? finalName : undefined,
+            institution_name: registrationPath === 'UMUM' ? finalInstitution : undefined,
+            whatsapp: registrationPath === 'UMUM' ? finalWhatsapp : undefined,
+          }
         : {
+            registration_path: registrationPath,
             niam: member?.niam,
             full_name: finalName,
-            email: form.email,
-            unit: member?.unit,
             institution_name: finalInstitution,
-            institution_id: form.institutionId,
             whatsapp: form.whatsapp,
           }
 
-      const response = await fetch(`/api/events/${event.id}/register`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          ...identityPayload,
-          final_amount: totalAmount,
-          class_id: form.selectedClassId,
-          payment_proof_url: proof?.url,
-          payment_proof_name: proof?.name,
-          payment_proof_mime: proof?.mimeType,
-          payment_proof_size: proof?.size,
-          custom_responses: form.customResponses,
-        }),
+      const payload = await registerEventAction(event.id, {
+        ...identityPayload,
+        class_id: form.selectedClassId,
+        custom_responses: form.customResponses,
       })
-      const payload = await response.json()
 
-      if (!response.ok || !payload.ok) {
+      if (!payload.ok) {
         const message = String(payload.error || '')
         if (message.toLowerCase().includes('econnrefused') || message.toLowerCase().includes('connect ')) {
           setErrorState('submit-unavailable')
@@ -331,14 +313,19 @@ export function RegisterForm({
         throw new Error(payload.error || 'Pendaftaran gagal')
       }
 
+      const participant = payload.data.participant
+      const proofParticipant = event.is_paid && !usesGateway && form.proofFile
+        ? await uploadPaymentProof(participant.qr_token, form.proofFile)
+        : participant
+
       setSubmittedPayment({
-        provider: payload.paymentProvider ?? null,
-        payUrl: payload.payUrl ?? null,
-        paymentId: payload.paymentId ?? null,
+        provider: null,
+        payUrl: null,
+        paymentId: proofParticipant.paymentId ?? payload.data.paymentId ?? null,
       })
       setSubmitted(true)
-      if (!payload.requiresPayment) {
-        const token = payload.ticketCode || payload.data?.ticketCode || payload.data?.qr_token
+      if (!payload.data.requiresPayment) {
+        const token = payload.data.ticketCode || participant.qr_token
         setTimeout(() => router.push(`/ticket?token=${encodeURIComponent(token)}`), 800)
       }
     } catch (error) {
@@ -684,7 +671,7 @@ export function RegisterForm({
                     <p className="text-sm font-semibold text-[#1B4332]">
                       {form.proofFile ? form.proofFile.name : 'Tap untuk upload bukti'}
                     </p>
-                    <p className="mt-0.5 text-xs text-gray-400">JPG, PNG, WebP, PDF, max 2MB</p>
+                    <p className="mt-0.5 text-xs text-gray-400">JPG, PNG, WebP, max 4MB</p>
                     <input type="file" accept={PAYMENT_PROOF_ACCEPT} className="hidden" onChange={(eventValue) => handleProofFile(eventValue.target.files?.[0] ?? null)} />
                   </label>
                 </div>

@@ -3,13 +3,10 @@
 import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { getEventById, getParticipantByToken } from '@/lib/dummy'
 import { QRTicket } from '@/components/QRTicket'
-import { normalizeEvent } from '@/lib/event-api'
 import { AlertCircle, RefreshCw, Ticket } from 'lucide-react'
 import type { Event, Participant } from '@/types'
-
-const API_URL = '/api'
+import { verifyTicketAction } from '@/lib/api-event/actions'
 
 function TicketFallback({
   icon,
@@ -58,23 +55,15 @@ function TicketContent() {
       const tokenValue = token
       if (!tokenValue) return
 
-      const dummyParticipant = getParticipantByToken(tokenValue)
-      const dummyEvent = dummyParticipant ? getEventById(dummyParticipant.event_id) : null
-
       try {
         setIsLoading(true)
         setErrorState('')
 
-        const verifyResponse = await fetch(`${API_URL}/tickets/verify`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ qr_token: tokenValue }),
-        })
-        const verifyPayload = await verifyResponse.json()
+        const verifyPayload = await verifyTicketAction(tokenValue)
 
-        if (!verifyResponse.ok || !verifyPayload.ok) {
+        if (!verifyPayload.ok) {
           const message = String(verifyPayload.error || '')
-          if (verifyResponse.status === 404 || message.toLowerCase().includes('not found')) {
+          if (verifyPayload.status === 404 || message.toLowerCase().includes('not found') || message.toLowerCase().includes('tidak ditemukan')) {
             setErrorState('invalid')
             return
           }
@@ -82,19 +71,16 @@ function TicketContent() {
           return
         }
 
-        setData({
-          participant: verifyPayload.data,
-          event: normalizeEvent(verifyPayload.event),
-        })
-      } catch (loadError) {
-        if (dummyParticipant && dummyEvent) {
-          setData({
-            participant: dummyParticipant,
-            event: dummyEvent,
-          })
+        if (!verifyPayload.data.event) {
+          setErrorState('unavailable')
           return
         }
 
+        setData({
+          participant: verifyPayload.data.participant,
+          event: verifyPayload.data.event,
+        })
+      } catch (loadError) {
         const message = loadError instanceof Error ? loadError.message.toLowerCase() : ''
         if (message.includes('not found') || message.includes('tidak ditemukan')) {
           setErrorState('invalid')

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import Image from 'next/image'
 import { ImageIcon } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -24,13 +24,9 @@ export function EventPosterImage({
   imageClassName = 'object-cover',
 }: EventPosterImageProps) {
   const normalizedSrc = useMemo(() => normalizeEventPosterUrl(src), [src])
-  const [isLoaded, setIsLoaded] = useState(false)
-  const [hasError, setHasError] = useState(false)
-
-  useEffect(() => {
-    setIsLoaded(false)
-    setHasError(false)
-  }, [normalizedSrc])
+  const [imageState, setImageState] = useState({ src: normalizedSrc, isLoaded: false, hasError: false })
+  const isLoaded = imageState.src === normalizedSrc && imageState.isLoaded
+  const hasError = imageState.src === normalizedSrc && imageState.hasError
 
   if (hasError) {
     return (
@@ -57,8 +53,8 @@ export function EventPosterImage({
         priority={priority}
         sizes={sizes}
         className={`${imageClassName} transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
-        onLoad={() => setIsLoaded(true)}
-        onError={() => setHasError(true)}
+        onLoad={() => setImageState({ src: normalizedSrc, isLoaded: true, hasError: false })}
+        onError={() => setImageState({ src: normalizedSrc, isLoaded: false, hasError: true })}
       />
     </div>
   )

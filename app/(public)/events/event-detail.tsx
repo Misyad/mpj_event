@@ -1,7 +1,6 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { getEventById } from '@/lib/dummy'
-import { getEventFromDb } from '@/lib/server/events'
+import { getEventFromApiEvent } from '@/lib/api-event/events'
 import { BadgeStatus } from '@/components/BadgeStatus'
 import { EventPosterImage } from '@/components/EventPosterImage'
 import { QuotaBadge } from '@/components/QuotaBadge'
@@ -11,15 +10,15 @@ import { AlertCircle, ArrowLeft, Calendar, MapPin, RefreshCw, Wallet } from 'luc
 import { formatEventDateWithWeekday, formatEventTime } from '@/utils/dateFormatter'
 
 export async function getEventForDetail(identifier: string) {
-  let dbUnavailable = false
-  const event = await getEventFromDb(identifier).catch(() => {
-    dbUnavailable = true
+  let apiUnavailable = false
+  const event = await getEventFromApiEvent(identifier).catch(() => {
+    apiUnavailable = true
     return null
   })
 
   return {
-    event: event ?? getEventById(identifier) ?? null,
-    dbUnavailable,
+    event,
+    dbUnavailable: apiUnavailable,
   }
 }
 

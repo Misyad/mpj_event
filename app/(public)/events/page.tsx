@@ -1,23 +1,24 @@
 import Link from 'next/link'
 import { ArrowLeft, Calendar } from 'lucide-react'
 import { EventCard } from '@/components/EventCard'
-import { dummyEvents } from '@/lib/dummy'
 import { isPublishedStatus, normalizeEventStatus } from '@/lib/event-status'
 import { getCurrentAdminSession } from '@/lib/server/rbac'
 import { AUTH_ROLES } from '@/lib/auth/roles'
-import { getEventsFromDb } from '@/lib/server/events'
+import { getEventsFromApiEvent } from '@/lib/api-event/events'
 import { getEventTimestamp } from '@/utils/dateFormatter'
+import type { Event } from '@/types'
 
 export const dynamic = 'force-dynamic'
 
 export default async function PublicEventsPage() {
-  let sourceEvents = dummyEvents
+  let sourceEvents: Event[] = []
+  let apiUnavailable = false
   const session = await getCurrentAdminSession(AUTH_ROLES.user)
 
   try {
-    sourceEvents = await getEventsFromDb({ publicOnly: true })
+    sourceEvents = await getEventsFromApiEvent()
   } catch {
-    sourceEvents = dummyEvents
+    apiUnavailable = true
   }
 
   const events = sourceEvents
@@ -61,8 +62,10 @@ export default async function PublicEventsPage() {
             <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#e8f0ec]">
               <Calendar className="h-7 w-7 text-[#1B4332]" />
             </div>
-            <p className="text-lg font-bold text-[#1B4332]">Belum ada event tersedia</p>
-            <p className="mt-1 text-sm text-gray-400">Event terbaru MPJ akan tampil di sini.</p>
+            <p className="text-lg font-bold text-[#1B4332]">{apiUnavailable ? 'Event belum bisa dimuat' : 'Belum ada event tersedia'}</p>
+            <p className="mt-1 text-sm text-gray-400">
+              {apiUnavailable ? 'Laravel api-event sedang belum bisa diakses.' : 'Event terbaru MPJ akan tampil di sini.'}
+            </p>
           </div>
         )}
       </main>

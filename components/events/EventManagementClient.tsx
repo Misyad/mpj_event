@@ -55,6 +55,12 @@ import { normalizeEvent } from '@/lib/event-api'
 import { formatEventDateTime, getEventDateInputParts, toEventDateEndIso, toEventDateTimeIso } from '@/utils/dateFormatter'
 import { CertificateTemplateEditor } from '@/components/certificates/CertificateTemplateEditor'
 import { DEFAULT_CERTIFICATE_LAYOUT, normalizeCertificateLayout } from '@/components/certificates/certificate-template-layout'
+import {
+  changeAdminEventStatusAction,
+  createAdminEventAction,
+  getAdminEventsAction,
+  updateAdminEventAction,
+} from '@/lib/api-event/actions'
 import type { CertificateReusableTemplate, CertificateStatus, CertificateTemplateFieldKey, CertificateTemplateLayout, Event, EventCategory, EventCertificateRecord, EventStatus, Speaker } from '@/types'
 
 type ApprovalLog = {
@@ -344,7 +350,6 @@ function buildForm(event: Event): EventForm {
 function payloadFromForm(form: EventForm, mode: EventManagementClientProps['mode']) {
   if (!form.title.trim()) throw new Error('Nama event wajib diisi')
   const posterUrl = form.posterUrl.trim()
-  if (!posterUrl) throw new Error('Poster event wajib diupload')
   const eventDate = form.eventDate || form.date
   const eventTime = form.time || '00:00'
   if (!eventDate) throw new Error('Tanggal acara wajib diisi')
@@ -456,12 +461,19 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
       try {
         setIsLoading(true)
         setError('')
-        const [eventsResponse, speakersResponse] = await Promise.all([
-          fetch('/api/admin/events', { cache: 'no-store' }),
+        const [eventsResult, speakersResponse] = await Promise.all([
+          isAdminPusat ? getAdminEventsAction() : fetch('/api/admin/events', { cache: 'no-store' }),
           fetch('/api/admin/speakers', { cache: 'no-store' }),
         ])
-        const [eventsPayload, speakersPayload] = await Promise.all([eventsResponse.json(), speakersResponse.json()])
-        if (!eventsResponse.ok || !eventsPayload.ok) throw new Error(eventsPayload.error || 'Gagal memuat data event')
+        const [eventsPayload, speakersPayload] = await Promise.all([
+          eventsResult instanceof Response ? eventsResult.json() : Promise.resolve(eventsResult),
+          speakersResponse.json(),
+        ])
+        if (eventsResult instanceof Response) {
+          if (!eventsResult.ok || !eventsPayload.ok) throw new Error(eventsPayload.error || 'Gagal memuat data event')
+        } else if (!eventsPayload.ok) {
+          throw new Error(eventsPayload.error || 'Gagal memuat data event')
+        }
         if (!speakersResponse.ok || !speakersPayload.ok) throw new Error(speakersPayload.error || 'Gagal memuat data narasumber')
         const normalizedEvents: Event[] = eventsPayload.data.map(normalizeEvent)
         if (!active) return
@@ -487,7 +499,7 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
     return () => {
       active = false
     }
-  }, [initialEvents])
+  }, [initialEvents, isAdminPusat])
 
   const filteredEvents = useMemo(() => {
     const keyword = search.trim().toLowerCase()
@@ -539,14 +551,21 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
     setEvents((current) => current.map((event) => (event.id === eventId ? { ...event, status } : event)))
 
     try {
-      const response = await fetch(`/api/admin/events/${eventId}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ status, approvalReason: reason }),
-      })
-      const payload = await response.json()
-      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal mengubah status event')
-      const updated = normalizeEvent(payload.data)
+      let updated: Event
+      if (isAdminPusat && status !== 'rejected') {
+        const result = await changeAdminEventStatusAction(eventId, status)
+        if (!result.ok) throw new Error(result.error || 'Gagal mengubah status event')
+        updated = normalizeEvent(result.data)
+      } else {
+        const response = await fetch(`/api/admin/events/${eventId}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ status, approvalReason: reason }),
+        })
+        const payload = await response.json()
+        if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal mengubah status event')
+        updated = normalizeEvent(payload.data)
+      }
       setEvents((current) => current.map((event) => (event.id === eventId ? updated : event)))
       if (status === 'published' || status === 'rejected') {
         const logsResponse = await fetch(`/api/admin/events/${eventId}/approval-logs`, { cache: 'no-store' })
@@ -585,7 +604,7 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
       setIsSaving(true)
       setError('')
       if (!form.posterFile && !form.posterUrl.trim()) throw new Error('Poster event wajib diupload')
-      const posterUrl = form.posterFile ? await uploadPoster(form.posterFile) : form.posterUrl
+      const posterUrl = form.posterFile && !isAdminPusat ? await uploadPoster(form.posterFile) : form.posterUrl
       const lockedPricing = editingEvent ? isEventPricingLocked(editingEvent) : false
       if (process.env.NODE_ENV !== 'production' && editingEvent) {
         const lockedForm = getLockedPricingForm(editingEvent)
@@ -602,19 +621,26 @@ export function EventManagementClient({ mode, title, subtitle, scopeLabel, creat
         posterUrl,
         ...(editingEvent && lockedPricing ? getLockedPricingForm(editingEvent) : {}),
       }, mode)
-      const endpoint = isAdminPusat
-        ? `/api/admin/events/${editingEvent?.id}`
-        : editingEvent
-          ? `/api/regional/events/${editingEvent.id}`
-          : '/api/regional/events'
-      const response = await fetch(endpoint, {
-        method: editingEvent ? 'PATCH' : 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(eventPayload),
-      })
-      const payload = await response.json()
-      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal menyimpan event')
-      const updated = normalizeEvent(payload.data)
+      let updated: Event
+      if (isAdminPusat) {
+        const posterForm = form.posterFile ? new FormData() : null
+        if (posterForm && form.posterFile) posterForm.append('poster', form.posterFile)
+        const result = editingEvent
+          ? await updateAdminEventAction(editingEvent.id, eventPayload, posterForm)
+          : await createAdminEventAction(eventPayload, posterForm)
+        if (!result.ok) throw new Error(result.error || 'Gagal menyimpan event')
+        updated = normalizeEvent(result.data)
+      } else {
+        const endpoint = editingEvent ? `/api/regional/events/${editingEvent.id}` : '/api/regional/events'
+        const response = await fetch(endpoint, {
+          method: editingEvent ? 'PATCH' : 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(eventPayload),
+        })
+        const payload = await response.json()
+        if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal menyimpan event')
+        updated = normalizeEvent(payload.data)
+      }
       setEvents((current) => editingEvent ? current.map((event) => event.id === updated.id ? updated : event) : [updated, ...current])
       setEditingEvent(null)
       setForm(null)

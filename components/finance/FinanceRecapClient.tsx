@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { FinanceStatsSkeleton } from '@/components/skeletons/FinanceStatsSkeleton'
 import { TransactionTableSkeleton } from '@/components/skeletons/TransactionTableSkeleton'
+import { getFinanceRecapAction } from '@/lib/api-event/actions'
 
 type Summary = {
   totalIncome: number
@@ -45,19 +46,11 @@ export function FinanceRecapClient({ title, description }: { title: string; desc
       try {
         setIsLoading(true)
         setError('')
-        const params = new URLSearchParams()
-        if (dateStart) params.set('dateStart', dateStart)
-        if (dateEnd) params.set('dateEnd', dateEnd)
-        const [summaryResponse, recapResponse] = await Promise.all([
-          fetch(`/api/finance/events/summary?${params.toString()}`, { cache: 'no-store' }),
-          fetch(`/api/finance/events/recap?${params.toString()}`, { cache: 'no-store' }),
-        ])
-        const [summaryPayload, recapPayload] = await Promise.all([summaryResponse.json(), recapResponse.json()])
-        if (!summaryResponse.ok || !summaryPayload.ok) throw new Error(summaryPayload.error || 'Gagal memuat summary')
-        if (!recapResponse.ok || !recapPayload.ok) throw new Error(recapPayload.error || 'Gagal memuat rekap')
+        const result = await getFinanceRecapAction()
+        if (!result.ok) throw new Error(result.error || 'Gagal memuat rekap')
         if (active) {
-          setSummary(summaryPayload.data)
-          setRows(recapPayload.data)
+          setSummary(result.data.summary)
+          setRows(result.data.rows)
         }
       } catch (loadError) {
         if (active) setError(loadError instanceof Error ? loadError.message : 'Gagal memuat rekap keuangan')

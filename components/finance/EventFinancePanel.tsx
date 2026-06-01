@@ -20,6 +20,11 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { FinanceStatsSkeleton } from '@/components/skeletons/FinanceStatsSkeleton'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  getEventFinanceAction,
+  saveEventFinanceTransactionAction,
+  voidEventFinanceTransactionAction,
+} from '@/lib/api-event/actions'
 
 function isDirtyForm(form: TransactionFormState, proofFile: File | null) {
   return Boolean(
@@ -62,32 +67,35 @@ export function EventFinancePanel({ eventId }: { eventId: string }) {
   const [error, setError] = useState('')
 
   const categories = data?.categories ?? []
-  const transactions = data?.transactions ?? []
   const summary = data?.summary ?? EMPTY_FINANCE_SUMMARY
   const formIsDirty = isDirtyForm(form, proofFile)
+  const filteredTransactions = useMemo(() => {
+    const transactions = data?.transactions ?? []
+    return transactions.filter((transaction) => {
+      if (typeFilter !== 'ALL' && transaction.type !== typeFilter) return false
+      if (categoryFilter !== 'ALL' && transaction.categoryId !== categoryFilter) return false
+      const transactionDate = transaction.transactionDate ? transaction.transactionDate.slice(0, 10) : ''
+      if (dateStart && transactionDate < dateStart) return false
+      if (dateEnd && transactionDate > dateEnd) return false
+      return true
+    })
+  }, [categoryFilter, data?.transactions, dateEnd, dateStart, typeFilter])
 
   const loadFinance = useMemo(() => async () => {
     try {
       setIsLoading(true)
       setError('')
-      const params = new URLSearchParams()
-      if (typeFilter !== 'ALL') params.set('type', typeFilter)
-      if (categoryFilter !== 'ALL') params.set('categoryId', categoryFilter)
-      if (dateStart) params.set('dateStart', dateStart)
-      if (dateEnd) params.set('dateEnd', dateEnd)
-      const response = await fetch(`/api/events/${encodeURIComponent(eventId)}/finance/transactions?${params.toString()}`, { cache: 'no-store' })
-      const payload = await response.json()
-      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal memuat keuangan event')
-      setData(payload.data)
+      const result = await getEventFinanceAction(eventId)
+      if (!result.ok) throw new Error(result.error || 'Gagal memuat keuangan event')
+      setData(result.data)
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Gagal memuat keuangan event')
     } finally {
       setIsLoading(false)
     }
-  }, [categoryFilter, dateEnd, dateStart, eventId, typeFilter])
+  }, [eventId])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadFinance()
   }, [loadFinance])
 
@@ -144,12 +152,7 @@ export function EventFinancePanel({ eventId }: { eventId: string }) {
     const proofError = validateProofFile(proofFile)
     if (proofError) throw new Error(proofError)
 
-    const body = new FormData()
-    body.append('file', proofFile)
-    const response = await fetch('/api/admin/uploads/finance-proof', { method: 'POST', body })
-    const payload = await response.json()
-    if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal upload bukti')
-    return String(payload.url)
+    throw new Error('Upload bukti transaksi finance belum tersedia di Laravel api-event')
   }
 
   async function saveTransaction(event: React.FormEvent<HTMLFormElement>) {
@@ -175,18 +178,8 @@ export function EventFinancePanel({ eventId }: { eventId: string }) {
         categoryId: form.categoryId || undefined,
         proofUrl: proofUrl || form.proofUrl || undefined,
       }
-      const response = await fetch(
-        editingId
-          ? `/api/events/${encodeURIComponent(eventId)}/finance/transactions/${encodeURIComponent(editingId)}`
-          : `/api/events/${encodeURIComponent(eventId)}/finance/transactions`,
-        {
-          method: editingId ? 'PATCH' : 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(payload),
-        },
-      )
-      const result = await response.json()
-      if (!response.ok || !result.ok) throw new Error(result.error || 'Gagal menyimpan transaksi')
+      const result = await saveEventFinanceTransactionAction(eventId, payload, editingId)
+      if (!result.ok) throw new Error(result.error || 'Gagal menyimpan transaksi')
       closeDialog()
       await loadFinance()
       toast.success(editingId ? 'Transaksi berhasil diperbarui' : 'Transaksi berhasil ditambahkan')
@@ -203,9 +196,8 @@ export function EventFinancePanel({ eventId }: { eventId: string }) {
   async function voidTransaction(transactionId: string) {
     try {
       setError('')
-      const response = await fetch(`/api/events/${encodeURIComponent(eventId)}/finance/transactions/${encodeURIComponent(transactionId)}/void`, { method: 'POST' })
-      const payload = await response.json()
-      if (!response.ok || !payload.ok) throw new Error(payload.error || 'Gagal void transaksi')
+      const payload = await voidEventFinanceTransactionAction(eventId, transactionId)
+      if (!payload.ok) throw new Error(payload.error || 'Gagal void transaksi')
       await loadFinance()
       toast.success('Transaksi berhasil divoid')
     } catch (voidError) {
@@ -276,7 +268,7 @@ export function EventFinancePanel({ eventId }: { eventId: string }) {
         )}
 
         <TransactionList
-          transactions={transactions}
+          transactions={filteredTransactions}
           isLoading={isLoading && !data}
           onEdit={openEditDialog}
           onVoid={voidTransaction}
