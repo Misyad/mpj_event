@@ -37,6 +37,7 @@ Target stabilisasi:
 
 - Komponen baru tidak boleh memanggil `fetch('/api/...')` langsung kecuali endpoint tersebut tercatat `Keep legacy/internal`.
 - Integrasi ke `mpj-api-main` harus lewat `lib/mpj-api`.
+- Default `mpj-api-main` adalah `https://mpj-api.demotesting.fun/api`; override hanya lewat `MPJ_API_BASE_URL` atau `NEXT_PUBLIC_MPJ_API_BASE_URL`.
 - Integrasi ke Laravel `api-event` harus lewat `lib/api-event`.
 - Jika endpoint target belum setara, fallback harus eksplisit dan terdokumentasi di file ini.
 - `/api/institutions` sekarang memprioritaskan `mpj-api-main` via `lib/mpj-api`; legacy fallback hanya menjaga dropdown registrasi tetap tersedia saat upstream gagal, dan media/unit tetap legacy supplement sampai endpoint setara ada.
