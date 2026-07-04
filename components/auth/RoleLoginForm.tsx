@@ -17,10 +17,79 @@ import { cn } from '@/lib/utils'
 type LoginResponse = {
   ok?: boolean
   error?: string
+  message?: string
+  token?: string
+  access_token?: string
+  data?: unknown
+  user?: unknown
   role?: AuthRole
   redirectTo?: string
   requiresRoleSelection?: boolean
   roles?: AuthRole[]
+}
+
+const MPJ_API_BASE_URL = process.env.NEXT_PUBLIC_MPJ_API_BASE_URL?.replace(/\/+$/, '') ?? ''
+
+function externalApiUrl(path: string) {
+  if (!MPJ_API_BASE_URL) {
+    throw new Error('NEXT_PUBLIC_MPJ_API_BASE_URL belum dikonfigurasi di .env')
+  }
+
+  return `${MPJ_API_BASE_URL}/${path.replace(/^\/+/, '')}`
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : null
+}
+
+function readString(record: Record<string, unknown> | null, keys: string[]) {
+  if (!record) return ''
+
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+
+  return ''
+}
+
+function payloadData(payload: LoginResponse) {
+  const data = asRecord(payload.data)
+  return data ?? null
+}
+
+function payloadUser(payload: LoginResponse) {
+  const directUser = asRecord(payload.user)
+  if (directUser) return directUser
+
+  const data = payloadData(payload)
+  return asRecord(data?.user)
+}
+
+function normalizeExternalRole(value: unknown, fallback: AuthRole): AuthRole {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-')
+
+  if (['super-admin', 'superadmin', 'admin-pusat', 'admin'].includes(normalized)) return 'super-admin'
+  if (['regional-admin', 'admin-regional', 'regional'].includes(normalized)) return 'regional-admin'
+  if (['user', 'peserta', 'participant', 'member'].includes(normalized)) return 'user'
+
+  return fallback
+}
+
+function getExternalLoginResult(payload: LoginResponse, fallbackRole: AuthRole) {
+  const data = payloadData(payload)
+  const user = payloadUser(payload)
+  const roleValue = readString(user, ['role', 'role_code', 'roleCode', 'type']) || readString(data, ['role'])
+  const isSuperAdmin = user?.isSuperAdmin === true || user?.is_super_admin === true
+  const resolvedRole = isSuperAdmin ? 'super-admin' : normalizeExternalRole(roleValue, fallbackRole)
+  const token =
+    readString(asRecord(payload), ['token', 'access_token', 'accessToken']) ||
+    readString(data, ['token', 'access_token', 'accessToken'])
+
+  return { role: resolvedRole, token, user }
 }
 
 export function RoleLoginForm({
@@ -54,7 +123,7 @@ export function RoleLoginForm({
     const normalizedEmail = email.trim().toLowerCase()
 
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(externalApiUrl('/auth/login'), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -67,8 +136,8 @@ export function RoleLoginForm({
       })
       const payload = (await response.json()) as LoginResponse
 
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || 'Login gagal')
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.error || payload.message || 'Login gagal')
       }
 
       if (payload.requiresRoleSelection && payload.roles?.length) {
@@ -76,8 +145,16 @@ export function RoleLoginForm({
         return
       }
 
+      const login = getExternalLoginResult(payload, selectedRole ?? role ?? 'user')
+      if (login.token) {
+        window.localStorage.setItem('mpj_api_token', login.token)
+      }
+      if (login.user) {
+        window.localStorage.setItem('mpj_api_user', JSON.stringify(login.user))
+      }
+
       onAuthenticated?.()
-      router.replace(payload.redirectTo || getAuthRoleConfig(payload.role ?? role ?? 'user')?.dashboardPath || '/')
+      router.replace(payload.redirectTo || getAuthRoleConfig(payload.role ?? login.role)?.dashboardPath || '/')
       router.refresh()
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : 'Login gagal')
@@ -101,7 +178,7 @@ export function RoleLoginForm({
           <div>
             <h1 className="text-xl font-extrabold text-[#1B4332]">{lockedConfig?.title ?? 'Masuk MPJ Event'}</h1>
             <p className="mt-1 text-sm leading-relaxed text-gray-500">
-              Masukkan email dan password. Role dashboard akan mengikuti data akun di database.
+              Masukkan email dan password. Role dashboard akan mengikuti data akun MPJ.
             </p>
           </div>
         </div>

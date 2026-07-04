@@ -1,24 +1,24 @@
 import { EventCard } from '@/components/EventCard'
 import { Calendar } from 'lucide-react'
-import { dummyEvents } from '@/lib/dummy'
-import { getEventsFromDb } from '@/lib/server/events'
+import { getEventsFromApiEvent } from '@/lib/api-event/events'
 import { LoginEntryDialog } from '@/components/auth/LoginEntryDialog'
 import { BrandMark } from '@/components/BrandMark'
 import { AUTH_ROLES } from '@/lib/auth/roles'
 import { isCompletedStatus, isPublishedStatus, normalizeEventStatus } from '@/lib/event-status'
 import { getCurrentAdminSession } from '@/lib/server/rbac'
 import { getEventTimestamp } from '@/utils/dateFormatter'
+import type { Event } from '@/types'
 
 export const dynamic = 'force-dynamic'
 
 export default async function Home() {
-  let sourceEvents = dummyEvents
+  let sourceEvents: Event[] = []
   const session = await getCurrentAdminSession(AUTH_ROLES.user)
 
   try {
-    sourceEvents = await getEventsFromDb({ publicOnly: true })
+    sourceEvents = await getEventsFromApiEvent()
   } catch {
-    sourceEvents = dummyEvents
+    sourceEvents = []
   }
 
   const events = sourceEvents
